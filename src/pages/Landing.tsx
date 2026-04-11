@@ -63,9 +63,9 @@ const Landing = () => {
       {/* ── HERO ── */}
       <section
         ref={hero.ref}
-        className="min-h-screen flex flex-col justify-center px-6 md:px-12"
+        className="min-h-screen grid place-items-center px-6 md:px-12"
       >
-        <div className="max-w-6xl mx-auto w-full">
+        <div className="max-w-6xl mx-auto w-full grid gap-14 lg:grid-cols-[1.05fr_0.95fr] items-center">
           <div
             className={`transition-all duration-700 ease-out ${
               hero.visible
@@ -73,21 +73,20 @@ const Landing = () => {
                 : "opacity-0 translate-y-6 blur-[4px]"
             }`}
           >
-            <p className="label-xs text-gold mb-8">Performance Training OS</p>
+            <p className="label-xs text-gold mb-6">Performance Training OS</p>
 
-            <h1 className="text-5xl sm:text-7xl md:text-[5.5rem] font-semibold tracking-[-0.04em] leading-[0.92] mb-8 max-w-4xl">
-              BE STRONGER
+            <h1 className="text-5xl sm:text-6xl md:text-[5rem] font-semibold tracking-[-0.04em] leading-[0.94] mb-8 max-w-3xl">
+              Strength, clarity,
               <br />
-              EVERY DAY.
+              and progress in one place.
             </h1>
 
-            <p className="text-muted-foreground text-base md:text-lg max-w-md mb-12 leading-relaxed">
-              Track strain, plan recovery, and train with precision.
-              <br className="hidden md:block" />
-              No noise — just progress.
+            <p className="text-muted-foreground text-base md:text-lg max-w-xl mb-12 leading-relaxed">
+              A premium training dashboard built for intentional lifters. See your plan, session load,
+              and coaching cues without the clutter.
             </p>
 
-            <div className="flex items-center gap-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
               <Link
                 to="/dashboard"
                 className="group inline-flex items-center gap-3 bg-gold text-background px-7 py-3.5 rounded-full text-sm font-medium hover:opacity-90 transition-all duration-200 active:scale-[0.97]"
@@ -96,36 +95,51 @@ const Landing = () => {
                 <ArrowRight size={15} className="transition-transform duration-200 group-hover:translate-x-0.5" />
               </Link>
               <span className="text-xs text-muted-foreground tracking-wide">
-                Free to use
+                No sign-up required
               </span>
             </div>
           </div>
 
-          {/* Subtle UI preview element */}
           <div
-            className={`mt-24 md:mt-32 transition-all duration-1000 delay-300 ease-out ${
+            className={`rounded-[2rem] surface-2 border border-border/30 p-6 md:p-8 transition-all duration-1000 delay-300 ease-out ${
               hero.visible
                 ? "opacity-100 translate-y-0"
-                : "opacity-0 translate-y-8"
+                : "opacity-0 translate-y-10"
             }`}
           >
-            <div className="surface-2 rounded-2xl p-6 md:p-8 max-w-xl border border-border/30">
-              <div className="flex items-baseline justify-between mb-4">
-                <span className="label-xs">Weekly Strain</span>
-                <span className="text-gold text-xs font-medium mono">+12.4%</span>
+            <div className="rounded-[1.75rem] bg-background/80 border border-border/20 p-8">
+              <div className="flex items-center justify-between gap-4 mb-6">
+                <div>
+                  <p className="label-xs text-[hsl(var(--text-tertiary))] mb-2">Weekly snapshot</p>
+                  <h2 className="text-2xl font-semibold tracking-tight">Your next training window</h2>
+                </div>
+                <span className="rounded-full bg-gold/10 px-3 py-1 text-[11px] font-semibold text-gold">Premium</span>
               </div>
-              <Sparkline />
-              <div className="flex gap-8 mt-5">
-                {[
-                  { label: "Avg strain", value: "7.2" },
-                  { label: "Sessions", value: "5" },
-                  { label: "Recovery", value: "84%" },
-                ].map((s) => (
-                  <div key={s.label}>
-                    <p className="text-lg font-medium tabular-nums">{s.value}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{s.label}</p>
+
+              <div className="grid grid-cols-1 gap-4 text-sm text-muted-foreground">
+                <div className="rounded-3xl bg-[hsl(var(--surface))] p-4 border border-border/20">
+                  <p className="text-xs uppercase tracking-[0.3em] text-[hsl(var(--text-tertiary))] mb-2">Strength grade</p>
+                  <p className="text-3xl font-semibold text-foreground tabular-nums">89</p>
+                  <p className="mt-2 leading-relaxed">A focused week with volume and recovery aligned to performance.</p>
+                </div>
+
+                <div className="rounded-3xl bg-[hsl(var(--surface))] p-4 border border-border/20">
+                  <div className="flex items-center justify-between mb-3 gap-4">
+                    <span className="text-xs uppercase tracking-[0.3em] text-[hsl(var(--text-tertiary))]">Session focus</span>
+                    <span className="text-[11px] text-gold font-semibold">Power</span>
                   </div>
-                ))}
+                  <p className="text-lg font-semibold text-foreground">4 sessions</p>
+                  <p className="mt-2 leading-relaxed">Split structured around strength, speed, and recovery clarity.</p>
+                </div>
+
+                <div className="rounded-3xl bg-[hsl(var(--surface))] p-4 border border-border/20">
+                  <div className="flex items-center justify-between mb-3 gap-4">
+                    <span className="text-xs uppercase tracking-[0.3em] text-[hsl(var(--text-tertiary))]">Readiness</span>
+                    <span className="text-[11px] text-foreground/70">Next action</span>
+                  </div>
+                  <p className="text-lg font-semibold text-foreground">Push day</p>
+                  <p className="mt-2 leading-relaxed">Move with intention and keep tempo controlled on barbell work.</p>
+                </div>
               </div>
             </div>
           </div>
