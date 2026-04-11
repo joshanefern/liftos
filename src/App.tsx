@@ -9,7 +9,7 @@ import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import Workouts from "@/pages/Workouts";
 import Progress from "@/pages/Progress";
-import Recovery from "@/pages/Recovery";
+import Coach from "@/pages/Coach";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -62,8 +62,8 @@ const App = () => {
                 element={<AppShell><Progress /></AppShell>}
               />
               <Route
-                path="/recovery"
-                element={<AppShell><Recovery /></AppShell>}
+                path="/coach"
+                element={<AppShell><Coach /></AppShell>}
               />
               <Route path="*" element={<NotFound />} />
             </Routes>
