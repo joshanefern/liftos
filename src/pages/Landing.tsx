@@ -32,16 +32,22 @@ const Sparkline = () => (
   </svg>
 );
 
+const heroStats = [
+  { label: "Strength grade", value: "89", detail: "On track" },
+  { label: "Planned volume", value: "247 min", detail: "Week total" },
+  { label: "Next session", value: "Push day", detail: "3 cues ready" },
+];
+
 /* ───────── Nav ───────── */
 const LandingNav = () => (
   <nav className="fixed top-0 inset-x-0 z-50 px-6 md:px-12">
-    <div className="max-w-6xl mx-auto h-16 flex items-center justify-between">
-      <span className="text-sm font-semibold tracking-[0.2em] text-foreground">
+    <div className="max-w-6xl mx-auto flex h-16 items-center justify-between">
+      <span className="text-[12px] font-medium tracking-[0.22em] text-foreground/88">
         LIFTOS
       </span>
       <Link
         to="/dashboard"
-        className="text-xs tracking-wider text-muted-foreground hover:text-foreground transition-colors duration-200"
+        className="text-[11px] tracking-[0.2em] text-[hsl(var(--text-secondary))] transition-colors duration-200 hover:text-foreground"
       >
         Open App →
       </Link>
@@ -63,82 +69,242 @@ const Landing = () => {
       {/* ── HERO ── */}
       <section
         ref={hero.ref}
-        className="min-h-screen grid place-items-center px-6 md:px-12"
+        className="relative overflow-visible px-6 pt-44 pb-48 md:px-12 md:pt-56 md:pb-64"
       >
-        <div className="max-w-6xl mx-auto w-full grid gap-14 lg:grid-cols-[1.05fr_0.95fr] items-center">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[32rem] bg-[radial-gradient(circle_at_50%_14%,rgba(184,147,66,0.11),transparent_64%)]" />
+        <div className="max-w-6xl mx-auto min-h-[74vh]">
           <div
-            className={`transition-all duration-700 ease-out ${
-              hero.visible
-                ? "opacity-100 translate-y-0 blur-0"
-                : "opacity-0 translate-y-6 blur-[4px]"
-            }`}
-          >
-            <p className="label-xs text-gold mb-6">Performance Training OS</p>
-
-            <h1 className="text-5xl sm:text-6xl md:text-[5rem] font-semibold tracking-[-0.04em] leading-[0.94] mb-8 max-w-3xl">
-              Strength, clarity,
-              <br />
-              and progress in one place.
-            </h1>
-
-            <p className="text-muted-foreground text-base md:text-lg max-w-xl mb-12 leading-relaxed">
-              A premium training dashboard built for intentional lifters. See your plan, session load,
-              and coaching cues without the clutter.
-            </p>
-
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <Link
-                to="/dashboard"
-                className="group inline-flex items-center gap-3 bg-gold text-background px-7 py-3.5 rounded-full text-sm font-medium hover:opacity-90 transition-all duration-200 active:scale-[0.97]"
-              >
-                Open Dashboard
-                <ArrowRight size={15} className="transition-transform duration-200 group-hover:translate-x-0.5" />
-              </Link>
-              <span className="text-xs text-muted-foreground tracking-wide">
-                No sign-up required
-              </span>
-            </div>
-          </div>
-
-          <div
-            className={`rounded-[2rem] surface-2 border border-border/30 p-6 md:p-8 transition-all duration-1000 delay-300 ease-out ${
+            className={`relative flex min-h-[74vh] flex-col items-center justify-start pt-0 transition-all duration-1000 ease-out md:pt-2 ${
               hero.visible
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-10"
             }`}
           >
-            <div className="rounded-[1.75rem] bg-background/80 border border-border/20 p-8">
-              <div className="flex items-center justify-between gap-4 mb-6">
-                <div>
-                  <p className="label-xs text-[hsl(var(--text-tertiary))] mb-2">Weekly snapshot</p>
-                  <h2 className="text-2xl font-semibold tracking-tight">Your next training window</h2>
+            <div className="relative mx-auto max-w-4xl text-center">
+              <p className="mb-8 text-[10px] font-medium uppercase tracking-[0.26em] text-[hsl(var(--text-secondary))]">
+                Built for structured lifting
+              </p>
+              <h1 className="text-[2.65rem] font-semibold leading-[0.9] tracking-[-0.06em] text-foreground sm:text-[3.7rem] md:text-[4.65rem]">
+                See your{" "}
+                <span className="relative inline-block px-2 pb-1">
+                  <span className="absolute inset-x-0 bottom-1.5 top-[54%] rounded-full bg-gold/5" />
+                  <span className="relative">next training week</span>
+                  <span className="absolute -right-6 -top-8 rounded-full border border-gold/20 bg-[rgba(184,147,66,0.84)] px-3 py-1 text-[10px] font-semibold tracking-[0.04em] text-background shadow-[0_6px_16px_rgba(0,0,0,0.14)] md:-right-10 md:-top-5">
+                    LiftOS
+                  </span>
+                </span>
+                <br />
+                before it starts.
+              </h1>
+              <p className="mx-auto mt-7 max-w-sm text-[13px] leading-6 text-muted-foreground md:text-[14px]">
+                Plan, workload, and session focus in one premium dashboard for lifters who want clarity without clutter.
+              </p>
+
+              <div className="mt-11 flex justify-center">
+                <div className="group relative inline-flex items-center overflow-hidden rounded-full border border-border/25 bg-[hsl(var(--surface-1))/0.68] p-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.12)]">
+                  <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(184,147,66,0.14),transparent_68%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                  <span className="pointer-events-none absolute -left-1/4 top-0 h-full w-1/3 skew-x-[-20deg] bg-white/12 opacity-0 blur-md transition-all duration-700 group-hover:left-[105%] group-hover:opacity-100" />
+                  <Link
+                    to="/dashboard"
+                    className="group inline-flex items-center gap-2.5 rounded-full bg-gold px-6 py-3 text-[13px] font-medium text-background transition-all duration-200 hover:opacity-90 active:scale-[0.97]"
+                  >
+                    Open Dashboard
+                    <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+                  </Link>
                 </div>
-                <span className="rounded-full bg-gold/10 px-3 py-1 text-[11px] font-semibold text-gold">Premium</span>
               </div>
+            </div>
 
-              <div className="grid grid-cols-1 gap-4 text-sm text-muted-foreground">
-                <div className="rounded-3xl bg-[hsl(var(--surface))] p-4 border border-border/20">
-                  <p className="text-xs uppercase tracking-[0.3em] text-[hsl(var(--text-tertiary))] mb-2">Strength grade</p>
-                  <p className="text-3xl font-semibold text-foreground tabular-nums">89</p>
-                  <p className="mt-2 leading-relaxed">A focused week with volume and recovery aligned to performance.</p>
+            <div className="pointer-events-none absolute inset-x-0 -bottom-72 flex justify-center px-4 md:-bottom-80 md:px-8">
+              <div className="relative h-80 w-full max-w-[78rem]">
+                <div className="absolute bottom-0 left-[-20%] hidden h-[26rem] w-[44rem] overflow-hidden rounded-[2rem] border border-border/18 bg-[linear-gradient(180deg,rgba(184,147,66,0.02),rgba(18,18,18,0.96)_18%)] opacity-76 shadow-[0_16px_34px_rgba(0,0,0,0.14)] 2xl:block">
+                  <div className="flex items-center justify-between border-b border-border/20 px-4 py-3">
+                    <span className="text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">
+                      Session Card
+                    </span>
+                    <span className="text-[10px] font-semibold text-gold">Today</span>
+                  </div>
+                  <div className="space-y-4 p-5">
+                    <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-1))] p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-[hsl(var(--text-tertiary))]">Workout</p>
+                      <p className="mt-2 text-lg font-semibold text-foreground">Upper Power</p>
+                      <p className="mt-2 text-sm text-muted-foreground">Bench, incline press, controlled accessories.</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">Sets</p>
+                        <p className="mt-2 text-xl font-semibold text-foreground">18</p>
+                      </div>
+                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">Focus</p>
+                        <p className="mt-2 text-xl font-semibold text-foreground">Tempo</p>
+                      </div>
+                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">Load</p>
+                        <p className="mt-2 text-xl font-semibold text-foreground">7.8</p>
+                      </div>
+                    </div>
+                    <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.5] p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="text-[10px] uppercase tracking-[0.2em] text-[hsl(var(--text-tertiary))]">Cue stack</span>
+                        <span className="text-[10px] font-semibold text-gold">3 ready</span>
+                      </div>
+                      <div className="space-y-2">
+                        {[
+                          "Control the eccentric on bench",
+                          "Pause briefly at the bottom",
+                          "Keep upper-back tension through every rep",
+                        ].map((cue) => (
+                          <div
+                            key={cue}
+                            className="rounded-[0.9rem] border border-border/20 bg-[hsl(var(--surface-1))/0.8] px-3 py-2 text-sm text-muted-foreground"
+                          >
+                            {cue}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="rounded-3xl bg-[hsl(var(--surface))] p-4 border border-border/20">
-                  <div className="flex items-center justify-between mb-3 gap-4">
-                    <span className="text-xs uppercase tracking-[0.3em] text-[hsl(var(--text-tertiary))]">Session focus</span>
-                    <span className="text-[11px] text-gold font-semibold">Power</span>
+                <div className="absolute bottom-0 right-[-20%] hidden h-[26rem] w-[44rem] overflow-hidden rounded-[2rem] border border-border/18 bg-[linear-gradient(180deg,rgba(184,147,66,0.02),rgba(18,18,18,0.96)_18%)] opacity-76 shadow-[0_16px_34px_rgba(0,0,0,0.14)] 2xl:block">
+                  <div className="flex items-center justify-between border-b border-border/20 px-4 py-3">
+                    <span className="text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">
+                      Readiness Panel
+                    </span>
+                    <span className="text-[10px] font-semibold text-gold">Live</span>
                   </div>
-                  <p className="text-lg font-semibold text-foreground">4 sessions</p>
-                  <p className="mt-2 leading-relaxed">Split structured around strength, speed, and recovery clarity.</p>
+                  <div className="space-y-4 p-5">
+                    <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-1))] p-4">
+                      <div className="flex items-end justify-between gap-4">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-[hsl(var(--text-tertiary))]">Readiness</p>
+                          <p className="mt-2 text-3xl font-semibold text-foreground">91%</p>
+                        </div>
+                        <span className="rounded-full bg-gold/10 px-3 py-1 text-[10px] font-semibold text-gold">Recovered</span>
+                      </div>
+                      <p className="mt-3 text-sm text-muted-foreground">Enough headroom to push top sets without guesswork.</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">HRV</p>
+                        <p className="mt-2 text-xl font-semibold text-foreground">74</p>
+                      </div>
+                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">Sleep</p>
+                        <p className="mt-2 text-xl font-semibold text-foreground">8.1h</p>
+                      </div>
+                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">Cues</p>
+                        <p className="mt-2 text-xl font-semibold text-foreground">3</p>
+                      </div>
+                    </div>
+                    <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.5] p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="text-[10px] uppercase tracking-[0.2em] text-[hsl(var(--text-tertiary))]">Recovery notes</span>
+                        <span className="text-[10px] font-semibold text-gold">Cleared</span>
+                      </div>
+                      <div className="space-y-2">
+                        {[
+                          "Resting heart rate back to baseline",
+                          "Upper body soreness minimal",
+                          "Heavy work approved for today",
+                        ].map((note) => (
+                          <div
+                            key={note}
+                            className="rounded-[0.9rem] border border-border/20 bg-[hsl(var(--surface-1))/0.8] px-3 py-2 text-sm text-muted-foreground"
+                          >
+                            {note}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="rounded-3xl bg-[hsl(var(--surface))] p-4 border border-border/20">
-                  <div className="flex items-center justify-between mb-3 gap-4">
-                    <span className="text-xs uppercase tracking-[0.3em] text-[hsl(var(--text-tertiary))]">Readiness</span>
-                    <span className="text-[11px] text-foreground/70">Next action</span>
+                <div className="absolute bottom-0 left-1/2 w-[99%] -translate-x-1/2 overflow-hidden rounded-[2.1rem] border border-border/25 bg-[linear-gradient(180deg,rgba(184,147,66,0.04),rgba(20,20,20,0.98)_14%)] shadow-[0_24px_64px_rgba(0,0,0,0.22)] md:w-[84%]">
+                  <div className="absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(184,147,66,0.18),transparent)]" />
+                  <div className="absolute inset-x-[18%] -top-6 h-10 rounded-full bg-[rgba(184,147,66,0.05)] blur-2xl" />
+                  <div className="flex items-center justify-between border-b border-border/20 px-5 py-4 md:px-7">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-gold/65" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-border/80" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-border/80" />
+                    </div>
+                    <span className="text-[11px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">
+                      LiftOS Dashboard
+                    </span>
                   </div>
-                  <p className="text-lg font-semibold text-foreground">Push day</p>
-                  <p className="mt-2 leading-relaxed">Move with intention and keep tempo controlled on barbell work.</p>
+
+                  <div className="grid gap-5 p-5 md:grid-cols-[1.18fr_0.82fr] md:p-7">
+                    <div className="rounded-[1.55rem] border border-border/20 bg-[hsl(var(--surface-1))] p-5 md:p-6">
+                      <div className="mb-5 flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--text-tertiary))]">Weekly overview</p>
+                          <p className="mt-2 text-xl font-semibold tracking-tight text-foreground">Upper strength emphasis</p>
+                        </div>
+                        <span className="rounded-full bg-gold/10 px-3 py-1 text-[11px] font-semibold text-gold">Week 06</span>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-3">
+                        {heroStats.map((item) => (
+                          <div
+                            key={item.label}
+                            className="rounded-[1.25rem] border border-border/20 bg-[hsl(var(--surface-2))/0.58] p-4"
+                          >
+                            <p className="text-[11px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">
+                              {item.label}
+                            </p>
+                            <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
+                              {item.value}
+                            </p>
+                            <p className="mt-2 text-sm text-muted-foreground">{item.detail}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-5 rounded-[1.35rem] border border-border/20 bg-[hsl(var(--surface-2))/0.5] p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <span className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--text-tertiary))]">Progression trend</span>
+                          <span className="text-xs font-semibold text-gold">Stable</span>
+                        </div>
+                        <Sparkline />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-5">
+                      <div className="rounded-[1.55rem] border border-border/20 bg-[hsl(var(--surface-1))] p-5">
+                        <p className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--text-tertiary))]">Session cues</p>
+                        <div className="mt-4 space-y-3">
+                          {[
+                            "Tempo controlled on barbell work",
+                            "Rest discipline between top sets",
+                            "Keep upper back tension through lockout",
+                          ].map((cue) => (
+                            <div
+                              key={cue}
+                              className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.52] px-4 py-3 text-sm text-muted-foreground"
+                            >
+                              {cue}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-[1.55rem] border border-border/20 bg-[hsl(var(--surface-1))] p-5">
+                        <div className="mb-3 flex items-center justify-between">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--text-tertiary))]">Training block</p>
+                            <p className="mt-2 text-lg font-semibold text-foreground">4 sessions aligned</p>
+                          </div>
+                          <span className="text-xs font-semibold text-gold">Ready</span>
+                        </div>
+                        <p className="text-sm leading-6 text-muted-foreground">
+                          Programming, weekly load, and next-session execution live in one focused place.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -147,7 +313,7 @@ const Landing = () => {
       </section>
 
       {/* ── METRICS ── */}
-      <section ref={metrics.ref} className="py-32 md:py-44 px-6 md:px-12">
+      <section ref={metrics.ref} className="px-6 py-40 md:px-12 md:py-48">
         <div className="max-w-6xl mx-auto">
           <div
             className={`transition-all duration-700 ease-out ${
@@ -156,49 +322,62 @@ const Landing = () => {
                 : "opacity-0 translate-y-6 blur-[4px]"
             }`}
           >
-            <p className="label-xs mb-16">What you measure</p>
+            <div className="grid gap-8 border-t border-border/30 pt-10 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] md:items-end md:gap-14 md:pt-14">
+              <div className="max-w-2xl">
+                <p className="label-xs mb-4">What the platform surfaces</p>
+                <h2 className="max-w-xl text-[2.15rem] font-semibold leading-[1.04] tracking-tight md:text-[3rem]">
+                  A cleaner view of what to do next.
+                </h2>
+              </div>
+              <p className="max-w-md text-sm leading-7 text-muted-foreground md:justify-self-end md:text-base">
+                Your week stays legible at a glance: workload, priorities, and the next session.
+              </p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-16 md:gap-24">
+          <div className="mt-16 grid grid-cols-1 gap-12 sm:grid-cols-3 sm:gap-10 md:mt-20 md:gap-16">
             {[
               {
                 metric: "8.4",
                 unit: "/ 10",
-                title: "Strain Score",
-                desc: "Cumulative cardiovascular load measured across every session.",
+                title: "Weekly strain",
+                desc: "Know how hard the week is trending before it gets messy.",
               },
               {
                 metric: "247",
                 unit: "min",
-                title: "Weekly Volume",
-                desc: "Total training duration tracked with precision, not guesswork.",
+                title: "Planned volume",
+                desc: "See how the block is distributed without opening five views.",
               },
               {
-                metric: "91",
-                unit: "%",
-                title: "Recovery Index",
-                desc: "Sleep, HRV, and readiness distilled into a single metric.",
+                metric: "3",
+                unit: " cues",
+                title: "Session priorities",
+                desc: "Start each lift with the few details that actually matter.",
               },
             ].map((item, i) => (
               <div
                 key={item.title}
-                className={`transition-all duration-700 ease-out ${
+                className={`relative transition-all duration-700 ease-out ${
                   metrics.visible
                     ? "opacity-100 translate-y-0 blur-0"
                     : "opacity-0 translate-y-6 blur-[4px]"
                 }`}
                 style={{ transitionDelay: `${i * 100 + 150}ms` }}
               >
-                <div className="flex items-baseline gap-1.5 mb-4">
-                  <span className="text-4xl md:text-5xl font-semibold tracking-tight tabular-nums">
+                <div className="mb-6 flex items-baseline gap-1.5">
+                  <span className="text-[2.75rem] font-semibold tracking-tight tabular-nums text-foreground md:text-[3.5rem]">
                     {item.metric}
                   </span>
                   <span className="text-sm text-muted-foreground">{item.unit}</span>
                 </div>
-                <p className="text-sm font-medium mb-2">{item.title}</p>
-                <p className="text-sm text-muted-foreground leading-relaxed max-w-xs">
+                <p className="mb-3 text-sm font-medium tracking-[0.01em] text-foreground">{item.title}</p>
+                <p className="max-w-[15rem] text-sm leading-7 text-muted-foreground">
                   {item.desc}
                 </p>
+                {i < 2 ? (
+                  <div className="mt-8 hidden h-px w-full bg-border/30 sm:block" />
+                ) : null}
               </div>
             ))}
           </div>
