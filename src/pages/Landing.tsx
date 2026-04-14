@@ -117,39 +117,46 @@ const Landing = () => {
 
             <div className="pointer-events-none absolute inset-x-0 -bottom-72 flex justify-center px-4 md:-bottom-80 md:px-8">
               <div className="relative h-80 w-full max-w-[78rem]">
-                <div className="absolute bottom-0 left-[-20%] hidden h-[26rem] w-[44rem] overflow-hidden rounded-[2rem] border border-border/18 bg-[linear-gradient(180deg,rgba(184,147,66,0.02),rgba(18,18,18,0.96)_18%)] opacity-76 shadow-[0_16px_34px_rgba(0,0,0,0.14)] 2xl:block">
-                  <div className="flex items-center justify-between border-b border-border/20 px-4 py-3">
-                    <span className="text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">
+                <div className="absolute -bottom-[50px] left-[-20%] hidden h-[33rem] w-[44rem] overflow-hidden rounded-[2rem] border border-border/55 bg-[hsl(var(--surface-1))] shadow-[0_24px_64px_rgba(0,0,0,0.22)] 2xl:block">
+                  <div className="absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(184,147,66,0.18),transparent)]" />
+                  <div className="flex items-center justify-between border-b border-border/20 px-5 py-4">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-gold/65" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-border/80" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-border/80" />
+                    </div>
+                    <span className="text-[11px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">
                       Session Card
                     </span>
-                    <span className="text-[10px] font-semibold text-gold">Today</span>
                   </div>
-                  <div className="space-y-4 p-5">
-                    <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-1))] p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-[hsl(var(--text-tertiary))]">Workout</p>
-                      <p className="mt-2 text-lg font-semibold text-foreground">Upper Power</p>
-                      <p className="mt-2 text-sm text-muted-foreground">Bench, incline press, controlled accessories.</p>
+                  <div className="space-y-5 p-5">
+                    <div className="rounded-[1.25rem] border border-border/20 bg-[hsl(var(--surface-1))] p-4">
+                      <div className="mb-3 flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--text-tertiary))]">Workout</p>
+                          <p className="mt-2 text-lg font-semibold text-foreground">Upper Power</p>
+                        </div>
+                        <span className="rounded-full bg-gold/10 px-2.5 py-1 text-[10px] font-semibold text-gold">Today</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">Bench, incline press, controlled accessories.</p>
                     </div>
                     <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">Sets</p>
-                        <p className="mt-2 text-xl font-semibold text-foreground">18</p>
+                      <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.58] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">Sets</p>
+                        <p className="mt-2.5 text-xl font-semibold text-foreground">18</p>
                       </div>
-                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">Focus</p>
-                        <p className="mt-2 text-xl font-semibold text-foreground">Tempo</p>
+                      <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.58] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">Focus</p>
+                        <p className="mt-2.5 text-xl font-semibold text-foreground">Tempo</p>
                       </div>
-                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">Load</p>
-                        <p className="mt-2 text-xl font-semibold text-foreground">7.8</p>
+                      <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.58] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">Load</p>
+                        <p className="mt-2.5 text-xl font-semibold text-foreground">7.8</p>
                       </div>
                     </div>
-                    <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.5] p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-[0.2em] text-[hsl(var(--text-tertiary))]">Cue stack</span>
-                        <span className="text-[10px] font-semibold text-gold">3 ready</span>
-                      </div>
-                      <div className="space-y-2">
+                    <div className="rounded-[1.25rem] border border-border/20 bg-[hsl(var(--surface-2))/0.5] p-4">
+                      <p className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--text-tertiary))]">Cue stack</p>
+                      <div className="mt-3 space-y-2">
                         {[
                           "Control the eccentric on bench",
                           "Pause briefly at the bottom",
@@ -157,7 +164,7 @@ const Landing = () => {
                         ].map((cue) => (
                           <div
                             key={cue}
-                            className="rounded-[0.9rem] border border-border/20 bg-[hsl(var(--surface-1))/0.8] px-3 py-2 text-sm text-muted-foreground"
+                            className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.52] px-3 py-2 text-sm text-muted-foreground"
                           >
                             {cue}
                           </div>
@@ -167,44 +174,91 @@ const Landing = () => {
                   </div>
                 </div>
 
-                <div className="absolute bottom-0 right-[-20%] hidden h-[26rem] w-[44rem] overflow-hidden rounded-[2rem] border border-border/18 bg-[linear-gradient(180deg,rgba(184,147,66,0.02),rgba(18,18,18,0.96)_18%)] opacity-76 shadow-[0_16px_34px_rgba(0,0,0,0.14)] 2xl:block">
-                  <div className="flex items-center justify-between border-b border-border/20 px-4 py-3">
-                    <span className="text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">
+                <div className="absolute -bottom-[50px] right-[-20%] hidden h-[33rem] w-[44rem] overflow-hidden rounded-[2rem] border border-border/55 bg-[hsl(var(--surface-1))] shadow-[0_24px_64px_rgba(0,0,0,0.22)] 2xl:block">
+                  <div className="absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(184,147,66,0.18),transparent)]" />
+                  <div className="flex items-center justify-between border-b border-border/20 px-5 py-4">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-gold/65" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-border/80" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-border/80" />
+                    </div>
+                    <span className="text-[11px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">
                       Readiness Panel
                     </span>
-                    <span className="text-[10px] font-semibold text-gold">Live</span>
                   </div>
-                  <div className="space-y-4 p-5">
-                    <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-1))] p-4">
-                      <div className="flex items-end justify-between gap-4">
+                  <div className="space-y-5 p-5">
+                    <div className="rounded-[1.25rem] border border-border/20 bg-[hsl(var(--surface-1))] p-4">
+                      <div className="mb-3 flex items-end justify-between gap-4">
                         <div>
-                          <p className="text-xs uppercase tracking-[0.2em] text-[hsl(var(--text-tertiary))]">Readiness</p>
+                          <p className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--text-tertiary))]">Readiness</p>
                           <p className="mt-2 text-3xl font-semibold text-foreground">91%</p>
                         </div>
-                        <span className="rounded-full bg-gold/10 px-3 py-1 text-[10px] font-semibold text-gold">Recovered</span>
+                        <span className="rounded-full bg-gold/10 px-2.5 py-1 text-[10px] font-semibold text-gold">Recovered</span>
                       </div>
-                      <p className="mt-3 text-sm text-muted-foreground">Enough headroom to push top sets without guesswork.</p>
+                      <p className="text-sm text-muted-foreground">Enough headroom to push top sets without guesswork.</p>
                     </div>
                     <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">HRV</p>
-                        <p className="mt-2 text-xl font-semibold text-foreground">74</p>
+                      <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.58] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">HRV</p>
+                        <p className="mt-2.5 text-xl font-semibold text-foreground">74</p>
                       </div>
-                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">Sleep</p>
-                        <p className="mt-2 text-xl font-semibold text-foreground">8.1h</p>
+                      <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.58] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">Sleep</p>
+                        <p className="mt-2.5 text-xl font-semibold text-foreground">8.1h</p>
                       </div>
-                      <div className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.55] p-3">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--text-tertiary))]">Cues</p>
-                        <p className="mt-2 text-xl font-semibold text-foreground">3</p>
+                      <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.58] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">Cues</p>
+                        <p className="mt-2.5 text-xl font-semibold text-foreground">3</p>
                       </div>
                     </div>
-                    <div className="rounded-[1.1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.5] p-4">
+                    <div className="rounded-[1.25rem] border border-border/20 bg-[hsl(var(--surface-2))/0.5] p-4">
                       <div className="mb-3 flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-[0.2em] text-[hsl(var(--text-tertiary))]">Recovery notes</span>
-                        <span className="text-[10px] font-semibold text-gold">Cleared</span>
+                        <p className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--text-tertiary))]">Recovery trend</p>
+                        <span className="text-[10px] font-semibold text-gold">Upward</span>
                       </div>
-                      <div className="space-y-2">
+                      <div className="rounded-[1rem] border border-border/15 bg-[hsl(var(--surface-1))/0.45] p-3.5">
+                        <div className="grid grid-cols-[auto_1fr] items-center gap-4">
+                          <div className="relative h-24 w-24 shrink-0">
+                            <div
+                              className="h-full w-full rounded-full border border-gold/10"
+                              style={{
+                                background:
+                                  "conic-gradient(rgba(184,147,66,0.92) 0deg 198deg, rgba(184,147,66,0.56) 198deg 302deg, rgba(184,147,66,0.22) 302deg 360deg)",
+                              }}
+                            />
+                            <div className="absolute inset-[18%] rounded-full border border-border/20 bg-[hsl(var(--surface-1))]" />
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                              <span className="text-lg font-semibold tracking-tight text-foreground">91%</span>
+                              <span className="text-[9px] uppercase tracking-[0.22em] text-[hsl(var(--text-tertiary))]">
+                                Ready
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2.5">
+                            {[
+                              { label: "Recovered", value: "55%", tone: "bg-gold/90" },
+                              { label: "Stable", value: "29%", tone: "bg-gold/55" },
+                              { label: "Monitor", value: "16%", tone: "bg-gold/25" },
+                            ].map((item) => (
+                              <div
+                                key={item.label}
+                                className="flex items-center justify-between rounded-[0.95rem] border border-border/10 bg-[hsl(var(--surface-2))/0.38] px-3 py-2"
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <span className={`h-2.5 w-2.5 rounded-full ${item.tone}`} />
+                                  <span className="text-sm text-muted-foreground">{item.label}</span>
+                                </div>
+                                <span className="text-xs font-medium text-foreground">{item.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-[1.25rem] border border-border/20 bg-[hsl(var(--surface-2))/0.5] p-4">
+                      <p className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--text-tertiary))]">Recovery notes</p>
+                      <div className="mt-3 space-y-2">
                         {[
                           "Resting heart rate back to baseline",
                           "Upper body soreness minimal",
@@ -212,9 +266,29 @@ const Landing = () => {
                         ].map((note) => (
                           <div
                             key={note}
-                            className="rounded-[0.9rem] border border-border/20 bg-[hsl(var(--surface-1))/0.8] px-3 py-2 text-sm text-muted-foreground"
+                            className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-2))/0.52] px-3 py-2 text-sm text-muted-foreground"
                           >
                             {note}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-[1.25rem] border border-border/20 bg-[hsl(var(--surface-2))/0.5] p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-xs uppercase tracking-[0.24em] text-[hsl(var(--text-tertiary))]">Coach clearance</p>
+                        <span className="text-[10px] font-semibold text-gold">Approved</span>
+                      </div>
+                      <div className="space-y-2">
+                        {[
+                          "Heavy pressing cleared",
+                          "Accessory volume unchanged",
+                          "No fatigue flag for upper body",
+                        ].map((item) => (
+                          <div
+                            key={item}
+                            className="rounded-[1rem] border border-border/20 bg-[hsl(var(--surface-1))/0.8] px-3 py-2 text-sm text-muted-foreground"
+                          >
+                            {item}
                           </div>
                         ))}
                       </div>
@@ -222,7 +296,7 @@ const Landing = () => {
                   </div>
                 </div>
 
-                <div className="absolute bottom-0 left-1/2 w-[99%] -translate-x-1/2 overflow-hidden rounded-[2.1rem] border border-border/25 bg-[linear-gradient(180deg,rgba(184,147,66,0.04),rgba(20,20,20,0.98)_14%)] shadow-[0_24px_64px_rgba(0,0,0,0.22)] md:w-[84%]">
+                <div className="absolute bottom-0 left-1/2 w-[99%] -translate-x-1/2 overflow-hidden rounded-[2.1rem] border border-border/55 bg-[hsl(var(--surface-1))] shadow-[0_24px_64px_rgba(0,0,0,0.22)] md:w-[84%]">
                   <div className="absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(184,147,66,0.18),transparent)]" />
                   <div className="absolute inset-x-[18%] -top-6 h-10 rounded-full bg-[rgba(184,147,66,0.05)] blur-2xl" />
                   <div className="flex items-center justify-between border-b border-border/20 px-5 py-4 md:px-7">
