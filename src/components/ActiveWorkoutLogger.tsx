@@ -4,6 +4,8 @@ import { Check, Clock3, Dumbbell, Plus, Timer, Trophy } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
+const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
+
 const cloneExercises = (exercises: WorkoutExercise[]) =>
   exercises.map((exercise) => ({
     ...exercise,
@@ -27,6 +29,19 @@ const ActiveWorkoutLogger = ({ template }: { template: WorkoutTemplate }) => {
       duration: 61,
     };
   }, [exercises]);
+
+  const updateExerciseComplete = (exerciseId: string, completed: boolean) => {
+    setExercises((current) =>
+      current.map((exercise) =>
+        exercise.id === exerciseId
+          ? {
+              ...exercise,
+              sets: exercise.sets.map((set) => ({ ...set, completed })),
+            }
+          : exercise,
+      ),
+    );
+  };
 
   const updateSet = (
     exerciseId: string,
@@ -64,19 +79,6 @@ const ActiveWorkoutLogger = ({ template }: { template: WorkoutTemplate }) => {
           : exercise,
       ),
     );
-  };
-
-  const addExercise = () => {
-    setExercises((current) => [
-      ...current,
-      {
-        id: `exercise-${Date.now()}`,
-        name: "Cable Triceps Pressdown",
-        category: "Triceps",
-        target: "Pump work",
-        sets: [{ id: `set-${Date.now()}`, reps: 12, weight: 55 }],
-      },
-    ]);
   };
 
   if (finished) {
@@ -121,6 +123,7 @@ const ActiveWorkoutLogger = ({ template }: { template: WorkoutTemplate }) => {
             </div>
             <Link
               to="/dashboard"
+              onClick={() => window.localStorage.removeItem(ACTIVE_WORKOUT_STORAGE_KEY)}
               className="mt-5 inline-flex w-full items-center justify-center rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-background transition hover:brightness-110"
             >
               View dashboard
@@ -162,24 +165,37 @@ const ActiveWorkoutLogger = ({ template }: { template: WorkoutTemplate }) => {
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="mb-2 flex items-center gap-2">
-                    <Dumbbell size={16} className="text-gold" />
+                    <Dumbbell className="h-4 w-4 shrink-0 translate-x-[0.5px] translate-y-[0.5px] text-gold" strokeWidth={1.9} />
                     <span className="text-xs text-[hsl(var(--text-tertiary))]">{exercise.category}</span>
                   </div>
                   <h2 className="text-base font-semibold">{exercise.name}</h2>
                   <p className="mt-1 text-xs text-[hsl(var(--text-tertiary))]">{exercise.target}</p>
                 </div>
-                {exercise.notes && <p className="max-w-sm text-xs leading-relaxed text-[hsl(var(--text-secondary))]">{exercise.notes}</p>}
+                <div className="flex flex-col items-start gap-3 sm:items-end">
+                  {exercise.notes && <p className="max-w-sm text-xs leading-relaxed text-[hsl(var(--text-secondary))]">{exercise.notes}</p>}
+                  <button
+                    type="button"
+                    onClick={() => updateExerciseComplete(exercise.id, !exercise.sets.every((set) => set.completed))}
+                    className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-gold/40 ${
+                      exercise.sets.every((set) => set.completed)
+                        ? "border border-gold bg-gold text-background"
+                        : "border border-border/20 text-[hsl(var(--text-secondary))] hover:border-gold hover:text-foreground"
+                    }`}
+                  >
+                    <Check size={15} />
+                    {exercise.sets.every((set) => set.completed) ? "Completed" : "Done"}
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
-                <div className="grid grid-cols-[44px_1fr_1fr_76px] gap-2 px-2 text-[11px] uppercase tracking-widest text-[hsl(var(--text-tertiary))]">
+                <div className="grid grid-cols-[44px_1fr_1fr] gap-2 px-2 text-[11px] uppercase tracking-widest text-[hsl(var(--text-tertiary))]">
                   <span>Set</span>
                   <span>Reps</span>
                   <span>Weight</span>
-                  <span className="text-right">Done</span>
                 </div>
                 {exercise.sets.map((set, setIndex) => (
-                  <div key={set.id} className="grid grid-cols-[44px_1fr_1fr_76px] items-center gap-2">
+                  <div key={set.id} className="grid grid-cols-[44px_1fr_1fr] items-center gap-2">
                     <span className="text-sm text-[hsl(var(--text-tertiary))]">{setIndex + 1}</span>
                     <input
                       type="number"
@@ -193,18 +209,6 @@ const ActiveWorkoutLogger = ({ template }: { template: WorkoutTemplate }) => {
                       onChange={(event) => updateSet(exercise.id, set.id, "weight", Number(event.target.value))}
                       className="h-11 rounded-lg border border-border/20 surface-3 px-3 text-sm outline-none focus:border-gold"
                     />
-                    <button
-                      type="button"
-                      aria-label={`Mark set ${setIndex + 1} complete`}
-                      onClick={() => updateSet(exercise.id, set.id, "completed", !set.completed)}
-                      className={`ml-auto inline-flex h-11 w-11 items-center justify-center rounded-lg border transition ${
-                        set.completed
-                          ? "border-gold bg-gold text-background"
-                          : "border-border/20 text-[hsl(var(--text-tertiary))] hover:border-gold hover:text-gold"
-                      }`}
-                    >
-                      <Check size={16} />
-                    </button>
                   </div>
                 ))}
               </div>
@@ -219,15 +223,6 @@ const ActiveWorkoutLogger = ({ template }: { template: WorkoutTemplate }) => {
               </button>
             </article>
           ))}
-
-          <button
-            type="button"
-            onClick={addExercise}
-            className="inline-flex items-center gap-2 rounded-lg border border-border/20 px-4 py-3 text-sm text-[hsl(var(--text-secondary))] transition hover:border-gold hover:text-foreground"
-          >
-            <Plus size={16} />
-            Add exercise
-          </button>
         </section>
 
         <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">

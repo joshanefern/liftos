@@ -9,6 +9,7 @@ import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import Workouts from "@/pages/Workouts";
 import ActiveWorkout from "@/pages/ActiveWorkout";
+import Calander from "@/pages/Calander";
 import Progress from "@/pages/Progress";
 import Coach from "@/pages/Coach";
 import SignIn from "@/pages/auth/SignIn";
@@ -66,6 +67,10 @@ const App = () => {
               <Route
                 path="/workouts/active"
                 element={<AppShell><ActiveWorkout /></AppShell>}
+              />
+              <Route
+                path="/calander"
+                element={<AppShell><Calander /></AppShell>}
               />
               <Route
                 path="/progress"

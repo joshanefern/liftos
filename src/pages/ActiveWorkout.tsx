@@ -1,17 +1,64 @@
 import ActiveWorkoutLogger from "@/components/ActiveWorkoutLogger";
-import { WorkoutTemplate, workoutTemplates } from "@/data/liftosMock";
+import { WorkoutTemplate } from "@/data/liftosMock";
+import { Dumbbell } from "lucide-react";
+import { Link } from "react-router-dom";
 
-const getActiveTemplate = (): WorkoutTemplate => {
-  if (typeof window === "undefined") return workoutTemplates[0];
+const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
+
+const getActiveTemplate = (): WorkoutTemplate | null => {
+  if (typeof window === "undefined") return null;
 
   try {
-    const saved = window.localStorage.getItem("liftos_active_workout_template");
-    return saved ? (JSON.parse(saved) as WorkoutTemplate) : workoutTemplates[0];
+    const saved = window.localStorage.getItem(ACTIVE_WORKOUT_STORAGE_KEY);
+    return saved ? (JSON.parse(saved) as WorkoutTemplate) : null;
   } catch {
-    return workoutTemplates[0];
+    return null;
   }
 };
 
-const ActiveWorkout = () => <ActiveWorkoutLogger template={getActiveTemplate()} />;
+const ActiveWorkout = () => {
+  const template = getActiveTemplate();
+
+  if (!template) {
+    return (
+      <div className="min-h-screen max-w-7xl p-6 md:p-10 lg:p-12">
+        <div className="mb-8 animate-reveal-up">
+          <p className="label-xs mb-2">Workout Log</p>
+          <h1 className="heading-lg">No workout started</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
+            Start a workout from your library to begin logging sets, reps, and weight.
+          </p>
+        </div>
+
+        <section className="relative overflow-hidden border-y border-border/20 py-16 animate-reveal-up md:py-20">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 md:block">
+            <Dumbbell
+              className="h-40 w-40 translate-x-[2px] translate-y-[2px] text-[hsl(var(--text-tertiary))]/[0.05]"
+              strokeWidth={1.25}
+            />
+          </div>
+          <div className="relative mx-auto flex max-w-xl flex-col items-center text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-border/20 bg-background/30">
+              <Dumbbell className="h-[18px] w-[18px] translate-x-[0.5px] translate-y-[0.5px] text-gold" strokeWidth={1.9} />
+            </div>
+            <p className="label-xs mt-5 mb-2">Workout Log</p>
+            <h2 className="text-xl font-semibold tracking-tight">No workout started</h2>
+            <p className="mt-3 max-w-md text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
+              Start a routine from your workout library and this page will turn into your live workout log.
+            </p>
+            <Link
+              to="/workouts"
+              className="mt-6 inline-flex items-center justify-center rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-background transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-gold/60"
+            >
+              Go to workouts
+            </Link>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  return <ActiveWorkoutLogger template={template} />;
+};
 
 export default ActiveWorkout;

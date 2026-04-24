@@ -1,4 +1,4 @@
-import { LayoutDashboard, Dumbbell, TrendingUp, Sparkles, ChevronLeft, PlayCircle } from "lucide-react";
+import { LayoutDashboard, Dumbbell, TrendingUp, Sparkles, ChevronLeft, PlayCircle, CalendarDays } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useSidebarState } from "@/App";
 
@@ -6,6 +6,7 @@ const navItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Workouts", url: "/workouts", icon: Dumbbell },
   { title: "Log", url: "/workouts/active", icon: PlayCircle },
+  { title: "Calander", url: "/calander", icon: CalendarDays },
   { title: "Progress", url: "/progress", icon: TrendingUp },
   { title: "Coach", url: "/coach", icon: Sparkles },
 ];

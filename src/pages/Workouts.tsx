@@ -6,8 +6,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { WorkoutTemplate } from "@/data/liftosMock";
-import { Check, Dumbbell, Layers, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, Dumbbell, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 type ExerciseDraft = {
   id: string;
@@ -40,6 +41,7 @@ const decimalInput = (value: string) => {
 const toInteger = (value: string, fallback: number) => Number.parseInt(value, 10) || fallback;
 
 const toDecimal = (value: string) => Number.parseFloat(value) || 0;
+const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
 
 const createExerciseDraftFromTemplate = (exercise: WorkoutTemplate["exercises"][number]): ExerciseDraft => {
   const sets = exercise.sets.length;
@@ -58,6 +60,7 @@ const createExerciseDraftFromTemplate = (exercise: WorkoutTemplate["exercises"][
 };
 
 const Workouts = () => {
+  const navigate = useNavigate();
   const [builderOpen, setBuilderOpen] = useState(false);
   const [savedWorkouts, setSavedWorkouts] = useState<WorkoutTemplate[]>([]);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
@@ -112,6 +115,11 @@ const Workouts = () => {
     setSavedWorkouts((current) => current.filter((workout) => workout.id !== workoutId));
   };
 
+  const startWorkout = (workout: WorkoutTemplate) => {
+    window.localStorage.setItem(ACTIVE_WORKOUT_STORAGE_KEY, JSON.stringify(workout));
+    navigate("/workouts/active");
+  };
+
   const addExercise = () => {
     setExercises((current) => [...current, createExerciseDraft()]);
   };
@@ -140,7 +148,7 @@ const Workouts = () => {
         return {
           id: exercise.id,
           name: exercise.name.trim(),
-          category: "Custom",
+          category: workoutName.trim(),
           target: exercise.decideLater
             ? "Decide sets, reps, and weight while logging"
             : `${targetSets} sets x ${targetReps} reps at ${targetWeight || "bodyweight/TBD"} lb`,
@@ -178,7 +186,7 @@ const Workouts = () => {
           onClick={openBuilder}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-5 py-3 text-sm font-semibold text-background transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-gold/60"
         >
-          <Dumbbell size={17} />
+          <Dumbbell className="h-4 w-4 shrink-0 translate-x-[0.5px] translate-y-[0.5px]" strokeWidth={1.9} />
           New workout
         </button>
       </div>
@@ -192,7 +200,7 @@ const Workouts = () => {
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div>
                     <p className="text-base font-semibold">{workout.name}</p>
-                    <p className="mt-1 text-xs text-[hsl(var(--text-tertiary))]">Custom workout</p>
+                    <p className="mt-1 text-xs text-[hsl(var(--text-tertiary))]">Ready to start</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -224,23 +232,43 @@ const Workouts = () => {
                     </span>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => startWorkout(workout)}
+                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-background transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-gold/60"
+                >
+                  <Dumbbell className="h-4 w-4 shrink-0 translate-x-[0.5px] translate-y-[0.5px]" strokeWidth={1.9} />
+                  Start workout
+                </button>
               </article>
             );
           })}
         </section>
       ) : (
-        <section className="relative min-h-[340px] overflow-hidden py-12 animate-reveal-up">
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <Layers size={180} className="text-[hsl(var(--text-tertiary))]/[0.06]" strokeWidth={1} />
+        <section className="relative overflow-hidden border-y border-border/20 py-16 animate-reveal-up md:py-20">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 md:block">
+            <Dumbbell
+              className="h-40 w-40 translate-x-[2px] translate-y-[2px] text-[hsl(var(--text-tertiary))]/[0.05]"
+              strokeWidth={1.25}
+            />
           </div>
-          <div className="relative flex min-h-[340px] flex-col items-center justify-center text-center">
+          <div className="relative mx-auto flex max-w-xl flex-col items-center text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-border/20 bg-background/30">
-              <Dumbbell size={20} className="text-gold" />
+              <Dumbbell className="h-[18px] w-[18px] translate-x-[0.5px] translate-y-[0.5px] text-gold" strokeWidth={1.9} />
             </div>
-            <h2 className="mt-5 text-lg font-semibold">No workouts yet</h2>
-            <p className="mt-2 max-w-sm text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
-              Create your first routine to start building reusable templates.
+            <p className="label-xs mt-5 mb-2">Workout Library</p>
+            <h2 className="text-xl font-semibold tracking-tight">No workouts yet</h2>
+            <p className="mt-3 max-w-md text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
+              Create your first routine and it will show up here ready to edit, start, or reuse.
             </p>
+            <button
+              type="button"
+              onClick={openBuilder}
+              className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-background transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-gold/60"
+            >
+              <Plus size={16} />
+              Create workout
+            </button>
           </div>
         </section>
       )}
@@ -251,7 +279,7 @@ const Workouts = () => {
             <DialogHeader className="pr-9">
               <div className="flex items-start gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gold/30 bg-gold/10">
-                  <Dumbbell size={19} className="text-gold" />
+                  <Dumbbell className="h-[18px] w-[18px] translate-x-[0.5px] translate-y-[0.5px] text-gold" strokeWidth={1.9} />
                 </div>
                 <div className="min-w-0">
                   <DialogTitle className="text-lg md:text-xl">{editingWorkoutId ? "Edit Workout" : "Create Workout"}</DialogTitle>
@@ -310,7 +338,7 @@ const Workouts = () => {
                   {exercises.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-border/40 bg-background/35 p-6 text-center">
                       <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-border/20 bg-[hsl(var(--surface-3))]">
-                        <Dumbbell size={18} className="text-gold" />
+                        <Dumbbell className="h-4 w-4 translate-x-[0.5px] translate-y-[0.5px] text-gold" strokeWidth={1.9} />
                       </div>
                       <p className="text-sm font-semibold">No exercises added yet.</p>
                       <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
