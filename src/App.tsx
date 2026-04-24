@@ -8,8 +8,13 @@ import AppSidebar from "@/components/AppSidebar";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import Workouts from "@/pages/Workouts";
+import ActiveWorkout from "@/pages/ActiveWorkout";
 import Progress from "@/pages/Progress";
 import Coach from "@/pages/Coach";
+import SignIn from "@/pages/auth/SignIn";
+import CreateAccount from "@/pages/auth/CreateAccount";
+import ForgotPassword from "@/pages/auth/ForgotPassword";
+import Onboarding from "@/pages/auth/Onboarding";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,8 +33,9 @@ const AppShell = ({ children }: { children: React.ReactNode }) => {
     <div className="flex min-h-screen w-full">
       <AppSidebar />
       <main
-        className="flex-1 transition-all duration-300 ease-out"
-        style={{ marginLeft: collapsed ? 68 : 220 }}
+        className={`flex-1 transition-all duration-300 ease-out ${
+          collapsed ? "ml-[68px]" : "ml-[68px] md:ml-[220px]"
+        }`}
       >
         {children}
       </main>
@@ -58,6 +64,10 @@ const App = () => {
                 element={<AppShell><Workouts /></AppShell>}
               />
               <Route
+                path="/workouts/active"
+                element={<AppShell><ActiveWorkout /></AppShell>}
+              />
+              <Route
                 path="/progress"
                 element={<AppShell><Progress /></AppShell>}
               />
@@ -65,6 +75,10 @@ const App = () => {
                 path="/coach"
                 element={<AppShell><Coach /></AppShell>}
               />
+              <Route path="/sign-in" element={<SignIn />} />
+              <Route path="/create-account" element={<CreateAccount />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/onboarding" element={<Onboarding />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

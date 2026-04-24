@@ -11,7 +11,13 @@ const data = [
   { day: "Sun", score: 82 },
 ];
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+type WeeklyTooltipProps = {
+  active?: boolean;
+  payload?: Array<{ value?: string | number }>;
+  label?: string | number;
+};
+
+const CustomTooltip = ({ active, payload, label }: WeeklyTooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="surface-2 rounded-lg px-3 py-2 border border-border/50 shadow-lg">
