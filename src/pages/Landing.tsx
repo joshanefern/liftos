@@ -46,10 +46,10 @@ const LandingNav = () => (
         LIFTOS
       </span>
       <Link
-        to="/dashboard"
+        to="/sign-in"
         className="text-[11px] tracking-[0.2em] text-[hsl(var(--text-secondary))] transition-colors duration-200 hover:text-foreground"
       >
-        Open App →
+        Create Account / Sign In
       </Link>
     </div>
   </nav>
@@ -105,10 +105,10 @@ const Landing = () => {
                   <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(184,147,66,0.14),transparent_68%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                   <span className="pointer-events-none absolute -left-1/4 top-0 h-full w-1/3 skew-x-[-20deg] bg-white/12 opacity-0 blur-md transition-all duration-700 group-hover:left-[105%] group-hover:opacity-100" />
                   <Link
-                    to="/dashboard"
+                    to="/sign-in"
                     className="group inline-flex items-center gap-2.5 rounded-full bg-gold px-6 py-3 text-[13px] font-medium text-background transition-all duration-200 hover:opacity-90 active:scale-[0.97]"
                   >
-                    Open Dashboard
+                    Open LiftOS
                     <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
                   </Link>
                 </div>
@@ -534,11 +534,11 @@ const Landing = () => {
             No account required. Open the dashboard and see what structured training looks like.
           </p>
           <Link
-            to="/dashboard"
-            className="group inline-flex items-center gap-3 bg-gold text-background px-8 py-4 rounded-full text-sm font-medium hover:opacity-90 transition-all duration-200 active:scale-[0.97]"
+            to="/sign-in"
+            className="group inline-flex items-center gap-2.5 rounded-full bg-gold px-6 py-3 text-[13px] font-medium text-background transition-all duration-200 hover:opacity-90 active:scale-[0.97]"
           >
             Open LiftOS
-            <ArrowRight size={15} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+            <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
           </Link>
         </div>
       </section>

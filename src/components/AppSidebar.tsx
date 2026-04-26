@@ -1,10 +1,12 @@
-import { LayoutDashboard, Dumbbell, TrendingUp, Sparkles, ChevronLeft } from "lucide-react";
+import { LayoutDashboard, Dumbbell, TrendingUp, Sparkles, ChevronLeft, PlayCircle, CalendarDays } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useSidebarState } from "@/App";
 
 const navItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Workouts", url: "/workouts", icon: Dumbbell },
+  { title: "Log", url: "/workouts/active", icon: PlayCircle },
+  { title: "Calander", url: "/calander", icon: CalendarDays },
   { title: "Progress", url: "/progress", icon: TrendingUp },
   { title: "Coach", url: "/coach", icon: Sparkles },
 ];
@@ -37,7 +39,7 @@ const AppSidebar = () => {
           <NavLink
             key={item.url}
             to={item.url}
-            end={item.url === "/"}
+            end
             className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 group
               text-[hsl(var(--text-secondary))] hover:text-foreground hover:bg-[hsl(var(--surface-2))]
               ${collapsed ? "justify-center px-0" : ""}`}
