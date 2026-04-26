@@ -17,11 +17,11 @@ const AuthLayout = ({ eyebrow, title, children }: { eyebrow: string; title: stri
           <p className="label-xs mb-4">{eyebrow}</p>
           <h1 className="max-w-xl text-5xl font-semibold tracking-tight">{title}</h1>
           <p className="mt-5 max-w-md text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
-            Premium workout logging, progress tracking, and coaching guidance for serious lifters. This flow is UI-only
-            and uses temporary front-end state.
+            Premium workout logging, progress tracking, and coaching guidance for serious lifters. This auth flow is
+            now wired for real account creation and sign-in.
           </p>
           <div className="mt-8 grid max-w-md grid-cols-2 gap-3">
-            {["Fast logging", "Charted progress", "Coaching context", "Mock auth"].map((item) => (
+            {["Fast logging", "Charted progress", "Coaching context", "Real auth"].map((item) => (
               <div key={item} className="rounded-lg surface-2 border border-border/20 p-4 text-sm text-[hsl(var(--text-secondary))]">
                 {item}
               </div>
