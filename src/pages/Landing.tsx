@@ -4,17 +4,26 @@ import { ArrowRight, CalendarDays, Sparkles } from "lucide-react";
 import { FitnessBackground } from "@/components/FitnessBackground";
 
 /* ───────── scroll-reveal hook ───────── */
-const useReveal = (threshold = 0.15) => {
+const useReveal = (threshold = 0.15, scrollOnly = false, rootMargin = "0px") => {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
+    let hasScrolled = false;
+    const onScroll = () => { hasScrolled = true; };
+    if (scrollOnly) window.addEventListener("scroll", onScroll, { passive: true, once: true });
+
     const obs = new IntersectionObserver(
-      ([e]) => e.isIntersecting && setVisible(true),
-      { threshold }
+      ([e]) => {
+        if (e.isIntersecting && (!scrollOnly || hasScrolled)) setVisible(true);
+      },
+      { threshold, rootMargin }
     );
     if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [threshold]);
+    return () => {
+      obs.disconnect();
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [threshold, scrollOnly, rootMargin]);
   return { ref, visible };
 };
 
@@ -76,29 +85,32 @@ const LandingNav = () => (
 
 /* ═══════════════ LANDING ═══════════════ */
 const Landing = () => {
-  const hero = useReveal(0.1);
-  const metrics = useReveal(0.2);
-  const features = useReveal(0.2);
-  const cta = useReveal(0.25);
+  const [heroVisible, setHeroVisible] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() =>
+      requestAnimationFrame(() => setHeroVisible(true))
+    );
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const metrics = useReveal(0.2, true, "-180px");
+  const features = useReveal(0.2, true);
+  const cta = useReveal(0.25, true);
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#07080d] text-foreground" style={{ isolation: "isolate", zIndex: 0 }}>
+    <div className="relative min-h-screen overflow-x-hidden bg-[#0a0c15] text-foreground" style={{ isolation: "isolate", zIndex: 0 }}>
       <FitnessBackground />
       <LandingNav />
 
       {/* ── HERO ── */}
       <section
-        ref={hero.ref}
         className="relative overflow-visible px-6 pt-44 pb-48 md:px-12 md:pt-56 md:pb-60"
       >
         <div className="landing-hero-radiance pointer-events-none absolute inset-x-0 top-0 h-[42rem]" />
         <div className="max-w-6xl mx-auto min-h-[70vh]">
           <div
-            className={`relative flex min-h-[70vh] flex-col items-center justify-start pt-0 transition-all duration-1000 ease-out md:pt-2 ${
-              hero.visible
-                ? "opacity-100 translate-y-0"
-                : "opacity-0 translate-y-10"
-            }`}
+            style={{ transform: heroVisible ? "translateY(0)" : "translateY(4rem)", transition: "transform 1.5s ease-out" }}
+            className="relative flex min-h-[70vh] flex-col items-center justify-start pt-0 opacity-100 md:pt-2"
           >
             <div className="relative mx-auto max-w-4xl text-center">
 
@@ -254,7 +266,7 @@ const Landing = () => {
                                   "conic-gradient(rgba(184,147,66,0.92) 0deg 228deg, rgba(184,147,66,0.56) 228deg 312deg, rgba(184,147,66,0.22) 312deg 360deg)",
                               }}
                             />
-                            <div className="absolute inset-[18%] rounded-full border border-white/8 bg-[rgba(7,8,13,0.8)]" />
+                            <div className="absolute inset-[18%] rounded-full border border-white/8 bg-[rgba(12,15,26,0.8)]" />
                             <div className="absolute inset-0 flex flex-col items-center justify-center">
                               <span className="text-lg font-semibold tracking-tight text-foreground">82%</span>
                               <span className="text-[9px] uppercase tracking-[0.22em] text-foreground/30">
@@ -397,9 +409,10 @@ const Landing = () => {
       </section>
 
       {/* ── METRICS ── */}
-      <section ref={metrics.ref} className="relative px-6 pt-[30rem] pb-20 md:px-12 md:pt-[38rem] md:pb-28">
+      <section className="relative px-6 pt-[30rem] pb-20 md:px-12 md:pt-[38rem] md:pb-28">
         <div className="max-w-6xl mx-auto">
           <div
+            ref={metrics.ref}
             className={`transition-all duration-700 ease-out ${
               metrics.visible
                 ? "opacity-100 translate-y-0 blur-0"
@@ -410,11 +423,11 @@ const Landing = () => {
               <div className="max-w-2xl">
                 <p className="label-xs mb-4">What the platform surfaces</p>
                 <h2 className="max-w-xl text-[2.15rem] font-semibold leading-[1.04] tracking-tight md:text-[3rem]">
-                  A cleaner view of what to do next.
+                  A clear picture of where you stand.
                 </h2>
               </div>
               <p className="max-w-md text-sm leading-7 text-foreground/45 md:justify-self-end md:text-base">
-                Your week stays legible at a glance — workload, priorities, and the next session.
+                Volume, consistency, and personal records — all in one place, updated every session.
               </p>
             </div>
           </div>
@@ -422,22 +435,22 @@ const Landing = () => {
           <div className="mt-16 grid grid-cols-1 gap-12 sm:grid-cols-3 sm:gap-10 md:mt-20 md:gap-16">
             {[
               {
-                metric: "8.4",
-                unit: "/ 10",
-                title: "Weekly strain",
-                desc: "Know how hard the week is trending before it gets messy.",
+                metric: "92",
+                unit: "%",
+                title: "Consistency",
+                desc: "See your weekly plan hit rate at a glance — no digging through logs.",
               },
               {
-                metric: "247",
-                unit: "min",
-                title: "Planned volume",
-                desc: "See how the block is distributed without opening five views.",
+                metric: "92.4k",
+                unit: " lb",
+                title: "Weekly volume",
+                desc: "Total pounds moved this week, calculated automatically as you log.",
               },
               {
-                metric: "3",
-                unit: " cues",
-                title: "Session priorities",
-                desc: "Start each lift with the few details that actually matter.",
+                metric: "+18",
+                unit: "%",
+                title: "Progressive overload",
+                desc: "Track how much stronger you get on each lift, week over week.",
               },
             ].map((item, i) => (
               <div
@@ -541,15 +554,19 @@ const Landing = () => {
             <span className="text-gold">Elevated.</span>
           </h2>
           <p className="text-foreground/45 text-sm md:text-base max-w-sm mx-auto mb-10 leading-relaxed">
-            No account required. Open the dashboard and see what structured training looks like.
+            Built for lifters who take their training seriously.<br />Because progress deserves to be seen.
           </p>
-          <Link
-            to="/sign-in"
-            className="group inline-flex items-center gap-2.5 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-8 py-3.5 text-[13px] font-semibold text-background shadow-[0_0_40px_rgba(184,147,66,0.18)] transition-all duration-200 hover:opacity-90 hover:shadow-[0_0_48px_rgba(184,147,66,0.28)] active:scale-[0.97]"
-          >
-            Open LiftOS
-            <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
-          </Link>
+          <div className="group relative inline-flex items-center overflow-hidden rounded-full border border-gold/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.04),rgba(184,147,66,0.05))] p-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.12)]">
+            <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(184,147,66,0.14),transparent_68%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+            <span className="pointer-events-none absolute -left-1/4 top-0 h-full w-1/3 skew-x-[-20deg] bg-white/12 opacity-0 blur-md transition-all duration-700 group-hover:left-[105%] group-hover:opacity-100" />
+            <Link
+              to="/sign-in"
+              className="group inline-flex items-center gap-2.5 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-6 py-3 text-[13px] font-medium text-background transition-all duration-200 hover:opacity-90 hover:shadow-[0_0_28px_rgba(184,147,66,0.22)] active:scale-[0.97]"
+            >
+              Open LiftOS
+              <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+            </Link>
+          </div>
         </div>
       </section>
 
