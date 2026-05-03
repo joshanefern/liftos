@@ -16,7 +16,7 @@ const AppSidebar = () => {
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-screen z-40 flex flex-col border-r border-white/[0.07] bg-[#070910] transition-all duration-300 ease-out ${
+      className={`fixed left-0 top-0 h-screen z-40 flex flex-col border-r border-white/[0.07] bg-[#0a0c15]/80 backdrop-blur-xl transition-all duration-300 ease-out ${
         collapsed ? "w-[68px]" : "w-[220px]"
       }`}
     >

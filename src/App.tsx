@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createContext, useContext, useState } from "react";
 import AppSidebar from "@/components/AppSidebar";
+import { FitnessBackground } from "@/components/FitnessBackground";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import Workouts from "@/pages/Workouts";
@@ -31,7 +32,8 @@ export const useSidebarState = () => useContext(SidebarContext);
 const AppShell = ({ children }: { children: React.ReactNode }) => {
   const { collapsed } = useSidebarState();
   return (
-    <div className="flex min-h-screen w-full">
+    <div className="flex min-h-screen w-full bg-[#0a0c15]">
+      <FitnessBackground />
       <AppSidebar />
       <main
         className={`flex-1 transition-all duration-300 ease-out ${

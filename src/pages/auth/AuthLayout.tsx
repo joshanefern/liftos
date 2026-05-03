@@ -1,7 +1,9 @@
+import { FitnessBackground } from "@/components/FitnessBackground";
 import { Link } from "react-router-dom";
 
 const AuthLayout = ({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) => (
-  <div className="relative min-h-screen bg-background px-6 py-8 overflow-x-hidden">
+  <div className="relative min-h-screen bg-[#0a0c15] px-6 py-8 overflow-x-hidden">
+    <FitnessBackground />
     <div className="pointer-events-none absolute inset-x-0 top-0 h-[32rem] bg-[radial-gradient(circle_at_50%_14%,rgba(184,147,66,0.09),transparent_64%)]" />
 
     <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl flex-col">
