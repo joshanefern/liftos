@@ -31,7 +31,7 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
   };
 
   return (
-    <div className="rounded-xl surface-2 border border-border/20 p-5 md:p-6">
+    <div className="rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-5 md:p-6">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="label-xs mb-2">Template Builder</p>
@@ -40,14 +40,14 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
             onChange={(event) => setDraft({ ...draft, name: event.target.value })}
             className="w-full bg-transparent text-xl font-semibold outline-none focus:text-gold"
           />
-          <p className="mt-2 text-sm text-[hsl(var(--text-tertiary))]">
+          <p className="mt-2 text-sm text-foreground/30">
             {draft.split} split · {draft.duration} min · {totalSets} planned sets
           </p>
         </div>
         <button
           type="button"
           onClick={() => onSave(draft)}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-gold px-4 py-2.5 text-sm font-semibold text-background transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-gold/60"
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-4 py-2.5 text-sm font-semibold text-background transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-gold/60"
         >
           <Save size={16} />
           Save
@@ -56,7 +56,7 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
 
       <div className="space-y-4">
         {draft.exercises.map((exercise, exerciseIndex) => (
-          <div key={exercise.id} className="rounded-lg border border-border/20 bg-background/35 p-4">
+          <div key={exercise.id} className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-4">
             <div className="mb-4 grid gap-3 md:grid-cols-[1.2fr_0.8fr_1fr_auto]">
               <input
                 value={exercise.name}
@@ -66,7 +66,7 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
                   exercises[exerciseIndex] = { ...exercise, name: event.target.value };
                   setDraft({ ...draft, exercises });
                 }}
-                className="rounded-lg border border-border/20 surface-3 px-3 py-2 text-sm outline-none focus:border-gold"
+                className="rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-gold/50"
               />
               <input
                 value={exercise.category}
@@ -76,7 +76,7 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
                   exercises[exerciseIndex] = { ...exercise, category: event.target.value };
                   setDraft({ ...draft, exercises });
                 }}
-                className="rounded-lg border border-border/20 surface-3 px-3 py-2 text-sm outline-none focus:border-gold"
+                className="rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-gold/50"
               />
               <input
                 value={exercise.target}
@@ -86,13 +86,13 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
                   exercises[exerciseIndex] = { ...exercise, target: event.target.value };
                   setDraft({ ...draft, exercises });
                 }}
-                className="rounded-lg border border-border/20 surface-3 px-3 py-2 text-sm outline-none focus:border-gold"
+                className="rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-gold/50"
               />
               <button
                 type="button"
                 aria-label="Remove exercise"
                 onClick={() => setDraft({ ...draft, exercises: draft.exercises.filter((item) => item.id !== exercise.id) })}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border/20 text-[hsl(var(--text-tertiary))] transition hover:border-destructive hover:text-destructive"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-[0.875rem] border border-white/8 text-foreground/30 transition hover:border-destructive/40 hover:text-destructive"
               >
                 <Trash2 size={15} />
               </button>
@@ -101,7 +101,7 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
             <div className="space-y-2">
               {exercise.sets.map((set, setIndex) => (
                 <div key={set.id} className="grid grid-cols-[auto_1fr_1fr_auto] items-center gap-2">
-                  <span className="text-xs text-[hsl(var(--text-tertiary))]">Set {setIndex + 1}</span>
+                  <span className="text-xs text-foreground/30">Set {setIndex + 1}</span>
                   <input
                     type="number"
                     value={set.reps}
@@ -113,7 +113,7 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
                       exercises[exerciseIndex] = { ...exercise, sets };
                       setDraft({ ...draft, exercises });
                     }}
-                    className="rounded-lg border border-border/20 surface-3 px-3 py-2 text-sm outline-none focus:border-gold"
+                    className="rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-gold/50"
                   />
                   <input
                     type="number"
@@ -126,7 +126,7 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
                       exercises[exerciseIndex] = { ...exercise, sets };
                       setDraft({ ...draft, exercises });
                     }}
-                    className="rounded-lg border border-border/20 surface-3 px-3 py-2 text-sm outline-none focus:border-gold"
+                    className="rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-gold/50"
                   />
                   <button
                     type="button"
@@ -139,7 +139,7 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
                       };
                       setDraft({ ...draft, exercises });
                     }}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-[hsl(var(--text-tertiary))] transition hover:text-destructive"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-[0.875rem] text-foreground/30 transition hover:text-destructive"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -157,7 +157,7 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
                 };
                 setDraft({ ...draft, exercises });
               }}
-              className="mt-3 inline-flex items-center gap-2 rounded-lg border border-border/20 px-3 py-2 text-xs text-[hsl(var(--text-secondary))] transition hover:border-gold hover:text-foreground"
+              className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/8 px-3 py-2 text-xs text-foreground/50 transition hover:border-gold/30 hover:text-foreground"
             >
               <Plus size={14} />
               Add set
@@ -169,7 +169,7 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
       <button
         type="button"
         onClick={addExercise}
-        className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border/20 px-4 py-2.5 text-sm text-[hsl(var(--text-secondary))] transition hover:border-gold hover:text-foreground"
+        className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/8 px-4 py-2.5 text-sm text-foreground/50 transition hover:border-gold/30 hover:text-foreground"
       >
         <Plus size={16} />
         Add exercise

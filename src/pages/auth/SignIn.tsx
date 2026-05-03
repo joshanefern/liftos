@@ -22,10 +22,7 @@ const SignIn = () => {
           setIsSubmitting(true);
 
           try {
-            const payload = await signIn({
-              email,
-              password,
-            });
+            const payload = await signIn({ email, password });
 
             persistAuth(payload);
             toast({
@@ -47,27 +44,27 @@ const SignIn = () => {
         }}
       >
         <label className="block">
-          <span className="mb-2 block text-xs text-[hsl(var(--text-tertiary))]">Email</span>
+          <span className="mb-2 block text-xs text-foreground/30">Email</span>
           <input
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="h-12 w-full rounded-lg border border-border/20 surface-3 px-3 text-sm outline-none focus:border-gold"
+            className="h-12 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none focus:border-gold/50 transition-colors"
             required
           />
         </label>
         <label className="block">
-          <span className="mb-2 block text-xs text-[hsl(var(--text-tertiary))]">Password</span>
+          <span className="mb-2 block text-xs text-foreground/30">Password</span>
           <input
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="h-12 w-full rounded-lg border border-border/20 surface-3 px-3 text-sm outline-none focus:border-gold"
+            className="h-12 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none focus:border-gold/50 transition-colors"
             required
           />
         </label>
         <div className="flex items-center justify-between text-sm">
-          <label className="flex items-center gap-2 text-[hsl(var(--text-secondary))]">
+          <label className="flex items-center gap-2 text-foreground/50">
             <input type="checkbox" defaultChecked className="accent-[hsl(var(--gold))]" />
             Remember me
           </label>
@@ -75,16 +72,16 @@ const SignIn = () => {
         </div>
         <button
           disabled={isSubmitting}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-gold text-sm font-semibold text-background transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Mail size={17} />
+          <Mail size={16} />
           {isSubmitting ? "Signing in..." : "Sign in"}
         </button>
       </form>
-      <p className="mt-6 text-center text-sm text-[hsl(var(--text-secondary))]">
+      <p className="mt-6 text-center text-sm text-foreground/50">
         New to LiftOS? <Link to="/create-account" className="text-gold hover:underline">Create account</Link>
       </p>
-      <Link to="/onboarding" className="mt-4 inline-flex w-full items-center justify-center gap-2 text-sm text-[hsl(var(--text-secondary))] hover:text-gold">
+      <Link to="/onboarding" className="mt-4 inline-flex w-full items-center justify-center gap-2 text-sm text-foreground/40 hover:text-gold transition-colors">
         View onboarding
         <ArrowRight size={15} />
       </Link>

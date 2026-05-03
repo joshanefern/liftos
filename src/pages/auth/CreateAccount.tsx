@@ -52,33 +52,33 @@ const CreateAccount = () => {
         }}
       >
         <label className="block">
-          <span className="mb-2 block text-xs text-[hsl(var(--text-tertiary))]">Name</span>
+          <span className="mb-2 block text-xs text-foreground/30">Name</span>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="h-12 w-full rounded-lg border border-border/20 surface-3 px-3 text-sm outline-none focus:border-gold"
+            className="h-12 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none focus:border-gold/50 transition-colors"
             placeholder="Josh"
             required
           />
         </label>
         <label className="block">
-          <span className="mb-2 block text-xs text-[hsl(var(--text-tertiary))]">Email</span>
+          <span className="mb-2 block text-xs text-foreground/30">Email</span>
           <input
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="h-12 w-full rounded-lg border border-border/20 surface-3 px-3 text-sm outline-none focus:border-gold"
+            className="h-12 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none focus:border-gold/50 transition-colors"
             placeholder="you@example.com"
             required
           />
         </label>
         <label className="block">
-          <span className="mb-2 block text-xs text-[hsl(var(--text-tertiary))]">Password</span>
+          <span className="mb-2 block text-xs text-foreground/30">Password</span>
           <input
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="h-12 w-full rounded-lg border border-border/20 surface-3 px-3 text-sm outline-none focus:border-gold"
+            className="h-12 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none focus:border-gold/50 transition-colors"
             placeholder="Create a password"
             minLength={8}
             required
@@ -86,13 +86,13 @@ const CreateAccount = () => {
         </label>
         <button
           disabled={isSubmitting}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-gold text-sm font-semibold text-background transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <UserPlus size={17} />
+          <UserPlus size={16} />
           {isSubmitting ? "Creating account..." : "Continue"}
         </button>
       </form>
-      <p className="mt-6 text-center text-sm text-[hsl(var(--text-secondary))]">
+      <p className="mt-6 text-center text-sm text-foreground/50">
         Already have an account? <Link to="/sign-in" className="text-gold hover:underline">Sign in</Link>
       </p>
     </AuthLayout>

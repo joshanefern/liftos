@@ -14,19 +14,19 @@ const ForgotPassword = () => (
       }}
     >
       <label className="block">
-        <span className="mb-2 block text-xs text-[hsl(var(--text-tertiary))]">Email</span>
+        <span className="mb-2 block text-xs text-foreground/30">Email</span>
         <input
           type="email"
           placeholder="you@example.com"
-          className="h-12 w-full rounded-lg border border-border/20 surface-3 px-3 text-sm outline-none focus:border-gold"
+          className="h-12 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none focus:border-gold/50 transition-colors"
         />
       </label>
-      <button className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-gold text-sm font-semibold text-background transition hover:brightness-110">
-        <Send size={17} />
+      <button className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97]">
+        <Send size={16} />
         Send reset link
       </button>
     </form>
-    <p className="mt-6 text-center text-sm text-[hsl(var(--text-secondary))]">
+    <p className="mt-6 text-center text-sm text-foreground/50">
       Remembered it? <Link to="/sign-in" className="text-gold hover:underline">Back to sign in</Link>
     </p>
   </AuthLayout>

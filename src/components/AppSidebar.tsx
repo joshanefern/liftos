@@ -16,46 +16,44 @@ const AppSidebar = () => {
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-screen z-40 flex flex-col border-r border-border/50 transition-all duration-300 ease-out ${
+      className={`fixed left-0 top-0 h-screen z-40 flex flex-col border-r border-white/[0.07] bg-[#070910] transition-all duration-300 ease-out ${
         collapsed ? "w-[68px]" : "w-[220px]"
       }`}
-      style={{ background: "hsl(var(--sidebar-background))" }}
     >
-      {/* Logo */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(184,147,66,0.22),transparent)]" />
+
       <div className={`h-16 flex items-center px-5 ${collapsed ? "justify-center" : ""}`}>
         {!collapsed && (
-          <span className="text-lg font-semibold tracking-tight">
-            Lift<span className="text-gold">OS</span>
+          <span className="text-[13px] font-medium tracking-[0.22em] text-foreground/88">
+            LIFT<span className="text-gold">OS</span>
           </span>
         )}
         {collapsed && (
-          <span className="text-lg font-bold text-gold">L</span>
+          <span className="text-sm font-semibold text-gold tracking-[0.1em]">L</span>
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 mt-4 space-y-1">
+      <nav className="flex-1 px-3 mt-2 space-y-0.5">
         {navItems.map((item) => (
           <NavLink
             key={item.url}
             to={item.url}
             end
-            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 group
-              text-[hsl(var(--text-secondary))] hover:text-foreground hover:bg-[hsl(var(--surface-2))]
+            className={`flex items-center gap-3 rounded-[0.875rem] px-3 py-2.5 text-sm transition-all duration-200 group
+              text-foreground/40 hover:text-foreground hover:bg-white/[0.06]
               ${collapsed ? "justify-center px-0" : ""}`}
-            activeClassName="!text-gold bg-[hsl(var(--surface-2))]"
+            activeClassName="!text-gold bg-white/[0.06] border border-white/10"
           >
-            <item.icon size={18} className="shrink-0" />
+            <item.icon size={17} className="shrink-0" />
             {!collapsed && <span>{item.title}</span>}
           </NavLink>
         ))}
       </nav>
 
-      {/* Collapse toggle */}
-      <div className="px-3 pb-4">
+      <div className="px-3 pb-5">
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs text-[hsl(var(--text-tertiary))] hover:text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--surface-2))] transition-colors duration-200"
+          className="w-full flex items-center justify-center gap-2 rounded-[0.875rem] px-3 py-2 text-xs text-foreground/30 hover:text-foreground/50 hover:bg-white/[0.04] transition-colors duration-200"
         >
           <ChevronLeft
             size={14}

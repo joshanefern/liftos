@@ -20,8 +20,8 @@ type WeeklyTooltipProps = {
 const CustomTooltip = ({ active, payload, label }: WeeklyTooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="surface-2 rounded-lg px-3 py-2 border border-border/50 shadow-lg">
-      <p className="text-xs text-[hsl(var(--text-tertiary))] mb-0.5">{label}</p>
+    <div className="bg-white/[0.04] rounded-lg px-3 py-2 border border-white/10 shadow-lg">
+      <p className="text-xs text-foreground/30 mb-0.5">{label}</p>
       <p className="text-sm font-medium text-gold">{payload[0].value}</p>
     </div>
   );

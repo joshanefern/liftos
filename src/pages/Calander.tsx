@@ -53,28 +53,30 @@ const statCards = [
 const weekdayHeaders = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const getTileTone = (day: CalanderDay) => {
-  if (day.sessions === 0) return "border-border/15 bg-background/25";
-  if (day.targetDelta >= 800) return "border-emerald-500/30 bg-emerald-500/10";
+  if (day.sessions === 0) return "border-white/[0.06] bg-white/[0.02]";
+  if (day.targetDelta >= 800) return "border-emerald-300/25 bg-emerald-300/[0.07]";
   if (day.targetDelta >= 0) return "border-gold/25 bg-gold/10";
-  return "border-border/20 bg-background/40";
+  return "border-white/8 bg-white/[0.03]";
 };
 
 const Calander = () => (
-  <div className="min-h-screen max-w-7xl p-6 md:p-10 lg:p-12">
-    <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between animate-reveal-up">
+  <div className="relative min-h-screen max-w-7xl p-6 md:p-10 lg:p-12">
+    <div className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_50%_0%,rgba(110,231,183,0.06),transparent_60%)]" />
+
+    <div className="relative mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between animate-reveal-up">
       <div>
         <p className="label-xs mb-2">Performance Ledger</p>
-        <h1 className="heading-lg">Calander</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
+        <h1 className="heading-lg">Calendar</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-foreground/50">
           A month-view training ledger built for fast scanning. Read each day like a fitness PnL tile: volume, lift
           quality, and whether you beat the plan.
         </p>
       </div>
-      <div className="flex items-center gap-3 rounded-lg border border-border/20 surface-2 px-4 py-3">
-        <CalendarDays size={17} className="text-gold" />
+      <div className="flex items-center gap-3 rounded-[1rem] border border-white/10 bg-white/[0.04] px-4 py-3">
+        <CalendarDays size={17} className="text-emerald-300" />
         <div>
           <p className="text-sm font-semibold">April 2026</p>
-          <p className="text-xs text-[hsl(var(--text-tertiary))]">22 planned training days</p>
+          <p className="text-xs text-foreground/30">22 planned training days</p>
         </div>
       </div>
     </div>
@@ -83,42 +85,44 @@ const Calander = () => (
       {statCards.map((stat, index) => (
         <article
           key={stat.label}
-          className="rounded-xl surface-2 border border-border/20 p-4 md:p-5 animate-reveal-up"
+          className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-4 md:p-5 animate-reveal-up"
           style={{ animationDelay: `${index * 60 + 80}ms` }}
         >
+          <div className="pointer-events-none absolute inset-x-[10%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(110,231,183,0.14),transparent)]" />
           <div className="mb-4 flex items-center justify-between">
-            <span className="text-xs uppercase tracking-widest text-[hsl(var(--text-tertiary))]">{stat.label}</span>
-            <stat.icon size={16} className="text-gold" />
+            <span className="text-xs uppercase tracking-widest text-foreground/30">{stat.label}</span>
+            <stat.icon size={16} className="text-emerald-300" />
           </div>
           <p className="mono text-2xl font-semibold">{stat.value}</p>
-          <p className="mt-2 text-xs text-[hsl(var(--text-secondary))]">{stat.helper}</p>
+          <p className="mt-2 text-xs text-foreground/50">{stat.helper}</p>
         </article>
       ))}
     </section>
 
-    <section className="mb-8 rounded-xl border border-border/20 surface-2 p-5 md:p-6 animate-reveal-up">
+    <section className="mb-8 relative overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-5 md:p-6 animate-reveal-up">
+      <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(110,231,183,0.16),transparent)]" />
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="label-xs mb-2">Monthly Grid</p>
           <h2 className="heading-md">Training days at a glance</h2>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs text-[hsl(var(--text-secondary))]">
-          <span className="inline-flex items-center gap-2 rounded-lg border border-border/20 px-3 py-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
+        <div className="flex flex-wrap gap-2 text-xs text-foreground/50">
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/8 px-3 py-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-300/80" />
             Beat plan
           </span>
-          <span className="inline-flex items-center gap-2 rounded-lg border border-border/20 px-3 py-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-gold/80" />
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/8 px-3 py-1.5">
+            <span className="h-2 w-2 rounded-full bg-gold/80" />
             On plan
           </span>
-          <span className="inline-flex items-center gap-2 rounded-lg border border-border/20 px-3 py-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--surface-3))]" />
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/8 px-3 py-1.5">
+            <span className="h-2 w-2 rounded-full bg-white/20" />
             Rest / miss
           </span>
         </div>
       </div>
 
-      <div className="mb-3 hidden grid-cols-7 gap-3 text-[11px] uppercase tracking-widest text-[hsl(var(--text-tertiary))] md:grid">
+      <div className="mb-3 hidden grid-cols-7 gap-3 text-[11px] uppercase tracking-widest text-foreground/30 md:grid">
         {weekdayHeaders.map((weekday) => (
           <span key={weekday} className="px-1">
             {weekday}
@@ -130,20 +134,20 @@ const Calander = () => (
         {monthDays.map((day) => (
           <article
             key={day.day}
-            className={`min-h-[132px] rounded-xl border p-3 transition-colors ${getTileTone(day)}`}
+            className={`min-h-[132px] rounded-[1rem] border p-3 transition-colors ${getTileTone(day)}`}
           >
             <div className="mb-4 flex items-start justify-between gap-2">
               <div>
-                <p className="text-[11px] uppercase tracking-widest text-[hsl(var(--text-tertiary))] md:hidden">{day.weekday}</p>
+                <p className="text-[11px] uppercase tracking-widest text-foreground/30 md:hidden">{day.weekday}</p>
                 <p className="mt-1 text-base font-semibold">{day.day}</p>
               </div>
               <span
-                className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
+                className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
                   day.targetDelta > 0
-                    ? "bg-emerald-500/15 text-emerald-300"
+                    ? "bg-emerald-300/15 text-emerald-300"
                     : day.targetDelta < 0
-                      ? "bg-background/50 text-[hsl(var(--text-secondary))]"
-                      : "bg-background/40 text-[hsl(var(--text-tertiary))]"
+                      ? "bg-white/[0.05] text-foreground/50"
+                      : "bg-white/[0.04] text-foreground/30"
                 }`}
               >
                 {day.targetDelta > 0 ? "+" : ""}
@@ -152,13 +156,13 @@ const Calander = () => (
             </div>
 
             <div className="space-y-1.5">
-              <p className={`mono text-lg font-semibold ${day.sessions ? "text-foreground" : "text-[hsl(var(--text-tertiary))]"}`}>
+              <p className={`mono text-lg font-semibold ${day.sessions ? "text-foreground" : "text-foreground/30"}`}>
                 {day.sessions ? `${(day.volume / 1000).toFixed(1)}k` : "--"}
               </p>
-              <p className="text-[11px] text-[hsl(var(--text-tertiary))]">
+              <p className="text-[11px] text-foreground/30">
                 {day.sessions ? `${day.sessions} session${day.sessions > 1 ? "s" : ""} • ${day.duration} min` : "Recovery / off day"}
               </p>
-              <p className="text-[11px] text-[hsl(var(--text-secondary))]">{day.readiness} readiness</p>
+              <p className="text-[11px] text-foreground/50">{day.readiness} readiness</p>
             </div>
           </article>
         ))}
@@ -166,10 +170,11 @@ const Calander = () => (
     </section>
 
     <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr] animate-reveal-up">
-      <div className="rounded-xl border border-border/20 surface-2 p-5 md:p-6">
+      <div className="relative overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-5 md:p-6">
+        <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(110,231,183,0.14),transparent)]" />
         <p className="label-xs mb-2">Best Streak</p>
         <h2 className="heading-md">Four green sessions in a row</h2>
-        <p className="mt-3 max-w-xl text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-foreground/50">
           Your cleanest stretch came from April 15 to April 18, where volume stayed above plan without pushing session
           duration too far.
         </p>
@@ -179,21 +184,22 @@ const Calander = () => (
             ["Sharpest session", "Apr 24", "+1,010 vs target"],
             ["Most efficient", "Apr 11", "41 min / 5.3k lb"],
           ].map(([label, date, value]) => (
-            <div key={label} className="flex items-center justify-between rounded-lg border border-border/20 bg-background/30 px-4 py-3 text-sm">
+            <div key={label} className="flex items-center justify-between rounded-[1rem] border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
               <div>
                 <p className="font-semibold">{label}</p>
-                <p className="mt-1 text-xs text-[hsl(var(--text-tertiary))]">{date}</p>
+                <p className="mt-1 text-xs text-foreground/30">{date}</p>
               </div>
-              <span className="mono font-semibold text-gold">{value}</span>
+              <span className="mono font-semibold text-emerald-300">{value}</span>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="rounded-xl border border-border/20 surface-2 p-5 md:p-6">
+      <div className="relative overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-5 md:p-6">
+        <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(110,231,183,0.14),transparent)]" />
         <p className="label-xs mb-2">Read</p>
         <h2 className="heading-md">What the month is saying</h2>
-        <div className="mt-4 space-y-4 text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
+        <div className="mt-4 space-y-4 text-sm leading-relaxed text-foreground/50">
           <p>
             The calendar is strongest when Monday and Wednesday are both green. That is where your best volume carries
             into the rest of the week.

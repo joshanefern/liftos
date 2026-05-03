@@ -34,26 +34,29 @@ const Coach = () => {
   };
 
   return (
-    <div className="min-h-screen max-w-7xl p-6 md:p-10 lg:p-12">
-      <div className="mb-8 animate-reveal-up">
+    <div className="relative min-h-screen max-w-7xl p-6 md:p-10 lg:p-12">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_50%_0%,rgba(125,211,252,0.06),transparent_60%)]" />
+
+      <div className="relative mb-8 animate-reveal-up">
         <p className="label-xs mb-2">AI Coach</p>
         <h1 className="heading-lg">Training guidance that knows the log</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[hsl(var(--text-secondary))]">
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-foreground/50">
           A mocked assistant experience that responds as if it understands your workout history, goals, split, and lift trends.
         </p>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
-        <section className="flex min-h-[680px] flex-col rounded-xl surface-2 border border-border/20">
-          <div className="border-b border-border/20 p-5 md:p-6">
+      <div className="relative grid gap-6 xl:grid-cols-[1fr_340px]">
+        <section className="flex min-h-[680px] flex-col overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10">
+          <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(125,211,252,0.18),transparent)]" />
+          <div className="border-b border-white/8 p-5 md:p-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="label-xs mb-2">Conversation</p>
                 <h2 className="heading-md">LiftOS Coach</h2>
               </div>
-              <div className="inline-flex w-fit items-center gap-2 rounded-lg border border-border/20 surface-3 px-3 py-2 text-xs text-[hsl(var(--text-secondary))]">
-                <Sparkles size={14} className="text-gold" />
-                Mocked intelligence
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-xs font-medium text-sky-300">
+                <Sparkles size={13} className="text-sky-300" />
+                AI powered
               </div>
             </div>
           </div>
@@ -64,47 +67,48 @@ const Coach = () => {
             ))}
           </div>
 
-          <div className="border-t border-border/20 p-5 md:p-6">
+          <div className="border-t border-white/8 p-5 md:p-6">
             <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
               {suggestedPrompts.map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
                   onClick={() => sendPrompt(prompt)}
-                  className="shrink-0 rounded-lg border border-border/20 surface-3 px-3 py-2 text-xs text-[hsl(var(--text-secondary))] transition hover:border-gold hover:text-foreground"
+                  className="shrink-0 rounded-full border border-white/8 bg-white/[0.03] px-3 py-2 text-xs text-foreground/50 transition hover:border-sky-300/40 hover:text-sky-300"
                 >
                   {prompt}
                 </button>
               ))}
             </div>
-            <form onSubmit={onSubmit} className="flex items-end gap-3 rounded-xl border border-border/20 bg-background/50 p-3 focus-within:border-gold">
+            <form onSubmit={onSubmit} className="flex items-end gap-3 rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-3 focus-within:border-sky-300/40">
               <textarea
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 rows={2}
                 placeholder="Ask about tomorrow's session, weekly volume, or a stalled lift..."
-                className="min-h-12 flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-[hsl(var(--text-tertiary))]"
+                className="min-h-12 flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-foreground/30"
               />
               <button
                 type="submit"
                 aria-label="Send message"
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gold text-background transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-gold/60"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-300/20 border border-sky-300/30 text-sky-300 transition hover:bg-sky-300 hover:text-background focus:outline-none focus:ring-2 focus:ring-sky-300/40"
               >
-                <Send size={17} />
+                <Send size={15} />
               </button>
             </form>
           </div>
         </section>
 
         <aside className="space-y-6">
-          <section className="rounded-xl surface-2 border border-border/20 p-5 md:p-6">
+          <section className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-5 md:p-6">
+            <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(125,211,252,0.14),transparent)]" />
             <p className="label-xs mb-4">Coach Context</p>
             <div className="space-y-3">
               {coachContextCards.map((item) => (
-                <div key={item.label} className="flex items-start gap-3 rounded-lg surface-3 p-4">
-                  <item.icon size={17} className="mt-0.5 text-gold" />
+                <div key={item.label} className="flex items-start gap-3 rounded-[1rem] bg-white/[0.03] p-4">
+                  <item.icon size={16} className="mt-0.5 text-sky-300" />
                   <div>
-                    <p className="text-xs text-[hsl(var(--text-tertiary))]">{item.label}</p>
+                    <p className="text-xs text-foreground/30">{item.label}</p>
                     <p className="mt-1 text-sm font-medium">{item.value}</p>
                   </div>
                 </div>
@@ -112,16 +116,17 @@ const Coach = () => {
             </div>
           </section>
 
-          <section className="rounded-xl surface-2 border border-border/20 p-5 md:p-6">
+          <section className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-5 md:p-6">
+            <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(125,211,252,0.14),transparent)]" />
             <p className="label-xs mb-4">What Coach Can Help With</p>
             <div className="space-y-4">
               {coachCapabilities.map((item) => (
-                <div key={item.title} className="rounded-lg border border-border/20 bg-background/35 p-4">
+                <div key={item.title} className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-4">
                   <div className="mb-3 flex items-center gap-2">
-                    <item.icon size={16} className="text-gold" />
+                    <item.icon size={15} className="text-sky-300" />
                     <p className="text-sm font-semibold">{item.title}</p>
                   </div>
-                  <p className="text-sm leading-relaxed text-[hsl(var(--text-secondary))]">{item.body}</p>
+                  <p className="text-sm leading-relaxed text-foreground/50">{item.body}</p>
                 </div>
               ))}
             </div>
