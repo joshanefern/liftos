@@ -174,7 +174,7 @@ const Landing = () => {
                           <p className="text-xs uppercase tracking-[0.24em] text-foreground/30">Conversation</p>
                           <p className="mt-2 text-lg font-semibold text-foreground">LiftOS Coach</p>
                         </div>
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/20 bg-gold/10 px-2.5 py-1 text-[10px] font-semibold text-gold">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-300/20 bg-sky-300/10 px-2.5 py-1 text-[10px] font-semibold text-sky-300">
                           <Sparkles size={11} />
                           AI
                         </span>
@@ -186,7 +186,7 @@ const Landing = () => {
                             className={`rounded-[1rem] border px-3 py-2 text-sm ${
                               message.role === "assistant"
                                 ? "border-white/8 bg-white/[0.04] text-foreground/60"
-                                : "ml-8 border-gold/20 bg-gold/[0.08] text-foreground"
+                                : "ml-8 border-sky-300/20 bg-sky-300/[0.08] text-foreground"
                             }`}
                           >
                             {message.body}
@@ -232,7 +232,7 @@ const Landing = () => {
                           <p className="text-xs uppercase tracking-[0.24em] text-foreground/30">Performance Ledger</p>
                           <p className="mt-2 text-3xl font-semibold text-foreground">April 2026</p>
                         </div>
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/20 bg-gold/10 px-2.5 py-1 text-[10px] font-semibold text-gold">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-300">
                           <CalendarDays size={11} />
                           22 days
                         </span>
@@ -254,7 +254,7 @@ const Landing = () => {
                     <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.04] p-4">
                       <div className="mb-3 flex items-center justify-between">
                         <p className="text-xs uppercase tracking-[0.24em] text-foreground/30">Monthly Grid</p>
-                        <span className="text-[10px] font-semibold text-gold">Upward</span>
+                        <span className="text-[10px] font-semibold text-emerald-300">Upward</span>
                       </div>
                       <div className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-3.5">
                         <div className="grid grid-cols-[auto_1fr] items-center gap-4">
@@ -263,7 +263,7 @@ const Landing = () => {
                               className="h-full w-full rounded-full border border-gold/10"
                               style={{
                                 background:
-                                  "conic-gradient(rgba(184,147,66,0.92) 0deg 228deg, rgba(184,147,66,0.56) 228deg 312deg, rgba(184,147,66,0.22) 312deg 360deg)",
+                                  "conic-gradient(rgba(110,231,183,0.92) 0deg 228deg, rgba(110,231,183,0.56) 228deg 312deg, rgba(110,231,183,0.22) 312deg 360deg)",
                               }}
                             />
                             <div className="absolute inset-[18%] rounded-full border border-white/8 bg-[rgba(12,15,26,0.8)]" />
@@ -276,9 +276,9 @@ const Landing = () => {
                           </div>
                           <div className="space-y-2.5">
                             {[
-                              { label: "Beat plan", value: "14 days", tone: "bg-gold/90" },
-                              { label: "On plan", value: "8 days", tone: "bg-gold/55" },
-                              { label: "Rest days", value: "8 days", tone: "bg-gold/25" },
+                              { label: "Beat plan", value: "14 days", tone: "bg-emerald-300/90" },
+                              { label: "On plan", value: "8 days", tone: "bg-emerald-300/55" },
+                              { label: "Rest days", value: "8 days", tone: "bg-emerald-300/25" },
                             ].map((item) => (
                               <div
                                 key={item.label}
@@ -463,7 +463,7 @@ const Landing = () => {
                 style={{ transitionDelay: `${i * 100 + 150}ms` }}
               >
                 <div className="mb-6 flex items-baseline gap-1.5">
-                  <span className="text-[2.75rem] font-semibold tracking-tight tabular-nums text-gold md:text-[3.5rem]">
+                  <span className={`text-[2.75rem] font-semibold tracking-tight tabular-nums md:text-[3.5rem] ${i === 0 ? "text-sky-300" : i === 1 ? "text-gold" : "text-emerald-300"}`}>
                     {item.metric}
                   </span>
                   <span className="text-sm text-foreground/35">{item.unit}</span>
@@ -496,40 +496,48 @@ const Landing = () => {
             </h2>
           </div>
 
-          <div className="space-y-20 md:space-y-28">
+          <div className="divide-y divide-white/[0.06] border-y border-white/[0.06]">
             {[
-              {
-                num: "01",
-                title: "Log your sessions",
-                body: "Quick input — exercise, weight, reps. Everything auto-calculates volume and intensity.",
-              },
-              {
-                num: "02",
-                title: "Track recovery",
-                body: "Sleep quality, HRV, and subjective readiness scored daily. Know when to push and when to rest.",
-              },
-              {
-                num: "03",
-                title: "See the pattern",
-                body: "Weekly and monthly trends surface what's working. Clean charts, no dashboard overload.",
-              },
+              { num: "01", tag: "Logging",   title: "Log your sessions",  body: "Quick input — exercise, weight, reps. Everything auto-calculates volume and intensity." },
+              { num: "02", tag: "AI Coach",  title: "Get coached",        body: "Your AI coach analyzes your sessions and surfaces personalized recommendations to keep you progressing." },
+              { num: "03", tag: "Analytics", title: "See the pattern",    body: "Weekly and monthly trends surface what's working. Clean charts, no dashboard overload." },
             ].map((f, i) => (
               <div
                 key={f.num}
-                className={`flex gap-6 md:gap-10 items-start max-w-2xl transition-all duration-700 ease-out ${
-                  features.visible
-                    ? "opacity-100 translate-x-0 blur-0"
-                    : "opacity-0 -translate-x-4 blur-[4px]"
+                className={`group flex items-center gap-8 py-8 md:gap-14 md:py-10 transition-all duration-700 ease-out ${
+                  features.visible ? "opacity-100 translate-y-0 blur-0" : "opacity-0 translate-y-4 blur-[4px]"
                 }`}
                 style={{ transitionDelay: `${i * 120 + 200}ms` }}
               >
-                <span className={`mono text-sm pt-1 shrink-0 ${i === 0 ? "text-sky-300" : i === 1 ? "text-gold" : "text-emerald-300"}`}>{f.num}</span>
-                <div className="rounded-[1.25rem] border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] px-5 py-4 backdrop-blur-sm transition-all duration-300 hover:border-gold/20 hover:bg-gold/[0.04]">
-                  <p className="text-lg font-medium mb-2">{f.title}</p>
-                  <p className="text-sm text-foreground/45 leading-relaxed max-w-md">
-                    {f.body}
-                  </p>
+                {/* Step number + label */}
+                <div className="w-28 shrink-0 md:w-36">
+                  <p className={`mono text-2xl font-semibold tabular-nums md:text-3xl ${
+                    i === 0 ? "text-sky-300" : i === 1 ? "text-gold" : "text-emerald-300"
+                  }`}>{f.num}</p>
+                  <p className={`mt-1 text-[10px] uppercase tracking-[0.2em] ${
+                    i === 0 ? "text-sky-300/50" : i === 1 ? "text-gold/50" : "text-emerald-300/50"
+                  }`}>{f.tag}</p>
                 </div>
+
+                {/* Vertical divider */}
+                <div className={`h-10 w-px shrink-0 ${
+                  i === 0 ? "bg-sky-300/20" : i === 1 ? "bg-gold/20" : "bg-emerald-300/20"
+                }`} />
+
+                {/* Content */}
+                <div className="flex-1">
+                  <p className={`text-xl font-medium mb-2 transition-colors duration-200 ${
+                    i === 0 ? "text-sky-300" : i === 1 ? "text-gold" : "text-emerald-300"
+                  }`}>{f.title}</p>
+                  <p className="max-w-lg text-sm leading-7 text-foreground/45">{f.body}</p>
+                </div>
+
+                {/* Step glow on hover */}
+                <div className={`hidden md:block h-8 w-8 shrink-0 rounded-full opacity-0 transition-opacity duration-300 group-hover:opacity-100 ${
+                  i === 0 ? "bg-sky-300/10 shadow-[0_0_16px_4px_rgba(125,211,252,0.12)]"
+                  : i === 1 ? "bg-gold/10 shadow-[0_0_16px_4px_rgba(184,147,66,0.12)]"
+                  : "bg-emerald-300/10 shadow-[0_0_16px_4px_rgba(110,231,183,0.12)]"
+                }`} />
               </div>
             ))}
           </div>
