@@ -1,4 +1,5 @@
 import AuthLayout from "@/pages/auth/AuthLayout";
+import { GoldButton } from "@/components/GoldButton";
 import { persistAuth, register } from "@/lib/auth";
 import { toast } from "@/components/ui/use-toast";
 import { UserPlus } from "lucide-react";
@@ -84,13 +85,10 @@ const CreateAccount = () => {
             required
           />
         </label>
-        <button
-          disabled={isSubmitting}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        <GoldButton type="submit" fullWidth disabled={isSubmitting}>
           <UserPlus size={16} />
           {isSubmitting ? "Creating account..." : "Continue"}
-        </button>
+        </GoldButton>
       </form>
       <p className="mt-6 text-center text-sm text-foreground/50">
         Already have an account? <Link to="/sign-in" className="text-gold hover:underline">Sign in</Link>

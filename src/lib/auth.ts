@@ -44,17 +44,22 @@ const request = async <T>(path: string, init: RequestInit): Promise<T> => {
   return payload as T;
 };
 
-export const register = (input: RegisterInput) =>
-  request<AuthPayload>("/api/auth/register", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+const mockPayload = (email: string, firstName?: string): AuthPayload => ({
+  token: "mock-token",
+  user: {
+    id: "mock-user-id",
+    email,
+    firstName: firstName ?? "Josh",
+    lastName: null,
+    createdAt: new Date().toISOString(),
+  },
+});
 
-export const signIn = (input: SignInInput) =>
-  request<AuthPayload>("/api/auth/sign-in", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+export const register = (input: RegisterInput): Promise<AuthPayload> =>
+  Promise.resolve(mockPayload(input.email, input.firstName));
+
+export const signIn = (input: SignInInput): Promise<AuthPayload> =>
+  Promise.resolve(mockPayload(input.email));
 
 export const persistAuth = (payload: AuthPayload) => {
   window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, payload.token);

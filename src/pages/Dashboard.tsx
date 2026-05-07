@@ -1,6 +1,7 @@
 import MetricCard from "@/components/MetricCard";
 import { DailySummaryCard, SuggestedWorkoutCard, WeeklySummaryCard } from "@/components/SummaryCards";
 import { currentUser, dailySummary, recentWorkouts, weeklySummary, weeklyTrend } from "@/data/liftosMock";
+import { GoldButton } from "@/components/GoldButton";
 import { Activity, ArrowRight, CalendarCheck, Dumbbell, Flame, Layers, Timer } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -17,13 +18,10 @@ const Dashboard = () => (
           Today is about keeping momentum high without burying recovery. Your week is balanced and the next best move is clear.
         </p>
       </div>
-      <Link
-        to="/workouts/active"
-        className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-gold/60"
-      >
+      <GoldButton to="/workouts/active">
         <Dumbbell size={16} />
         Start workout
-      </Link>
+      </GoldButton>
     </div>
 
     <section className="relative mb-8 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">

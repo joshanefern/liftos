@@ -1,3 +1,4 @@
+import { GoldButton } from "@/components/GoldButton";
 import { WorkoutTemplate } from "@/data/liftosMock";
 import { Plus, Save, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -44,14 +45,10 @@ const WorkoutTemplateEditor = ({ template, onSave }: WorkoutTemplateEditorProps)
             {draft.split} split · {draft.duration} min · {totalSets} planned sets
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => onSave(draft)}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-4 py-2.5 text-sm font-semibold text-background transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-gold/60"
-        >
+        <GoldButton onClick={() => onSave(draft)}>
           <Save size={16} />
           Save
-        </button>
+        </GoldButton>
       </div>
 
       <div className="space-y-4">

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, CalendarDays, Sparkles } from "lucide-react";
 import { FitnessBackground } from "@/components/FitnessBackground";
+import { GoldButton } from "@/components/GoldButton";
 
 /* ───────── scroll-reveal hook ───────── */
 const useReveal = (threshold = 0.15, scrollOnly = false, rootMargin = "0px") => {
@@ -69,9 +70,12 @@ const coachMessages = [
 const LandingNav = () => (
   <nav className="fixed top-0 inset-x-0 z-50 px-8 md:px-14">
     <div className="flex h-16 items-center justify-between">
-      <span className="text-[12px] font-semibold tracking-[0.28em] text-foreground">
-        LIFTOS
-      </span>
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        className="text-[12px] font-semibold tracking-[0.28em] text-foreground cursor-pointer"
+      >
+        LIFT<span className="text-gold">OS</span>
+      </button>
       <Link
         to="/sign-in"
         className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-1.5 text-[11px] tracking-[0.12em] text-foreground/70 transition-all duration-200 hover:border-gold/25 hover:bg-gold/[0.08] hover:text-foreground"
@@ -137,17 +141,10 @@ const Landing = () => {
               </p>
 
               <div className="mt-11 flex justify-center">
-                <div className="group relative inline-flex items-center overflow-hidden rounded-full border border-gold/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.04),rgba(184,147,66,0.05))] p-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.12)]">
-                  <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(184,147,66,0.14),transparent_68%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                  <span className="pointer-events-none absolute -left-1/4 top-0 h-full w-1/3 skew-x-[-20deg] bg-white/12 opacity-0 blur-md transition-all duration-700 group-hover:left-[105%] group-hover:opacity-100" />
-                  <Link
-                    to="/sign-in"
-                    className="group inline-flex items-center gap-2.5 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-6 py-3 text-[13px] font-medium text-background transition-all duration-200 hover:opacity-90 hover:shadow-[0_0_28px_rgba(184,147,66,0.22)] active:scale-[0.97]"
-                  >
-                    Open LiftOS
-                    <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
-                  </Link>
-                </div>
+                <GoldButton to="/sign-in">
+                  Open LiftOS
+                  <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+                </GoldButton>
               </div>
             </div>
 
@@ -564,17 +561,10 @@ const Landing = () => {
           <p className="text-foreground/45 text-sm md:text-base max-w-sm mx-auto mb-10 leading-relaxed">
             Built for lifters who take their training seriously.<br />Because progress deserves to be seen.
           </p>
-          <div className="group relative inline-flex items-center overflow-hidden rounded-full border border-gold/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.04),rgba(184,147,66,0.05))] p-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.12)]">
-            <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(184,147,66,0.14),transparent_68%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-            <span className="pointer-events-none absolute -left-1/4 top-0 h-full w-1/3 skew-x-[-20deg] bg-white/12 opacity-0 blur-md transition-all duration-700 group-hover:left-[105%] group-hover:opacity-100" />
-            <Link
-              to="/sign-in"
-              className="group inline-flex items-center gap-2.5 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-6 py-3 text-[13px] font-medium text-background transition-all duration-200 hover:opacity-90 hover:shadow-[0_0_28px_rgba(184,147,66,0.22)] active:scale-[0.97]"
-            >
-              Open LiftOS
-              <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
-            </Link>
-          </div>
+          <GoldButton to="/sign-in">
+            Open LiftOS
+            <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+          </GoldButton>
         </div>
       </section>
 

@@ -1,4 +1,5 @@
 import { LayoutDashboard, Dumbbell, TrendingUp, Sparkles, ChevronLeft, PlayCircle, CalendarDays } from "lucide-react";
+import { Link } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { useSidebarState } from "@/App";
 
@@ -24,12 +25,12 @@ const AppSidebar = () => {
 
       <div className={`h-16 flex items-center px-5 ${collapsed ? "justify-center" : ""}`}>
         {!collapsed && (
-          <span className="text-[13px] font-medium tracking-[0.22em] text-foreground/88">
+          <Link to="/" className="text-[13px] font-medium tracking-[0.22em] text-foreground/88 hover:text-foreground transition-colors duration-200">
             LIFT<span className="text-gold">OS</span>
-          </span>
+          </Link>
         )}
         {collapsed && (
-          <span className="text-sm font-semibold text-gold tracking-[0.1em]">L</span>
+          <Link to="/" className="text-sm font-semibold text-gold tracking-[0.1em] hover:opacity-80 transition-opacity duration-200">L</Link>
         )}
       </div>
 

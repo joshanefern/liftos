@@ -32,8 +32,9 @@ export const useSidebarState = () => useContext(SidebarContext);
 const AppShell = ({ children }: { children: React.ReactNode }) => {
   const { collapsed } = useSidebarState();
   return (
-    <div className="flex min-h-screen w-full bg-[#0a0c15]">
+    <div className="relative flex min-h-screen w-full bg-[#0a0c15]" style={{ isolation: "isolate", zIndex: 0 }}>
       <FitnessBackground />
+      <div className="landing-hero-radiance pointer-events-none absolute inset-x-0 top-0 h-[42rem]" />
       <AppSidebar />
       <main
         className={`flex-1 transition-all duration-300 ease-out ${

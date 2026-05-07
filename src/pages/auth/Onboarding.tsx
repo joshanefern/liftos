@@ -1,14 +1,15 @@
 import AuthLayout from "@/pages/auth/AuthLayout";
+import { GoldButton } from "@/components/GoldButton";
 import { Check, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const steps = [
-  { key: "goal", label: "Training goal", options: ["Hypertrophy", "Strength", "Recomposition"] },
+  { key: "goal", label: "Training goal", options: ["Hypertrophy", "Strength", "Fat Loss", "General Fitness", "Not Sure"] },
   { key: "experience", label: "Experience level", options: ["Beginner", "Intermediate", "Advanced"] },
-  { key: "equipment", label: "Equipment available", options: ["Full gym", "Home gym", "Dumbbells only"] },
-  { key: "frequency", label: "Workout frequency", options: ["3 days", "4 days", "5 days"] },
-  { key: "split", label: "Preferred split", options: ["Push Pull Legs", "Upper Lower", "Full Body"] },
+  { key: "equipment", label: "Equipment available", options: ["Full gym", "Home gym", "Dumbbells only", "None"] },
+  { key: "frequency", label: "Workout frequency", options: ["1–2 days", "3–4 days", "5–6 days", "7 days"] },
+  { key: "split", label: "Preferred split", options: ["Push Pull Legs", "Upper Lower", "Full Body", "Not Sure / Other"] },
   { key: "units", label: "Units", options: ["lb", "kg"] },
 ];
 
@@ -19,7 +20,7 @@ const Onboarding = () => {
     goal: "Hypertrophy",
     experience: "Intermediate",
     equipment: "Full gym",
-    frequency: "5 days",
+    frequency: "3–4 days",
     split: "Push Pull Legs",
     units: "lb",
   });
@@ -71,8 +72,8 @@ const Onboarding = () => {
         >
           Back
         </button>
-        <button
-          type="button"
+        <GoldButton
+          flex1
           onClick={() => {
             if (complete) {
               window.localStorage.setItem("liftos_onboarding", JSON.stringify(answers));
@@ -81,11 +82,10 @@ const Onboarding = () => {
             }
             setIndex((value) => Math.min(steps.length - 1, value + 1));
           }}
-          className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97]"
         >
           {complete ? "Finish" : "Next"}
           <ChevronRight size={16} />
-        </button>
+        </GoldButton>
       </div>
     </AuthLayout>
   );

@@ -1,3 +1,4 @@
+import { GoldButton } from "@/components/GoldButton";
 import { ArrowRight, CalendarDays, CheckCircle2, Gauge, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -105,12 +106,9 @@ export const SuggestedWorkoutCard = () => (
         </p>
       </div>
     </div>
-    <Link
-      to="/workouts/active"
-      className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-4 py-3 text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-gold/60"
-    >
+    <GoldButton to="/workouts/active" fullWidth className="mt-5">
       Start suggested workout
       <ArrowRight size={15} />
-    </Link>
+    </GoldButton>
   </section>
 );

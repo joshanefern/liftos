@@ -1,7 +1,8 @@
 import AuthLayout from "@/pages/auth/AuthLayout";
+import { GoldButton } from "@/components/GoldButton";
 import { persistAuth, signIn } from "@/lib/auth";
 import { toast } from "@/components/ui/use-toast";
-import { ArrowRight, Mail } from "lucide-react";
+import { Mail } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -70,21 +71,14 @@ const SignIn = () => {
           </label>
           <Link to="/forgot-password" className="text-gold hover:underline">Forgot?</Link>
         </div>
-        <button
-          disabled={isSubmitting}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        <GoldButton type="submit" fullWidth disabled={isSubmitting}>
           <Mail size={16} />
           {isSubmitting ? "Signing in..." : "Sign in"}
-        </button>
+        </GoldButton>
       </form>
       <p className="mt-6 text-center text-sm text-foreground/50">
         New to LiftOS? <Link to="/create-account" className="text-gold hover:underline">Create account</Link>
       </p>
-      <Link to="/onboarding" className="mt-4 inline-flex w-full items-center justify-center gap-2 text-sm text-foreground/40 hover:text-gold transition-colors">
-        View onboarding
-        <ArrowRight size={15} />
-      </Link>
     </AuthLayout>
   );
 };

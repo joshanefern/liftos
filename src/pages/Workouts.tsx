@@ -5,6 +5,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { GoldButton } from "@/components/GoldButton";
 import { WorkoutTemplate } from "@/data/liftosMock";
 import { Check, Dumbbell, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -183,14 +184,10 @@ const Workouts = () => {
             Manage reusable splits, refine exercise structure, and jump straight into a low-friction logging flow.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openBuilder}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-gold/60"
-        >
+        <GoldButton onClick={openBuilder}>
           <Dumbbell className="h-4 w-4 shrink-0 translate-x-[0.5px] translate-y-[0.5px]" strokeWidth={1.9} />
           New workout
-        </button>
+        </GoldButton>
       </div>
 
       {savedWorkouts.length > 0 ? (
@@ -235,14 +232,10 @@ const Workouts = () => {
                     </span>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => startWorkout(workout)}
-                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-4 py-3 text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-gold/60"
-                >
+                <GoldButton onClick={() => startWorkout(workout)} fullWidth className="mt-5">
                   <Dumbbell className="h-4 w-4 shrink-0 translate-x-[0.5px] translate-y-[0.5px]" strokeWidth={1.9} />
                   Start workout
-                </button>
+                </GoldButton>
               </article>
             );
           })}
@@ -264,14 +257,10 @@ const Workouts = () => {
             <p className="mt-3 max-w-md text-sm leading-relaxed text-foreground/50">
               Create your first routine and it will show up here ready to edit, start, or reuse.
             </p>
-            <button
-              type="button"
-              onClick={openBuilder}
-              className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-gold/60"
-            >
+            <GoldButton onClick={openBuilder} className="mt-6">
               <Plus size={16} />
               Create workout
-            </button>
+            </GoldButton>
           </div>
         </section>
       )}
@@ -466,15 +455,10 @@ const Workouts = () => {
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={saveWorkout}
-                  disabled={!canSave}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-gold/60 disabled:cursor-not-allowed disabled:opacity-50"
-                >
+                <GoldButton onClick={saveWorkout} disabled={!canSave}>
                   <Check size={15} />
                   {editingWorkoutId ? "Save changes" : "Done"}
-                </button>
+                </GoldButton>
               </div>
             </div>
           </div>

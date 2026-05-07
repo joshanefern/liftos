@@ -1,4 +1,5 @@
 import ActiveWorkoutLogger from "@/components/ActiveWorkoutLogger";
+import { GoldButton } from "@/components/GoldButton";
 import { WorkoutTemplate } from "@/data/liftosMock";
 import { Dumbbell } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -47,12 +48,9 @@ const ActiveWorkout = () => {
             <p className="mt-3 max-w-md text-sm leading-relaxed text-foreground/50">
               Start a routine from your workout library and this page will turn into your live workout log.
             </p>
-            <Link
-              to="/workouts"
-              className="mt-6 inline-flex items-center justify-center rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-gold/60"
-            >
+            <GoldButton to="/workouts" className="mt-6">
               Go to workouts
-            </Link>
+            </GoldButton>
           </div>
         </section>
       </div>

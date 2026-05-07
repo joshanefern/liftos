@@ -1,4 +1,5 @@
 import { DailySummaryCard } from "@/components/SummaryCards";
+import { GoldButton } from "@/components/GoldButton";
 import { WorkoutExercise, WorkoutTemplate, dailySummary } from "@/data/liftosMock";
 import { Check, Clock3, Dumbbell, Plus, Timer, Trophy } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -123,13 +124,14 @@ const ActiveWorkoutLogger = ({ template }: { template: WorkoutTemplate }) => {
                 </div>
               ))}
             </div>
-            <Link
+            <GoldButton
               to="/dashboard"
               onClick={() => window.localStorage.removeItem(ACTIVE_WORKOUT_STORAGE_KEY)}
-              className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-4 py-3 text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97]"
+              fullWidth
+              className="mt-5"
             >
               View dashboard
-            </Link>
+            </GoldButton>
           </div>
         </div>
       </div>
@@ -147,14 +149,10 @@ const ActiveWorkoutLogger = ({ template }: { template: WorkoutTemplate }) => {
             Fast logging with editable sets, completion state, exercise notes, and a practical rest timer surface.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setFinished(true)}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-gold/60"
-        >
+        <GoldButton onClick={() => setFinished(true)}>
           <Check size={16} />
           Finish workout
-        </button>
+        </GoldButton>
       </div>
 
       <div className="relative grid gap-6 xl:grid-cols-[1fr_320px]">
