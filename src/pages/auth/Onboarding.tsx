@@ -4,6 +4,31 @@ import { Check, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+const descriptions: Record<string, string> = {
+  "Hypertrophy": "Build muscle size",
+  "Strength": "Lift heavier loads",
+  "Fat Loss": "Burn body fat",
+  "General Fitness": "Overall health focus",
+  "Not Sure": "Find your path",
+  "Beginner": "Just starting out",
+  "Intermediate": "Some gym time",
+  "Advanced": "Seasoned lifter",
+  "Full gym": "All gear available",
+  "Home gym": "Basic home setup",
+  "Dumbbells only": "Free weights only",
+  "None": "Bodyweight only",
+  "1–2 days": "Light schedule",
+  "3–4 days": "Moderate commitment",
+  "5–6 days": "High frequency",
+  "7 days": "Every single day",
+  "Push Pull Legs": "3-day rotation",
+  "Upper Lower": "Alternating body halves",
+  "Full Body": "Full body each session",
+  "Not Sure / Other": "Flexible approach",
+  "lb": "Imperial units",
+  "kg": "Metric units",
+};
+
 const steps = [
   { key: "goal", label: "Training goal", options: ["Hypertrophy", "Strength", "Fat Loss", "General Fitness", "Not Sure"] },
   { key: "experience", label: "Experience level", options: ["Beginner", "Intermediate", "Advanced"] },
@@ -41,23 +66,29 @@ const Onboarding = () => {
       <div className="space-y-3">
         {step.options.map((option) => {
           const active = answers[step.key] === option;
+          const desc = descriptions[option];
           return (
             <button
               key={option}
               type="button"
               onClick={() => setAnswers((current) => ({ ...current, [step.key]: option }))}
-              className={`flex w-full items-center justify-between rounded-[1rem] border p-4 text-left transition-all duration-200 ${
+              className={`group flex w-full items-center justify-between rounded-[1rem] border p-4 text-left transition-all duration-200 ${
                 active
                   ? "border-gold/50 bg-gold/10 text-foreground"
                   : "border-white/8 bg-white/[0.03] text-foreground/50 hover:border-gold/30 hover:text-foreground"
               }`}
             >
               <span className="text-sm font-medium">{option}</span>
-              {active && (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] text-background">
-                  <Check size={12} />
-                </span>
-              )}
+              <div className="flex items-center gap-3">
+                {desc && (
+                  <span className="text-xs text-foreground/30">{desc}</span>
+                )}
+                {active && (
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,rgba(215,181,99,1),rgba(184,147,66,1))] text-background">
+                    <Check size={12} />
+                  </span>
+                )}
+              </div>
             </button>
           );
         })}

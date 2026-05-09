@@ -60,7 +60,7 @@ const getTileTone = (day: CalanderDay) => {
 };
 
 const Calander = () => (
-  <div className="relative min-h-screen max-w-7xl p-6 md:p-10 lg:p-12">
+  <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
     <div className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_50%_0%,rgba(110,231,183,0.06),transparent_60%)]" />
 
     <div className="relative mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between animate-reveal-up">

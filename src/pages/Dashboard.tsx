@@ -8,7 +8,7 @@ import {
   weeklySummary,
   weeklyTrend,
 } from "@/data/liftosMock";
-import { ArrowRight, Dumbbell, Flame, CalendarCheck, Layers, Timer, Sparkles, TrendingUp, Brain } from "lucide-react";
+import { ArrowRight, Dumbbell, Flame, Layers, Timer, Sparkles, TrendingUp, Brain } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -23,7 +23,7 @@ const suggestedPrompts = [
 ];
 
 const Dashboard = () => (
-  <div className="relative min-h-screen max-w-7xl p-6 md:p-10 lg:p-12">
+  <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
 
     {/* ── Header ── */}
     <div className="relative mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between animate-reveal-up">
@@ -34,7 +34,7 @@ const Dashboard = () => (
           {weeklySummary.workoutsCompleted} sessions this week · {weeklySummary.totalSets} sets · {weeklySummary.consistencyScore}% consistency
         </p>
       </div>
-      <GoldButton to="/workouts/active">
+      <GoldButton to="/workouts">
         <Dumbbell size={16} />
         Start workout
       </GoldButton>
@@ -71,7 +71,7 @@ const Dashboard = () => (
                 ? "bg-[linear-gradient(90deg,rgba(52,211,153,0.85),rgba(16,185,129,0.6))] shadow-[0_0_6px_rgba(52,211,153,0.2)]"
                 : "bg-white/[0.07]"
             }`} />
-            <span className={`text-[9px] font-medium uppercase tracking-widest ${day.trained ? "text-emerald-400/50" : "text-foreground/20"}`}>
+            <span className="text-[9px] font-medium uppercase tracking-widest text-white/50">
               {day.day}
             </span>
           </div>
@@ -82,7 +82,7 @@ const Dashboard = () => (
     {/* ── Metric cards ── */}
     <section className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
       <MetricCard icon={Flame} label="Weekly volume" value={weeklySummary.totalVolume} suffix=" lb" helper="+2.2%" delay={0} />
-      <MetricCard icon={CalendarCheck} label="Sessions" value={weeklySummary.workoutsCompleted} suffix={`/${currentUser.frequency}`} helper="On plan" delay={60} />
+      <MetricCard icon={TrendingUp} label="Top lift" value={exerciseProgress[0].current} suffix=" lb" helper="Bench Press" delay={60} />
       <MetricCard icon={Layers} label="Total sets" value={weeklySummary.totalSets} helper="Target 82–92" delay={120} />
       <MetricCard icon={Timer} label="Avg duration" value={56} suffix=" min" helper="Efficient" delay={180} />
     </section>
