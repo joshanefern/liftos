@@ -1,67 +1,92 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+import { supabase } from "@/lib/supabase";
 
-export const AUTH_TOKEN_STORAGE_KEY = "liftos_auth_token";
-export const AUTH_USER_STORAGE_KEY = "liftos_auth_user";
-
-type AuthPayload = {
-  token: string;
-  user: {
-    id: string;
-    email: string;
-    firstName: string | null;
-    lastName: string | null;
-    createdAt: string;
-  };
+export type AuthUser = {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
 };
 
-type RegisterInput = {
+export type RegisterInput = {
   firstName?: string;
   lastName?: string;
   email: string;
   password: string;
 };
 
-type SignInInput = {
+export type SignInInput = {
   email: string;
   password: string;
 };
 
-const request = async <T>(path: string, init: RequestInit): Promise<T> => {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
+export const register = async ({
+  firstName,
+  lastName,
+  email,
+  password,
+}: RegisterInput): Promise<AuthUser> => {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { first_name: firstName ?? null, last_name: lastName ?? null },
     },
-    ...init,
   });
 
-  const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-
-  if (!response.ok) {
-    throw new Error(payload?.error || "Something went wrong.");
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("rate limit") || msg.includes("email rate")) {
+      throw new Error("Too many sign-up attempts with this email. Please wait a few minutes or try a different email address.");
+    }
+    if (msg.includes("already registered") || msg.includes("already been registered")) {
+      throw new Error("An account with this email already exists. Try signing in instead.");
+    }
+    throw new Error(error.message);
   }
+  if (!data.user) throw new Error("Registration failed.");
 
-  return payload as T;
+  return {
+    id: data.user.id,
+    email: data.user.email!,
+    firstName: firstName ?? null,
+    lastName: lastName ?? null,
+  };
 };
 
-const mockPayload = (email: string, firstName?: string): AuthPayload => ({
-  token: "mock-token",
-  user: {
-    id: "mock-user-id",
+export const signIn = async ({ email, password }: SignInInput): Promise<AuthUser> => {
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
-    firstName: firstName ?? "Josh",
-    lastName: null,
-    createdAt: new Date().toISOString(),
-  },
-});
+    password,
+  });
 
-export const register = (input: RegisterInput): Promise<AuthPayload> =>
-  Promise.resolve(mockPayload(input.email, input.firstName));
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
+      throw new Error("Incorrect email or password.");
+    }
+    if (msg.includes("email not confirmed")) {
+      throw new Error("Please confirm your email before signing in, or ask your admin to disable email confirmation.");
+    }
+    throw new Error(error.message);
+  }
+  if (!data.user) throw new Error("Sign in failed.");
 
-export const signIn = (input: SignInInput): Promise<AuthPayload> =>
-  Promise.resolve(mockPayload(input.email));
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("first_name, last_name")
+    .eq("id", data.user.id)
+    .single();
 
-export const persistAuth = (payload: AuthPayload) => {
-  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, payload.token);
-  window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(payload.user));
+  return {
+    id: data.user.id,
+    email: data.user.email!,
+    firstName: profile?.first_name ?? null,
+    lastName: profile?.last_name ?? null,
+  };
 };
+
+export const signOut = async () => {
+  await supabase.auth.signOut();
+};
+
+export const getSession = () => supabase.auth.getSession();

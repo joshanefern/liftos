@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createContext, useContext, useState } from "react";
+import { UserProvider } from "@/context/UserContext";
 import AppSidebar from "@/components/AppSidebar";
 import { FitnessBackground } from "@/components/FitnessBackground";
 import Landing from "@/pages/Landing";
@@ -52,6 +53,7 @@ const App = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <UserProvider>
       <TooltipProvider>
         <Toaster />
         <Sonner />
@@ -92,6 +94,7 @@ const App = () => {
           </BrowserRouter>
         </SidebarContext.Provider>
       </TooltipProvider>
+      </UserProvider>
     </QueryClientProvider>
   );
 };

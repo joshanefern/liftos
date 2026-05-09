@@ -6,10 +6,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { GoldButton } from "@/components/GoldButton";
-import { WorkoutTemplate } from "@/data/liftosMock";
+import type { WorkoutExercise } from "@/data/liftosMock";
+import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { toast } from "@/components/ui/use-toast";
 import { Check, Dumbbell, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
 
 type ExerciseDraft = {
   id: string;
@@ -35,16 +39,13 @@ const integerInput = (value: string) => value.replace(/\D/g, "");
 const decimalInput = (value: string) => {
   const cleaned = value.replace(/[^\d.]/g, "");
   const [whole, ...decimals] = cleaned.split(".");
-
   return decimals.length > 0 ? `${whole}.${decimals.join("")}` : whole;
 };
 
 const toInteger = (value: string, fallback: number) => Number.parseInt(value, 10) || fallback;
-
 const toDecimal = (value: string) => Number.parseFloat(value) || 0;
-const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
 
-const createExerciseDraftFromTemplate = (exercise: WorkoutTemplate["exercises"][number]): ExerciseDraft => {
+const createExerciseDraftFromTemplate = (exercise: WorkoutExercise): ExerciseDraft => {
   const sets = exercise.sets.length;
   const reps = exercise.sets[0]?.reps ?? 0;
   const weight = exercise.sets[0]?.weight ?? 0;
@@ -62,8 +63,9 @@ const createExerciseDraftFromTemplate = (exercise: WorkoutTemplate["exercises"][
 
 const Workouts = () => {
   const navigate = useNavigate();
+  const { templates, loading, save, remove } = useWorkoutTemplates();
   const [builderOpen, setBuilderOpen] = useState(false);
-  const [savedWorkouts, setSavedWorkouts] = useState<WorkoutTemplate[]>([]);
+  const [saving, setSaving] = useState(false);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
   const [workoutName, setWorkoutName] = useState("");
   const [exercises, setExercises] = useState<ExerciseDraft[]>([]);
@@ -80,7 +82,6 @@ const Workouts = () => {
     () =>
       exercises.reduce((sum, exercise) => {
         if (exercise.decideLater) return sum;
-
         return sum + toInteger(exercise.sets, 0) * toInteger(exercise.reps, 0) * toDecimal(exercise.weight);
       }, 0),
     [exercises],
@@ -89,13 +90,9 @@ const Workouts = () => {
 
   useEffect(() => {
     if (!builderOpen) return;
-
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
+    return () => { document.body.style.overflow = previousOverflow; };
   }, [builderOpen]);
 
   const openBuilder = () => {
@@ -105,19 +102,26 @@ const Workouts = () => {
     setBuilderOpen(true);
   };
 
-  const editWorkout = (workout: WorkoutTemplate) => {
-    setEditingWorkoutId(workout.id);
-    setWorkoutName(workout.name);
-    setExercises(workout.exercises.map(createExerciseDraftFromTemplate));
+  const editWorkout = (template: { id: string; name: string; exercises: WorkoutExercise[] }) => {
+    setEditingWorkoutId(template.id);
+    setWorkoutName(template.name);
+    setExercises(template.exercises.map(createExerciseDraftFromTemplate));
     setBuilderOpen(true);
   };
 
-  const removeWorkout = (workoutId: string) => {
-    setSavedWorkouts((current) => current.filter((workout) => workout.id !== workoutId));
+  const removeWorkout = async (id: string) => {
+    try {
+      await remove(id);
+    } catch {
+      toast({ title: "Could not delete workout", variant: "destructive" });
+    }
   };
 
-  const startWorkout = (workout: WorkoutTemplate) => {
-    window.localStorage.setItem(ACTIVE_WORKOUT_STORAGE_KEY, JSON.stringify(workout));
+  const startWorkout = (template: { id: string; name: string; exercises: WorkoutExercise[] }) => {
+    window.localStorage.setItem(
+      ACTIVE_WORKOUT_STORAGE_KEY,
+      JSON.stringify({ name: template.name, exercises: template.exercises, templateId: template.id, startedAt: new Date().toISOString() }),
+    );
     navigate("/workouts/active");
   };
 
@@ -131,45 +135,39 @@ const Workouts = () => {
     );
   };
 
-  const saveWorkout = () => {
-    if (!canSave) return;
+  const saveWorkout = async () => {
+    if (!canSave || saving) return;
+    setSaving(true);
 
-    const nextWorkout: WorkoutTemplate = {
-      id: editingWorkoutId ?? `custom-${Date.now()}`,
-      name: workoutName.trim(),
-      split: "Custom",
-      focus: "Custom workout created from the workout builder.",
-      duration: 45,
-      difficulty: "Moderate",
-      exercises: completedExercises.map((exercise) => {
-        const targetSets = toInteger(exercise.sets, 1);
-        const targetReps = toInteger(exercise.reps, 0);
-        const targetWeight = toDecimal(exercise.weight);
+    const exercisesToSave: WorkoutExercise[] = completedExercises.map((exercise) => {
+      const targetSets = toInteger(exercise.sets, 1);
+      const targetReps = toInteger(exercise.reps, 0);
+      const targetWeight = toDecimal(exercise.weight);
 
-        return {
-          id: exercise.id,
-          name: exercise.name.trim(),
-          category: workoutName.trim(),
-          target: exercise.decideLater
-            ? "Decide sets, reps, and weight while logging"
-            : `${targetSets} sets x ${targetReps} reps at ${targetWeight || "bodyweight/TBD"} lb`,
-          sets: Array.from({ length: exercise.decideLater ? 1 : targetSets }, (_, index) => ({
-            id: `${exercise.id}-set-${index + 1}`,
-            reps: exercise.decideLater ? 0 : targetReps,
-            weight: exercise.decideLater ? 0 : targetWeight,
-          })),
-        };
-      }),
-    };
-
-    window.localStorage.setItem("liftos_active_workout_template", JSON.stringify(nextWorkout));
-    setSavedWorkouts((current) => {
-      if (!editingWorkoutId) return [nextWorkout, ...current];
-
-      return current.map((workout) => (workout.id === editingWorkoutId ? nextWorkout : workout));
+      return {
+        id: exercise.id,
+        name: exercise.name.trim(),
+        category: workoutName.trim(),
+        target: exercise.decideLater
+          ? "Decide sets, reps, and weight while logging"
+          : `${targetSets} sets × ${targetReps} reps at ${targetWeight || "bodyweight/TBD"} lb`,
+        sets: Array.from({ length: exercise.decideLater ? 1 : targetSets }, (_, index) => ({
+          id: `${exercise.id}-set-${index + 1}`,
+          reps: exercise.decideLater ? 0 : targetReps,
+          weight: exercise.decideLater ? 0 : targetWeight,
+        })),
+      };
     });
-    setEditingWorkoutId(null);
-    setBuilderOpen(false);
+
+    try {
+      await save({ id: editingWorkoutId, name: workoutName.trim(), exercises: exercisesToSave });
+      setEditingWorkoutId(null);
+      setBuilderOpen(false);
+    } catch {
+      toast({ title: "Could not save workout", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -190,31 +188,31 @@ const Workouts = () => {
         </GoldButton>
       </div>
 
-      {savedWorkouts.length > 0 ? (
+      {!loading && templates.length > 0 ? (
         <section className="relative grid gap-4 md:grid-cols-2 xl:grid-cols-3 animate-reveal-up">
-          {savedWorkouts.map((workout) => {
-            const totalSets = workout.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
+          {templates.map((template) => {
+            const totalSets = template.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
             return (
-              <article key={workout.id} className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-5">
+              <article key={template.id} className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-5">
                 <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent)]" />
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-base font-semibold">{workout.name}</p>
+                    <p className="text-base font-semibold">{template.name}</p>
                     <p className="mt-1 text-xs text-foreground/30">Ready to start</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      aria-label={`Edit ${workout.name}`}
-                      onClick={() => editWorkout(workout)}
+                      aria-label={`Edit ${template.name}`}
+                      onClick={() => editWorkout(template)}
                       className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] border border-white/8 bg-white/[0.03] text-foreground/50 transition hover:border-gold/30 hover:text-gold focus:outline-none focus:ring-2 focus:ring-gold/40"
                     >
                       <Pencil size={14} />
                     </button>
                     <button
                       type="button"
-                      aria-label={`Delete ${workout.name}`}
-                      onClick={() => removeWorkout(workout.id)}
+                      aria-label={`Delete ${template.name}`}
+                      onClick={() => removeWorkout(template.id)}
                       className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] border border-white/8 bg-white/[0.03] text-foreground/50 transition hover:border-destructive/40 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
                     >
                       <Trash2 size={14} />
@@ -222,17 +220,17 @@ const Workouts = () => {
                   </div>
                 </div>
                 <p className="text-sm text-foreground/50">
-                  {workout.exercises.length} exercise{workout.exercises.length === 1 ? "" : "s"} <span>&bull;</span>{" "}
+                  {template.exercises.length} exercise{template.exercises.length === 1 ? "" : "s"} <span>&bull;</span>{" "}
                   {totalSets} total sets
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {workout.exercises.slice(0, 3).map((exercise) => (
+                  {template.exercises.slice(0, 3).map((exercise) => (
                     <span key={exercise.id} className="rounded-full bg-white/[0.03] px-2.5 py-1 text-xs text-foreground/50">
                       {exercise.name}
                     </span>
                   ))}
                 </div>
-                <GoldButton onClick={() => startWorkout(workout)} fullWidth className="mt-5">
+                <GoldButton onClick={() => startWorkout(template)} fullWidth className="mt-5">
                   <Dumbbell className="h-4 w-4 shrink-0 translate-x-[0.5px] translate-y-[0.5px]" strokeWidth={1.9} />
                   Start workout
                 </GoldButton>
@@ -242,7 +240,6 @@ const Workouts = () => {
         </section>
       ) : (
         <section className="relative overflow-hidden border-y border-white/8 py-16 animate-reveal-up md:py-20">
-
           <div className="relative mx-auto flex max-w-xl flex-col items-center text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-[0.875rem] border border-gold/20 bg-gold/10">
               <Dumbbell className="h-[18px] w-[18px] translate-x-[0.5px] translate-y-[0.5px] text-gold" strokeWidth={1.9} />
@@ -450,9 +447,9 @@ const Workouts = () => {
                 >
                   Cancel
                 </button>
-                <GoldButton onClick={saveWorkout} disabled={!canSave}>
+                <GoldButton onClick={saveWorkout} disabled={!canSave || saving}>
                   <Check size={15} />
-                  {editingWorkoutId ? "Save changes" : "Done"}
+                  {saving ? "Saving…" : editingWorkoutId ? "Save changes" : "Done"}
                 </GoldButton>
               </div>
             </div>

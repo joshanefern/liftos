@@ -1,160 +1,184 @@
-import MetricCard from "@/components/MetricCard";
-import { WeeklySummaryCard } from "@/components/SummaryCards";
-import { consistencyData, exerciseProgress, muscleGroupData, weeklySummary, weeklyTrend } from "@/data/liftosMock";
-import { Award, CalendarCheck, Dumbbell, Flame, TrendingUp } from "lucide-react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useUser } from "@/context/UserContext";
+import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
+import { GoldButton } from "@/components/GoldButton";
+import {
+  getMonthStats,
+  getTopLifts,
+  getVolumeTrend,
+} from "@/lib/workoutStats";
+import { Award, BarChart3, CalendarCheck, Dumbbell, Flame, TrendingUp } from "lucide-react";
+import { useMemo } from "react";
+import {
+  Area,
+  AreaChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
-type ChartPayloadItem = {
-  dataKey?: string;
-  name?: string;
-  value?: string | number;
-};
+const Progress = () => {
+  const { profile } = useUser();
+  const { logs } = useWorkoutLogs();
+  const units = profile?.units ?? "lb";
 
-type ChartTooltipProps = {
-  active?: boolean;
-  payload?: ChartPayloadItem[];
-  label?: string | number;
-};
+  const monthStats = useMemo(() => getMonthStats(logs), [logs]);
+  const volumeTrend = useMemo(() => getVolumeTrend(logs), [logs]);
+  const topLifts = useMemo(() => getTopLifts(logs), [logs]);
 
-const chartTooltip = ({ active, payload, label }: ChartTooltipProps) =>
-  active && payload?.length ? (
-    <div className="rounded-[1rem] border border-white/10 bg-white/[0.04] px-3 py-2 shadow-lg">
-      <p className="mb-1 text-xs text-foreground/30">{label}</p>
-      {payload.map((item) => (
-        <p key={item.dataKey} className="text-sm font-medium text-emerald-300">
-          {item.name ?? item.dataKey}: {Number(item.value).toLocaleString()}
+  const eightWeekVolume = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 56);
+    return logs
+      .filter((l) => new Date(l.finished_at) >= cutoff)
+      .reduce((s, l) => s + l.total_volume, 0);
+  }, [logs]);
+
+  const prsThisBlock = topLifts.length;
+
+  const metrics = [
+    { icon: Flame, label: "8-week volume", value: eightWeekVolume > 0 ? `${(eightWeekVolume / 1000).toFixed(1)}k ${units}` : "–" },
+    { icon: Dumbbell, label: "Avg hard sets", value: monthStats.avgSets > 0 ? String(monthStats.avgSets) : "–" },
+    { icon: CalendarCheck, label: "Monthly workouts", value: monthStats.count > 0 ? String(monthStats.count) : "–" },
+    { icon: Award, label: "PRs this block", value: prsThisBlock > 0 ? String(prsThisBlock) : "–" },
+  ];
+
+  return (
+    <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_50%_0%,rgba(110,231,183,0.06),transparent_60%)]" />
+
+      <div className="relative mb-8 animate-reveal-up">
+        <p className="label-xs mb-2">Analytics</p>
+        <h1 className="heading-lg">Progress</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-foreground/50">
+          Chart-first training feedback grounded in logged work: volume, set distribution, personal records, and consistency.
         </p>
-      ))}
-    </div>
-  ) : null;
-
-const Progress = () => (
-  <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
-    <div className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_50%_0%,rgba(110,231,183,0.06),transparent_60%)]" />
-
-    <div className="relative mb-8 animate-reveal-up">
-      <p className="label-xs mb-2">Analytics</p>
-      <h1 className="heading-lg">Progress</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-relaxed text-foreground/50">
-        Chart-first training feedback grounded in logged work: volume, set distribution, personal records, and consistency.
-      </p>
-    </div>
-
-    <section className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <MetricCard icon={Flame} label="8-week volume" value={688920} suffix=" lb" helper="+24%" delay={80} />
-      <MetricCard icon={Dumbbell} label="Avg hard sets" value={81.5} decimals={1} helper="Per week" delay={140} />
-      <MetricCard icon={CalendarCheck} label="Monthly workouts" value={21} helper="5.2 / week" delay={200} />
-      <MetricCard icon={Award} label="PRs this block" value={4} helper="All compounds" delay={260} />
-    </section>
-
-    <section className="mb-8 grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-      <div className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-5 md:p-6 animate-reveal-up">
-        <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(110,231,183,0.18),transparent)]" />
-        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="label-xs mb-2">Volume Trend</p>
-            <h2 className="heading-md">Eight-week workload</h2>
-          </div>
-          <p className="text-sm text-emerald-300">+2.2% this week</p>
-        </div>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={weeklyTrend} margin={{ top: 8, right: 12, bottom: 0, left: -12 }}>
-              <defs>
-                <linearGradient id="progressVolume" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgb(110,231,183)" stopOpacity={0.22} />
-                  <stop offset="100%" stopColor="rgb(110,231,183)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-              <XAxis dataKey="week" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "rgba(235,228,215,0.3)" }} dy={8} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "rgba(235,228,215,0.3)" }} />
-              <Tooltip content={chartTooltip} cursor={false} />
-              <Area name="Volume" type="monotone" dataKey="volume" stroke="rgb(110,231,183)" strokeWidth={2} fill="url(#progressVolume)" dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
       </div>
 
-      <WeeklySummaryCard summary={weeklySummary} />
-    </section>
-
-    <section className="mb-8 grid gap-6 xl:grid-cols-2">
-      <div className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-5 md:p-6">
-        <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(110,231,183,0.14),transparent)]" />
-        <p className="label-xs mb-2">Muscle Group Sets</p>
-        <h2 className="heading-md mb-6">Weekly distribution</h2>
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={muscleGroupData} margin={{ top: 8, right: 12, bottom: 0, left: -18 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-              <XAxis dataKey="group" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "rgba(235,228,215,0.3)" }} dy={8} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "rgba(235,228,215,0.3)" }} />
-              <Tooltip content={chartTooltip} cursor={{ fill: "rgba(255,255,255,0.03)", opacity: 1 }} />
-              <Bar dataKey="sets" name="Sets" fill="rgb(110,231,183)" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="target" name="Target" fill="rgba(255,255,255,0.06)" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-5 md:p-6">
-        <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(110,231,183,0.14),transparent)]" />
-        <p className="label-xs mb-2">Consistency</p>
-        <h2 className="heading-md mb-6">This week</h2>
-        <div className="grid grid-cols-7 gap-2">
-          {consistencyData.map((day) => (
-            <div key={day.day} className="text-center">
-              <div
-                className={`mb-2 flex aspect-square items-center justify-center rounded-[0.875rem] border text-sm font-semibold ${
-                  day.trained ? "border-emerald-300/40 bg-emerald-300/15 text-emerald-300" : "border-white/8 bg-white/[0.03] text-foreground/30"
-                }`}
-              >
-                {day.day.slice(0, 1)}
-              </div>
-              <p className="text-[11px] text-foreground/30">{day.label}</p>
+      {/* Metric cards */}
+      <section className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {metrics.map(({ icon: Icon, label, value }, i) => (
+          <article
+            key={label}
+            className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-4 md:p-5 animate-reveal-up"
+            style={{ animationDelay: `${i * 60 + 80}ms` }}
+          >
+            <div className="pointer-events-none absolute inset-x-[10%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.1),transparent)]" />
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-xs uppercase tracking-widest text-foreground/30">{label}</span>
+              <Icon size={15} className={value !== "–" ? "text-emerald-300/60" : "text-foreground/20"} />
             </div>
-          ))}
-        </div>
-        <div className="mt-6 rounded-[1rem] border border-emerald-300/15 bg-emerald-300/[0.04] p-4">
-          <div className="mb-2 flex items-center gap-2 text-emerald-300">
-            <TrendingUp size={15} />
-            <span className="text-xs font-medium uppercase tracking-widest">Coaching read</span>
-          </div>
-          <p className="text-sm leading-relaxed text-foreground/50">
-            Your best weeks happen when lower-body work lands before the weekend. Keep the next legs session on Thursday to avoid compressing volume.
-          </p>
-        </div>
-      </div>
-    </section>
+            <p className={`mono text-2xl font-semibold ${value !== "–" ? "" : "text-foreground/20"}`}>{value}</p>
+            <p className="mt-2 text-xs text-foreground/20">{value !== "–" ? "This block" : "No data yet"}</p>
+          </article>
+        ))}
+      </section>
 
-    <section>
-      <div className="mb-4 flex items-center justify-between">
-        <div>
+      {/* Volume trend chart */}
+      <section className="relative overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-5 md:p-6 animate-reveal-up mb-8">
+        <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(110,231,183,0.18),transparent)]" />
+        <p className="label-xs mb-2 !text-emerald-300">Volume Trend</p>
+        <h2 className="heading-md mb-6">8-week training volume</h2>
+
+        {volumeTrend.length > 0 ? (
+          <div className="h-[200px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={volumeTrend} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="emeraldGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6ee7b7" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#6ee7b7" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="week"
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.3)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.3)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "#0d1125",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: "0.75rem",
+                    fontSize: 12,
+                    color: "#fff",
+                  }}
+                  formatter={(v: number) => [`${v.toLocaleString()} ${units}`, "Volume"]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="volume"
+                  stroke="#6ee7b7"
+                  fill="url(#emeraldGrad)"
+                  strokeWidth={1.5}
+                  dot={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-[1.1rem] border border-emerald-300/20 bg-emerald-300/[0.07]">
+              <BarChart3 size={22} className="text-emerald-300/60" />
+            </div>
+            <div>
+              <h2 className="heading-md mb-2">No workouts logged yet</h2>
+              <p className="max-w-sm text-sm leading-relaxed text-foreground/40">
+                Your volume trend and personal records will appear here as you log workouts. All weights display in {units}.
+              </p>
+            </div>
+            <GoldButton to="/workouts" className="mt-2">
+              <Dumbbell size={15} />
+              Log your first workout
+            </GoldButton>
+          </div>
+        )}
+      </section>
+
+      {/* PRs */}
+      <section className="mt-0">
+        <div className="mb-4">
           <p className="label-xs mb-2">Personal Records</p>
           <h2 className="heading-md">Exercise-specific progress</h2>
         </div>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {exerciseProgress.map((lift) => (
-          <article key={lift.lift} className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-5">
-            <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(110,231,183,0.14),transparent)]" />
-            <p className="text-sm font-semibold">{lift.lift}</p>
-            <p className="mt-4 mono text-3xl font-semibold text-emerald-300">{lift.current}</p>
-            <p className="mt-1 text-xs text-foreground/30">Estimated 1RM, lb</p>
-            <div className="mt-5 flex items-center justify-between rounded-[1rem] bg-white/[0.03] p-3 text-xs">
-              <span className="text-foreground/30">Trend</span>
-              <span className="font-semibold text-emerald-300">{lift.trend}</span>
+        <div className="relative overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-5 md:p-6">
+          {topLifts.length > 0 ? (
+            <div className="divide-y divide-white/[0.06]">
+              {topLifts.map((lift, i) => (
+                <div key={lift.name} className="flex items-center justify-between py-4 first:pt-0 last:pb-0">
+                  <div className="flex items-center gap-4">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gold/20 bg-gold/10 text-xs font-semibold text-gold">
+                      {i + 1}
+                    </span>
+                    <span className="text-sm font-medium">{lift.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold mono">{lift.weight} {units}</p>
+                    <p className="text-xs text-foreground/30">× {lift.reps} reps</p>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="mt-2 flex items-center justify-between rounded-[1rem] bg-white/[0.03] p-3 text-xs">
-              <span className="text-foreground/30">Block volume</span>
-              <span className="font-semibold">{lift.volume.toLocaleString()} lb</span>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-[0.875rem] border border-white/8 bg-white/[0.03]">
+                <TrendingUp size={16} className="text-foreground/20" />
+              </div>
+              <p className="text-sm text-foreground/30">No records yet</p>
+              <p className="text-xs text-foreground/20">PRs are tracked automatically as you log sets</p>
             </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  </div>
-);
+          )}
+        </div>
+      </section>
+    </div>
+  );
+};
 
 export default Progress;

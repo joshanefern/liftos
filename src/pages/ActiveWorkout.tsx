@@ -1,26 +1,31 @@
 import ActiveWorkoutLogger from "@/components/ActiveWorkoutLogger";
 import { GoldButton } from "@/components/GoldButton";
-import { WorkoutTemplate } from "@/data/liftosMock";
+import type { WorkoutExercise } from "@/data/liftosMock";
 import { Dumbbell } from "lucide-react";
-import { Link } from "react-router-dom";
+
+export type ActiveSession = {
+  name: string;
+  exercises: WorkoutExercise[];
+  templateId?: string;
+  startedAt: string;
+};
 
 const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
 
-const getActiveTemplate = (): WorkoutTemplate | null => {
+const getActiveSession = (): ActiveSession | null => {
   if (typeof window === "undefined") return null;
-
   try {
     const saved = window.localStorage.getItem(ACTIVE_WORKOUT_STORAGE_KEY);
-    return saved ? (JSON.parse(saved) as WorkoutTemplate) : null;
+    return saved ? (JSON.parse(saved) as ActiveSession) : null;
   } catch {
     return null;
   }
 };
 
 const ActiveWorkout = () => {
-  const template = getActiveTemplate();
+  const session = getActiveSession();
 
-  if (!template) {
+  if (!session) {
     return (
       <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_50%_0%,rgba(184,147,66,0.07),transparent_60%)]" />
@@ -33,7 +38,6 @@ const ActiveWorkout = () => {
         </div>
 
         <section className="relative overflow-hidden border-y border-white/8 py-16 animate-reveal-up md:py-20">
-
           <div className="relative mx-auto flex max-w-xl flex-col items-center text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-[0.875rem] border border-gold/20 bg-gold/10">
               <Dumbbell className="h-[18px] w-[18px] translate-x-[0.5px] translate-y-[0.5px] text-gold" strokeWidth={1.9} />
@@ -52,7 +56,7 @@ const ActiveWorkout = () => {
     );
   }
 
-  return <ActiveWorkoutLogger template={template} />;
+  return <ActiveWorkoutLogger session={session} />;
 };
 
 export default ActiveWorkout;
