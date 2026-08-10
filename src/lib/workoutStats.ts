@@ -36,6 +36,35 @@ export const getWeekStats = (logs: WorkoutLog[]): WeekStats => {
   };
 };
 
+
+/** Weekly streak — consecutive weeks (Mon-start, local) with at least one
+    logged session. The research-backed consistency metric: alive with one
+    workout a week, immune to programmed rest days (daily streaks shame
+    people into junk sessions). The current week counts once it has a log,
+    and an empty current week doesn't break a streak that ran through last
+    week. */
+export const getWeeklyStreak = (logs: WorkoutLog[]): number => {
+  if (logs.length === 0) return 0;
+  const weekStarts = new Set<number>();
+  for (const log of logs) {
+    const d = new Date(log.finished_at);
+    if (Number.isNaN(d.getTime())) continue;
+    const monday = localMidnight(d);
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    weekStarts.add(monday.getTime());
+  }
+  const cursor = startOfCurrentWeek();
+  let streak = 0;
+  if (!weekStarts.has(cursor.getTime())) {
+    cursor.setDate(cursor.getDate() - 7); // current week still open — look back
+  }
+  while (weekStarts.has(cursor.getTime())) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 7);
+  }
+  return streak;
+};
+
 /** Weekly volume goal for the dot-matrix meter: 10% above the trailing
     4-week average weekly volume, floored at 5,000 and rounded to the
     nearest 500 so the target reads as a round number. */

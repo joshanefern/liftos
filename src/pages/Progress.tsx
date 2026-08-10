@@ -3,11 +3,13 @@ import { MuscleMap } from "@/components/MuscleMap";
 import { useUser } from "@/context/UserContext";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
 import { getMuscleActivation } from "@/lib/muscleMap";
-import { getLastTrainedByMuscle, labelForMuscle, TRACKED_MUSCLES } from "@/lib/muscleCoverage";
+import { getLastTrainedByMuscle, labelForMuscle } from "@/lib/muscleCoverage";
 import { allTimePRs, bestWeight, type WeightRecord } from "@/lib/prs";
-import { getMonthStats, getVolumeTrend } from "@/lib/workoutStats";
-import { Dumbbell } from "lucide-react";
+import { featuredLift, getLiftTrends } from "@/lib/strengthTrend";
+import { getVolumeTrend, getWeeklyStreak, getWeekStats } from "@/lib/workoutStats";
+import { ArrowRight, ChevronDown, Dumbbell } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Area,
   AreaChart,
@@ -17,12 +19,16 @@ import {
   YAxis,
 } from "recharts";
 
-const DAY_MS = 86_400_000;
-const PR_VISIBLE_COUNT = 8;
-const PR_RECENT_DAYS = 7;
-const COVERAGE_VISIBLE_COUNT = 4;
+/* ── Progress — answers ONE question: "am I getting stronger?"
+     (Research: per-lift strength trend is what lifters re-check; totals and
+     averages are share-card material, not screen material.) Structure:
+     strength-trend hero, then exactly three cards — Strength, Records,
+     This week — with the volume chart demoted behind a tap. ── */
 
-/* Compact relative label for record dates ("3d ago"). */
+const DAY_MS = 86_400_000;
+const PR_RECENT_DAYS = 7;
+const RECORDS_VISIBLE = 3;
+
 const relativeDay = (iso: string): string => {
   const days = Math.floor((Date.now() - Date.parse(iso)) / DAY_MS);
   if (days <= 0) return "today";
@@ -32,142 +38,128 @@ const relativeDay = (iso: string): string => {
   return `${Math.floor(days / 365)}y ago`;
 };
 
-/* Compact numeral for the hero — "142.5k", never "142,500". */
-const compactNum = (n: number): string =>
-  n >= 10_000
-    ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`
-    : n.toLocaleString();
+/** Tiny sparkline points for a 100×28 viewBox. */
+const sparkPoints = (values: number[], w = 100, h = 28, pad = 3): string => {
+  if (values.length < 2) return "";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  return values
+    .map((v, i) => {
+      const x = (i / (values.length - 1)) * w;
+      const y = max === min ? h / 2 : pad + (1 - (v - min) / (max - min)) * (h - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+};
 
-/* ── Muscle coverage — days since each muscle was last a primary mover.
-     The staleness convention (labels, tracked list, last-trained map) lives in
-     src/lib/muscleCoverage.ts, shared with the suggestion engine. ── */
+const CARD_CLASS =
+  "rounded-[14px] bg-card p-4 shadow-[0_4px_12px_rgba(16,22,35,0.08)] " +
+  "dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]";
 
 const Progress = () => {
   const { profile } = useUser();
   const { logs } = useWorkoutLogs();
   const units = profile?.units ?? "lb";
-  const [showAllPRs, setShowAllPRs] = useState(false);
+  const [showAllRecords, setShowAllRecords] = useState(false);
+  const [showLifted, setShowLifted] = useState(false);
 
-  const monthStats = useMemo(() => getMonthStats(logs), [logs]);
-  const volumeTrend = useMemo(() => getVolumeTrend(logs), [logs]);
+  const trends = useMemo(() => getLiftTrends(logs), [logs]);
+  const hero = useMemo(() => featuredLift(trends), [trends]);
+  const keyLifts = useMemo(() => trends.slice(0, 4), [trends]);
 
-  const prs = useMemo(() => allTimePRs(logs), [logs]);
-  // Reps at the max weight — allTimePRs carries the numbers per kind, but the
-  // "best 225 × 5" line needs the reps achieved at that top weight.
+  // Records, most recently improved first — "what did I just achieve".
+  const prs = useMemo(
+    () =>
+      [...allTimePRs(logs)].sort(
+        (a, b) => Date.parse(b.lastImproved) - Date.parse(a.lastImproved),
+      ),
+    [logs],
+  );
   const bestWeightRecords = useMemo(() => {
     const map = new Map<string, WeightRecord | null>();
     for (const pr of prs) map.set(pr.exerciseName, bestWeight(logs, pr.exerciseName));
     return map;
   }, [logs, prs]);
-  const visiblePRs = showAllPRs ? prs : prs.slice(0, PR_VISIBLE_COUNT);
+  const visibleRecords = showAllRecords ? prs : prs.slice(0, RECORDS_VISIBLE);
 
-  const eightWeek = useMemo(() => {
-    const cutoff = Date.now() - 56 * DAY_MS;
-    let volume = 0;
-    let sessions = 0;
-    for (const log of logs) {
-      if (new Date(log.finished_at).getTime() < cutoff) continue;
-      volume += log.total_volume;
-      sessions += 1;
-    }
-    return { volume, sessions };
-  }, [logs]);
+  const weekStats = useMemo(() => getWeekStats(logs), [logs]);
+  const weeklyStreak = useMemo(() => getWeeklyStreak(logs), [logs]);
+  const volumeTrend = useMemo(() => getVolumeTrend(logs), [logs]);
+  const frequency =
+    String(profile?.frequency ?? "").replace(/\s*days?\s*/i, "").trim() || null;
 
-  // Exercises whose records improved inside the 8-week block, matching the
-  // hero number's window.
-  const prsThisBlock = useMemo(() => {
-    const cutoff = Date.now() - 56 * DAY_MS;
-    return prs.filter((p) => Date.parse(p.lastImproved) >= cutoff).length;
-  }, [prs]);
-
-  // Fallback hero when the 8-week window is empty but history exists:
-  // the heaviest projected single across all logged exercises.
-  const bestE1RM = useMemo(() => {
-    let best: { name: string; value: number } | null = null;
-    for (const pr of prs) {
-      if (pr.maxE1RM !== null && (best === null || pr.maxE1RM > best.value)) {
-        best = { name: pr.exerciseName, value: pr.maxE1RM };
+  // One plain-English balance verdict under the body map: celebrate full
+  // coverage, otherwise name the most neglected muscle.
+  const balanceVerdict = useMemo(() => {
+    const lastTrained = getLastTrainedByMuscle(logs);
+    if (lastTrained.size === 0) return null;
+    let stalest: { muscle: string; days: number } | null = null;
+    const now = Date.now();
+    for (const [muscle, time] of lastTrained) {
+      const days = Math.floor((now - time) / DAY_MS);
+      if (stalest === null || days > stalest.days) {
+        stalest = { muscle: labelForMuscle(muscle), days };
       }
     }
-    return best;
-  }, [prs]);
-
-  const coverage = useMemo(() => {
-    const lastTrained = getLastTrainedByMuscle(logs);
-    const now = Date.now();
-    // Most neglected first: never-trained (no record), then longest ago.
-    const neglected = TRACKED_MUSCLES.map((muscle) => {
-      const time = lastTrained.get(muscle);
-      return {
-        muscle,
-        days: time ? Math.max(0, Math.floor((now - time) / DAY_MS)) : null,
-      };
-    })
-      .sort((a, b) => {
-        if (a.days === null && b.days === null) return 0;
-        if (a.days === null) return -1;
-        if (b.days === null) return 1;
-        return b.days - a.days;
-      })
-      .slice(0, COVERAGE_VISIBLE_COUNT);
-    return { neglected, hasHistory: lastTrained.size > 0 };
+    if (!stalest || stalest.days <= 7) {
+      return "Every trained muscle hit within the last week.";
+    }
+    return `${stalest.muscle}: ${stalest.days} days since last trained — worth a look.`;
   }, [logs]);
 
-  const stats = [
-    { label: "Avg hard sets", value: monthStats.avgSets > 0 ? String(monthStats.avgSets) : "–" },
-    { label: "Workouts / mo", value: monthStats.count > 0 ? String(monthStats.count) : "–" },
-    { label: "PRs this block", value: prsThisBlock > 0 ? String(prsThisBlock) : "–" },
-  ];
+  const heroDelta = hero ? hero.delta : 0;
 
   return (
     <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
-
-      {/* ── Header — one eyebrow row ── */}
-      <header className="flex items-baseline justify-between animate-reveal-up">
+      {/* ── Header ── */}
+      <header className="animate-reveal-up">
         <p className="eyebrow !text-fg">Progress</p>
-        <p className="eyebrow !text-fg-faint">Last 8 weeks</p>
       </header>
 
-      {/* ── THE NUMBER ── */}
-      <section
-        className="mt-10 md:mt-14 animate-reveal-up"
-        style={{ animationDelay: "60ms" }}
-      >
-        {eightWeek.volume > 0 ? (
+      {/* ── THE NUMBER — your headline lift's trend ── */}
+      <section className="mt-10 md:mt-14 animate-reveal-up" style={{ animationDelay: "60ms" }}>
+        {hero ? (
           <>
             <p className="stat-hero !text-6xl md:!text-7xl whitespace-nowrap">
-              {compactNum(eightWeek.volume)}
+              {hero.first}
+              <span className="mx-2 align-middle text-2xl font-extralight text-fg-muted">→</span>
+              {hero.last}
               <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
                 {units}
               </span>
             </p>
-            <p className="eyebrow mt-4">Training volume · 8 weeks</p>
+            <p className="eyebrow mt-4">{hero.name}</p>
             <p className="body-sm mt-4 max-w-sm">
-              Across {eightWeek.sessions} logged session
-              {eightWeek.sessions === 1 ? "" : "s"} in the last 8 weeks.
+              {heroDelta > 0
+                ? `Up ${heroDelta} ${units} across ${hero.sessions} sessions — your best-moving lift right now.`
+                : heroDelta === 0
+                  ? `Holding steady across ${hero.sessions} sessions — your most-trained lift.`
+                  : `Down ${Math.abs(heroDelta)} ${units} across ${hero.sessions} sessions — worth asking the coach about.`}
             </p>
           </>
-        ) : bestE1RM !== null ? (
+        ) : prs.length > 0 ? (
+          /* History exists but no lift has 3+ recent sessions — lead with the
+             latest best instead of contradicting the records below. */
           <>
             <p className="stat-hero !text-6xl md:!text-7xl whitespace-nowrap">
-              {Math.round(bestE1RM.value).toLocaleString()}
+              {prs[0].maxE1RM !== null ? Math.round(prs[0].maxE1RM) : prs[0].maxReps ?? 0}
               <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
-                {units}
+                {prs[0].maxE1RM !== null ? units : "reps"}
               </span>
             </p>
-            <p className="eyebrow mt-4">Best e1RM · {bestE1RM.name}</p>
+            <p className="eyebrow mt-4">Latest best · {prs[0].exerciseName}</p>
             <p className="body-sm mt-4 max-w-sm">
-              Your heaviest projected single from logged sets — no volume in the
-              last 8 weeks yet.
+              Log three sessions of any lift and its strength trend charts
+              here.
             </p>
           </>
         ) : (
           <>
             <p className="stat-hero !text-6xl md:!text-7xl !text-fg-muted">0</p>
-            <p className="eyebrow mt-4">Training volume · 8 weeks</p>
+            <p className="eyebrow mt-4">Strength trend</p>
             <p className="body-sm mt-4 max-w-sm">
-              Your volume trend and personal records will appear here as you log
-              workouts. All weights display in {units}.
+              Log a few workouts and this becomes the story of your strongest
+              lifts — every weight in {units}.
             </p>
             <CTAButton to="/workouts" className="mt-7">
               <Dumbbell size={15} />
@@ -177,79 +169,51 @@ const Progress = () => {
         )}
       </section>
 
-      {/* ── Stat strip — the old tile grid, collapsed to one hairline row ── */}
-      {logs.length > 0 && (
-        <section
-          className="mt-10 grid grid-cols-3 border-y border-border py-4 animate-reveal-up"
-          style={{ animationDelay: "120ms" }}
-        >
-          {stats.map(({ label, value }, i) => (
-            <div key={label} className={i > 0 ? "border-l border-border pl-4 md:pl-6" : ""}>
-              <p className={`stat-md whitespace-nowrap ${value === "–" ? "!text-fg-muted" : ""}`}>
-                {value}
-              </p>
-              <p className="caption mt-0.5">{label}</p>
-            </div>
-          ))}
-        </section>
-      )}
-
-      {/* ── Volume trend — this screen's detail chart ── */}
-      {volumeTrend.length > 0 && (
-        <section
-          className="mt-12 animate-reveal-up"
-          style={{ animationDelay: "180ms" }}
-        >
-          <p className="eyebrow mb-4">Volume trend</p>
-          <div className="h-[180px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={volumeTrend} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
-                <XAxis
-                  dataKey="week"
-                  tick={{ fontSize: 10, fill: "hsl(var(--text-tertiary))" }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: "hsl(var(--text-tertiary))" }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "0.75rem",
-                    fontSize: 12,
-                    color: "hsl(var(--popover-foreground))",
-                  }}
-                  formatter={(v: number) => [`${v.toLocaleString()} ${units}`, "Volume"]}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="volume"
-                  stroke="hsl(var(--chart-line))"
-                  fill="hsl(var(--chart-line))"
-                  fillOpacity={0.08}
-                  strokeWidth={1.5}
-                  dot={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+      {/* ── Card 1 · STRENGTH — your key lifts, trending ── */}
+      {keyLifts.length > 0 && (
+        <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
+          <p className="eyebrow mb-1">Strength</p>
+          <p className="caption mb-3">Best working set per session, last 12 weeks.</p>
+          <div className="divide-y divide-border">
+            {keyLifts.map((lift) => (
+              <div key={lift.name} className="flex items-center gap-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-fg">{lift.name}</p>
+                  <p className="caption mt-0.5">
+                    {lift.first} → {lift.last} {units}
+                  </p>
+                </div>
+                <svg viewBox="0 0 100 28" aria-hidden className="h-7 w-24 shrink-0">
+                  <polyline
+                    points={sparkPoints(lift.points)}
+                    fill="none"
+                    stroke="hsl(var(--chart-line))"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+                <p
+                  className={`w-16 shrink-0 text-right text-sm font-semibold tabular-nums ${
+                    lift.delta > 0 ? "text-fg" : "text-fg-muted"
+                  }`}
+                >
+                  {lift.delta > 0 ? `+${lift.delta}` : lift.delta}
+                  <span className="ml-1 text-[11px] font-normal text-fg-muted">{units}</span>
+                </p>
+              </div>
+            ))}
           </div>
         </section>
       )}
 
-      {/* ── Personal records — index rows ── */}
+      {/* ── Card 2 · RECORDS — most recent bests ── */}
       {prs.length > 0 && (
-        <section
-          className="mt-12 animate-reveal-up"
-          style={{ animationDelay: "240ms" }}
-        >
-          <p className="eyebrow mb-3">Personal records</p>
-          <div className="divide-y divide-border border-y border-border">
-            {visiblePRs.map((pr) => {
+        <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "180ms" }}>
+          <p className="eyebrow mb-3">Records</p>
+          <div className="divide-y divide-border">
+            {visibleRecords.map((pr) => {
               const best = bestWeightRecords.get(pr.exerciseName) ?? null;
               const recentlyImproved =
                 Date.now() - Date.parse(pr.lastImproved) < PR_RECENT_DAYS * DAY_MS;
@@ -268,7 +232,7 @@ const Progress = () => {
                         : pr.maxReps !== null
                           ? `Best ${pr.maxReps} reps`
                           : "Logged"}
-                      <span className="!text-fg-faint"> · {relativeDay(pr.lastImproved)}</span>
+                      <span className="text-fg-faint"> · {relativeDay(pr.lastImproved)}</span>
                     </p>
                   </div>
                   {pr.maxE1RM !== null && (
@@ -277,53 +241,109 @@ const Progress = () => {
                         <b>{Math.round(pr.maxE1RM)}</b>
                         <span className="text-fg-muted"> {units}</span>
                       </p>
-                      <p className="caption !text-fg-faint">e1RM</p>
+                      <p className="caption !text-fg-muted">Est. max</p>
                     </div>
                   )}
                 </div>
               );
             })}
-            {prs.length > PR_VISIBLE_COUNT && (
-              <button
-                type="button"
-                onClick={() => setShowAllPRs((v) => !v)}
-                className="caption w-full py-3 text-left !text-fg-muted transition hover:!text-fg"
-              >
-                {showAllPRs ? "Show fewer" : `Show all ${prs.length}`}
-              </button>
-            )}
           </div>
+          {prs.length > RECORDS_VISIBLE && (
+            <button
+              type="button"
+              onClick={() => setShowAllRecords((v) => !v)}
+              className="caption flex min-h-11 w-full items-center !text-fg-muted transition hover:!text-fg"
+            >
+              {showAllRecords ? "Show fewer" : `All records (${prs.length})`}
+            </button>
+          )}
         </section>
       )}
 
-      {/* ── Muscle coverage — where the dashboard's index row lands ── */}
-      {coverage.hasHistory && (
-        <section
-          id="coverage"
-          className="mt-12 animate-reveal-up"
-          style={{ animationDelay: "300ms" }}
-        >
-          <div className="mb-3 flex items-baseline justify-between">
-            <p className="eyebrow">Muscle coverage</p>
-            <p className="caption !text-fg-faint">days since trained</p>
+      {/* ── Card 3 · THIS WEEK — consistency + balance ── */}
+      {logs.length > 0 && (
+        <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "240ms" }}>
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="eyebrow">This week</p>
+            {weeklyStreak > 1 && (
+              <p className="caption">
+                {weeklyStreak} weeks in a row
+              </p>
+            )}
           </div>
-          <MuscleMap activation={getMuscleActivation(logs, 7)} className="mb-5" />
-          <div className="divide-y divide-border border-y border-border">
-            {coverage.neglected.map(({ muscle, days }) => (
-              <div key={muscle} className="flex items-center justify-between gap-4 py-3">
-                <span className="text-sm font-semibold text-fg">
-                  {labelForMuscle(muscle)}
-                </span>
-                <span className="mono text-sm text-fg-muted">
-                  {days === null
-                    ? "no record"
-                    : days === 0
-                      ? "today"
-                      : `${days} day${days === 1 ? "" : "s"}`}
-                </span>
-              </div>
-            ))}
-          </div>
+          <p className="mt-2 text-base font-medium text-fg">
+            {weekStats.sessions} workout{weekStats.sessions === 1 ? "" : "s"}
+            {frequency ? ` of ${frequency} planned` : ""} this week
+          </p>
+          <MuscleMap activation={getMuscleActivation(logs, 7)} className="mt-4 mb-3" />
+          {balanceVerdict && <p className="caption">{balanceVerdict}</p>}
+          <Link
+            to="/calendar"
+            className="mt-2 flex min-h-11 items-center justify-between text-sm font-semibold text-fg transition hover:opacity-80"
+          >
+            Training calendar
+            <ArrowRight size={14} className="text-primary" />
+          </Link>
+        </section>
+      )}
+
+      {/* ── Demoted: total weight lifted (chart behind a tap) ── */}
+      {volumeTrend.length > 0 && (
+        <section className="mt-8 animate-reveal-up" style={{ animationDelay: "300ms" }}>
+          <button
+            type="button"
+            onClick={() => setShowLifted((v) => !v)}
+            aria-expanded={showLifted}
+            className="flex min-h-11 w-full items-center justify-between rule-hairline pt-3 text-left"
+          >
+            <span className="eyebrow">Total weight lifted</span>
+            <ChevronDown
+              size={15}
+              className={`text-fg-muted transition-transform ${showLifted ? "rotate-180" : ""}`}
+            />
+          </button>
+          {showLifted && (
+            <div className="mt-3 h-[170px] animate-fade-in">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={volumeTrend} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                  <XAxis
+                    dataKey="week"
+                    tick={{ fontSize: 10, fill: "hsl(var(--text-tertiary))" }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: "hsl(var(--text-tertiary))" }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "0.75rem",
+                      fontSize: 12,
+                      color: "hsl(var(--popover-foreground))",
+                    }}
+                    formatter={(v: number) => [`${v.toLocaleString()} ${units}`, "Lifted"]}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="volume"
+                    stroke="hsl(var(--chart-line))"
+                    fill="hsl(var(--chart-line))"
+                    fillOpacity={0.08}
+                    strokeWidth={1.5}
+                    dot={false}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+              <p className="caption mt-2">
+                Weekly total of every completed working set, last 8 weeks.
+              </p>
+            </div>
+          )}
         </section>
       )}
     </div>

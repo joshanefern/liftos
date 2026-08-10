@@ -48,7 +48,7 @@ const Sparkline = () => (
 );
 
 const dashboardPreviewStats = [
-  { label: "Weekly volume", value: "92.4k", detail: "+2.2%" },
+  { label: "Lifted this week", value: "92.4k", detail: "+2.2%" },
   { label: "Frequency", value: "5 / 5", detail: "On plan" },
   { label: "Avg session", value: "56 min", detail: "Efficient" },
 ];
@@ -429,7 +429,7 @@ const Landing = () => {
               {
                 metric: "92.4k",
                 unit: " lb",
-                title: "Weekly volume",
+                title: "Weight lifted",
                 desc: "Total pounds moved this week, calculated automatically as you log.",
               },
               {

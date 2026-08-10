@@ -1,18 +1,22 @@
+import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import { Sparkles } from "lucide-react";
 
 type CoachMessageProps = {
   role: "assistant" | "user";
   content: string;
-  /** Renders a terracotta caret at the end of the text while tokens stream in. */
+  /** Renders a raspberry caret at the end of the text while tokens stream in. */
   streaming?: boolean;
 };
 
+/* Assistant replies are markdown (the model emits bold/lists for programs
+   and breakdowns) — rendered with app-styled elements, ChatGPT/Claude
+   style: user says it in a bubble, the coach answers in the page. */
 const CoachMessage = ({ role, content, streaming = false }: CoachMessageProps) => {
   if (role === "user") {
     return (
       <div className="flex justify-end animate-fade-in">
-        <div className="max-w-[85%] rounded-[14px] rounded-br-[0.3rem] bg-secondary px-4 py-2.5 text-sm leading-6 text-fg md:max-w-[75%]">
+        <div className="max-w-[85%] rounded-[14px] rounded-br-[0.3rem] bg-primary/10 px-4 py-2.5 text-sm leading-6 text-fg md:max-w-[75%]">
           {content}
         </div>
       </div>
@@ -20,24 +24,41 @@ const CoachMessage = ({ role, content, streaming = false }: CoachMessageProps) =
   }
 
   return (
-    <div className="w-full rule-hairline pt-4 animate-fade-in md:pt-5">
+    <div className="w-full animate-fade-in">
       <div className="mb-2 flex items-center gap-2.5">
         <Sparkles size={12} className="shrink-0 text-gold" />
         <span className="eyebrow !text-[10px]">
           LiftOS Coach
         </span>
       </div>
-      <p
+      <div
         className={cn(
-          "whitespace-pre-wrap text-sm leading-6 text-fg",
+          "text-sm leading-6 text-fg",
           streaming && content.length === 0 && "min-h-[1.5rem]",
         )}
       >
-        {content}
+        <ReactMarkdown
+          components={{
+            p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+            strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+            ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
+            ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
+            li: ({ children }) => <li className="marker:text-fg-muted">{children}</li>,
+            h1: ({ children }) => <p className="mb-2 mt-4 text-[15px] font-semibold first:mt-0">{children}</p>,
+            h2: ({ children }) => <p className="mb-2 mt-4 text-[15px] font-semibold first:mt-0">{children}</p>,
+            h3: ({ children }) => <p className="mb-1.5 mt-3 text-sm font-semibold first:mt-0">{children}</p>,
+            code: ({ children }) => (
+              <code className="mono rounded bg-secondary px-1.5 py-0.5 text-[12.5px]">{children}</code>
+            ),
+            a: ({ children }) => <span className="font-medium underline">{children}</span>,
+          }}
+        >
+          {content}
+        </ReactMarkdown>
         {streaming && (
           <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-[3px] animate-pulse rounded-full bg-primary" />
         )}
-      </p>
+      </div>
     </div>
   );
 };

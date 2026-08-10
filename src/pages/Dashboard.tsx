@@ -238,7 +238,7 @@ const Dashboard = () => {
       ? firstSentence(insight)
       : suggestion.reason ||
         (lastLog
-          ? `Last session: ${lastLog.name} — ${lastLog.completed_sets} sets, ${lastLog.total_volume.toLocaleString()} ${units} volume.`
+          ? `Last session: ${lastLog.name} — ${lastLog.completed_sets} sets, ${lastLog.total_volume.toLocaleString()} ${units} lifted.`
           : "Log your first workout to start tracking.");
 
   const ctaLabel = dataReady ? suggestion.ctaLabel : "Start a workout";
@@ -382,7 +382,7 @@ const Dashboard = () => {
                   {fmtVolCompact(weekStats.totalVolume)}
                 </p>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-background/70">
-                  {units} volume
+                  {units} lifted
                 </p>
               </div>
               <div className="flex flex-col items-center gap-0.5 px-2">
@@ -418,7 +418,7 @@ const Dashboard = () => {
         <DotMatrixMeter
           value={weekStats.totalVolume}
           target={volumeTarget}
-          label="Weekly volume"
+          label="Lifted this week"
           unit={units}
         />
 

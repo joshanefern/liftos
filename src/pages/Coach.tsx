@@ -19,9 +19,20 @@ import {
   ArrowUp,
   BarChart3,
   CloudOff,
+  History,
   Sparkles,
+  SquarePen,
+  X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  deleteConversation,
+  listConversations,
+  newConversationId,
+  relativeStamp,
+  saveConversation,
+  type CoachConversation,
+} from "@/lib/coachStore";
 
 const MUSCLE_LABELS: Partial<Record<Muscle, string>> = {
   "back-deltoids": "rear delts",
@@ -114,8 +125,42 @@ const Coach = () => {
   const [started, setStarted] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [offline, setOffline] = useState(false);
+  // ChatGPT/Claude organization: every chat is a resumable conversation.
+  const [conversationId, setConversationId] = useState<string>(newConversationId);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<CoachConversation[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Persist after every settled exchange (never mid-stream).
+  useEffect(() => {
+    if (!streaming && messages.length > 0) {
+      saveConversation(conversationId, messages);
+    }
+  }, [messages, streaming, conversationId]);
+
+  const openHistory = (): void => {
+    setHistory(listConversations());
+    setHistoryOpen(true);
+  };
+
+  const startNewChat = (): void => {
+    if (streaming) return;
+    setMessages([]);
+    setStarted(false);
+    setOffline(false);
+    setConversationId(newConversationId());
+    setHistoryOpen(false);
+  };
+
+  const resumeConversation = (conversation: CoachConversation): void => {
+    if (streaming) return;
+    setMessages(conversation.messages);
+    setConversationId(conversation.id);
+    setStarted(true);
+    setOffline(false);
+    setHistoryOpen(false);
+  };
 
   const units = profile?.units ?? "lb";
 
@@ -266,24 +311,77 @@ const Coach = () => {
   );
 
   return (
-    <div className="flex h-[calc(100dvh-4rem-var(--safe-bottom))] flex-col md:h-[100dvh]">
-      {/* ── Initial landing state ── */}
-      {!started && (
-        <div className="flex flex-1 flex-col items-center justify-start px-6 pt-10 md:justify-center md:px-10 md:pt-0">
-          <div className="mx-auto w-full max-w-2xl">
-            <div className="mb-6 text-center animate-reveal-up md:mb-9">
-              <p className="eyebrow mb-3">AI Coach</p>
-              <h1 className="text-4xl font-extralight tracking-[-0.04em] text-fg md:text-5xl">
-                What shall we train?
-              </h1>
-            </div>
+    // Height must clear the tab bar AND the status-bar inset (AppShell's
+    // pt-safe shifts us down by --safe-top on device).
+    <div className="flex h-[calc(100dvh-4rem-var(--safe-bottom)-var(--safe-top))] flex-col md:h-[100dvh]">
+      {/* ── Header bar — title left, history + new chat right (the
+          ChatGPT/Claude chrome, sized for thumbs) ── */}
+      <header className="flex shrink-0 items-center justify-between px-5 pt-3 pb-2 md:px-10 md:pt-6 lg:px-12">
+        <p className="eyebrow !text-fg">Coach</p>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={openHistory}
+            aria-label="Chat history"
+            className="relative flex h-9 w-9 items-center justify-center rounded-full text-fg-muted transition after:absolute after:-inset-1 after:content-[''] hover:bg-secondary hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <History size={17} />
+          </button>
+          <button
+            type="button"
+            onClick={startNewChat}
+            aria-label="New chat"
+            className="relative flex h-9 w-9 items-center justify-center rounded-full text-fg-muted transition after:absolute after:-inset-1 after:content-[''] hover:bg-secondary hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <SquarePen size={17} />
+          </button>
+        </div>
+      </header>
 
-            {contextStrip}
+      {/* ── Body: greeting when empty, thread once started ── */}
+      {!started ? (
+        <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 md:px-10">
+          <div className="w-full max-w-2xl text-center animate-reveal-up">
+            <p className="eyebrow mb-3">AI Coach</p>
+            <h1 className="text-4xl font-extralight tracking-[-0.04em] text-fg md:text-5xl">
+              What shall we train?
+            </h1>
+            <div className="mt-6">{contextStrip}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto py-5 md:py-8">
+          <div className="mx-auto w-full max-w-4xl space-y-6 px-6 md:space-y-8 md:px-10 lg:px-12">
+            {messages.map((message, index) => (
+              <CoachMessage
+                key={index}
+                role={message.role}
+                content={message.content}
+                streaming={
+                  streaming &&
+                  index === messages.length - 1 &&
+                  message.role === "assistant"
+                }
+              />
+            ))}
+            {offline && (
+              <OfflineNotice
+                onRetry={() => {
+                  const last = [...messages].reverse().find((m) => m.role === "user");
+                  if (last && !streaming) sendPrompt(last.content);
+                }}
+              />
+            )}
+            <div ref={bottomRef} />
+          </div>
+        </div>
+      )}
 
-            {composer("Ask about your training — grounded in your real numbers", 2)}
-
-            {/* Data-aware suggestion chips */}
-            <div className="mt-3 flex flex-wrap justify-center gap-2">
+      {/* ── Bottom dock — chips (fresh chat) + composer, always pinned ── */}
+      <div className="shrink-0 px-6 pb-3 pt-2 md:px-10 md:pb-6 lg:px-12">
+        <div className="mx-auto w-full max-w-4xl">
+          {!started && (
+            <div className="mb-3 flex flex-wrap justify-center gap-2">
               {suggestions.map((prompt) => (
                 <button
                   key={prompt}
@@ -296,52 +394,85 @@ const Coach = () => {
                 </button>
               ))}
             </div>
+          )}
+          {composer(
+            started ? "Message LiftOS Coach..." : "Ask about your training — grounded in your real numbers",
+          )}
+          {started && (
+            <p className="mt-2 text-center text-[11px] text-fg-faint">
+              LiftOS Coach can make mistakes. Verify important training
+              decisions.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ── History sheet ── */}
+      {historyOpen && (
+        <div className="fixed inset-0 z-50 flex" role="dialog" aria-label="Chat history">
+          <button
+            type="button"
+            aria-label="Close history"
+            onClick={() => setHistoryOpen(false)}
+            className="absolute inset-0 bg-foreground/25 backdrop-blur-[2px]"
+          />
+          <div className="relative ml-auto flex h-full w-[86%] max-w-sm flex-col bg-background pt-safe shadow-[-8px_0_32px_rgba(0,0,0,0.25)] animate-fade-in">
+            <div className="flex items-center justify-between px-5 py-4">
+              <p className="eyebrow !text-fg">Chats</p>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(false)}
+                aria-label="Close"
+                className="relative flex h-9 w-9 items-center justify-center rounded-full text-fg-muted transition after:absolute after:-inset-1 after:content-[''] hover:bg-secondary hover:text-fg"
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={startNewChat}
+              className="mx-5 mb-2 flex min-h-11 items-center gap-2.5 rounded-[12px] border border-border px-4 text-sm font-semibold text-fg transition hover:border-primary/40 active:scale-[0.99]"
+            >
+              <SquarePen size={15} className="text-gold" />
+              New chat
+            </button>
+            <div className="flex-1 overflow-y-auto px-5 pb-6">
+              {history.length === 0 ? (
+                <p className="caption mt-6 text-center">No past chats yet.</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {history.map((conversation) => (
+                    <div key={conversation.id} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => resumeConversation(conversation)}
+                        className="min-w-0 flex-1 py-3 text-left transition hover:opacity-80"
+                      >
+                        <p className="truncate text-sm font-medium text-fg">
+                          {conversation.title}
+                        </p>
+                        <p className="caption mt-0.5">
+                          {relativeStamp(conversation.updatedAt)}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          deleteConversation(conversation.id);
+                          setHistory(listConversations());
+                        }}
+                        aria-label={`Delete chat: ${conversation.title}`}
+                        className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-muted transition after:absolute after:-inset-1 after:content-[''] hover:text-destructive"
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      )}
-
-      {/* ── Active chat state ── */}
-      {started && (
-        <>
-          <div className="flex-1 overflow-y-auto py-6 md:py-10">
-            <div className="mx-auto w-full max-w-4xl space-y-6 px-6 md:space-y-8 md:px-10 lg:px-12">
-              {messages.map((message, index) => (
-                <CoachMessage
-                  key={index}
-                  role={message.role}
-                  content={message.content}
-                  streaming={
-                    streaming &&
-                    index === messages.length - 1 &&
-                    message.role === "assistant"
-                  }
-                />
-              ))}
-              {offline && (
-                <OfflineNotice
-                  onRetry={() => {
-                    const last = [...messages].reverse().find((m) => m.role === "user");
-                    if (last && !streaming) sendPrompt(last.content);
-                  }}
-                />
-              )}
-              <div ref={bottomRef} />
-            </div>
-          </div>
-
-          <div className="shrink-0 px-6 pb-3 pt-2 md:px-10 md:pb-6 lg:px-12">
-            <div className="mx-auto w-full max-w-4xl">
-              {/* Context chips stay on desktop; on phones the chat itself
-                  owns the viewport and the strip returns on the landing state. */}
-              <div className="hidden md:block">{contextStrip}</div>
-              {composer("Message LiftOS Coach...")}
-              <p className="mt-2 text-center text-[11px] text-fg-faint">
-                LiftOS Coach can make mistakes. Verify important training
-                decisions.
-              </p>
-            </div>
-          </div>
-        </>
       )}
     </div>
   );
