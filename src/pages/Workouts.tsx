@@ -6,6 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CTAButton } from "@/components/GoldButton";
+import { PendingReviewsCard } from "@/components/review/PendingReviewsCard";
 import type { WorkoutExercise } from "@/data/liftosMock";
 import { starterPrograms, type StarterProgram } from "@/data/starterPrograms";
 import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
@@ -253,6 +254,10 @@ const Workouts = () => {
           <p className="mono text-xs tabular-nums text-fg-muted">{templates.length} saved</p>
         )}
       </header>
+
+      {/* The tab badge counts pending reviews — they must live where the
+          badge points. */}
+      <PendingReviewsCard className="mb-8 animate-reveal-up" />
 
       {/* ── One supporting line (empty state only) + the single CTA ── */}
       <div className="mb-10 animate-reveal-up">

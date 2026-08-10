@@ -117,7 +117,7 @@ const Onboarding = () => {
   };
 
   return (
-    <AuthLayout eyebrow="Onboarding" title="Personalize the demo around your actual training style.">
+    <AuthLayout eyebrow="Onboarding" title="Personalize LiftOS around your actual training style.">
       <div className="mb-5">
         <div className="mb-1.5 flex items-center justify-between">
           <p className="label-xs">Step {index + 1} of {totalSteps}</p>

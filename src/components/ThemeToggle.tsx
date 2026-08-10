@@ -26,7 +26,7 @@ export const ThemeToggle = ({ compact = false }: { compact?: boolean }) => {
     <button
       onClick={() => setPreference(next)}
       aria-label={`Theme: ${LABEL[preference]} — switch to ${LABEL[next]}`}
-      className={`flex items-center justify-center gap-2 rounded-[0.875rem] text-fg-muted transition-colors duration-200 hover:bg-secondary hover:text-fg ${
+      className={`relative flex items-center justify-center gap-2 rounded-[0.875rem] text-fg-muted transition-colors duration-200 after:absolute after:-inset-1 after:content-[''] hover:bg-secondary hover:text-fg ${
         compact ? "h-9 w-9" : "px-3 py-2 text-xs"
       }`}
     >

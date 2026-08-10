@@ -36,7 +36,7 @@
     --secondary-foreground: 223 10% 35%;
 
     --muted: 220 19% 92%;
-    --muted-foreground: 222 6% 55%;  /* #878B94 */
+    --muted-foreground: 222 8% 42%;  /* #626772 — ≥4.5:1 on porcelain+white */
 
     --accent: 343 70% 51%;
     --accent-foreground: 0 0% 100%;
@@ -51,7 +51,7 @@
     --radius: 0.875rem;
 
     --sidebar-background: 220 18% 94%;
-    --sidebar-foreground: 222 6% 55%;
+    --sidebar-foreground: 222 8% 42%;
     --sidebar-primary: 343 70% 51%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 220 17% 90%;
@@ -69,8 +69,11 @@
     --surface-3: 220 17% 90%;
     --text-primary: 223 13% 10%;
     --text-secondary: 222 8% 40%;
-    --text-tertiary: 222 6% 55%;
+    --text-tertiary: 222 8% 42%;
     --chart-line: 343 70% 51%;
+    /* On the inverted (ink) hero panel the light raspberry fails contrast —
+       borrow the dark-mode raspberry there. */
+    --primary-on-inverse: 345 100% 68%;
     --success: 142 45% 32%;
     --warning: 30 90% 40%;
   }
@@ -125,6 +128,8 @@
     --text-secondary: 220 16% 74%;
     --text-tertiary: 220 14% 66%;
     --chart-line: 345 100% 68%;
+    /* Inverted panel is porcelain in dark — borrow the light raspberry. */
+    --primary-on-inverse: 343 70% 51%;
     --success: 142 45% 55%;
     --warning: 38 90% 55%;
   }
@@ -178,6 +183,13 @@
 
   p {
     text-wrap: pretty;
+  }
+
+  /* Placeholders were foreground/0.3 (fails both themes) — the repaired
+     tertiary token passes everywhere. */
+  ::placeholder {
+    color: hsl(var(--text-tertiary));
+    opacity: 1;
   }
 }
 
@@ -337,8 +349,10 @@
   .text-fg          { color: hsl(var(--foreground)); }
   .text-fg-soft     { color: hsl(var(--foreground) / 0.72); }
   .text-fg-muted    { color: hsl(var(--text-tertiary)); }
-  .text-fg-faint    { color: hsl(var(--foreground) / 0.3); }
-  .text-fg-disabled { color: hsl(var(--foreground) / 0.16); }
+  /* Decorative only — data-bearing text must use .text-fg-muted+ (audit:
+     0.3/0.16 alphas measured 2.5:1 / 1.6:1 on slate). */
+  .text-fg-faint    { color: hsl(var(--foreground) / 0.45); }
+  .text-fg-disabled { color: hsl(var(--foreground) / 0.3); }
 
   .mono {
     font-family: 'JetBrains Mono', monospace;

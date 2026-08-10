@@ -42,16 +42,20 @@ export const WeekBadgeRow = ({ workedDayIndices }: Props) => {
 
         const shape =
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums";
+        // On the inverted panel the mode's own raspberry fails contrast —
+        // primary-on-inverse borrows the opposite mode's. The check glyph
+        // uses text-foreground (= the panel's opposite pole) which clears
+        // 3:1 on that fill in both themes.
         const tone = trained
-          ? "bg-primary"
+          ? "bg-[hsl(var(--primary-on-inverse))]"
           : isToday
             ? "border-[1.5px] border-background text-background"
-            : "bg-background/10 text-background/40";
+            : "bg-background/10 text-background/70";
 
         return (
           <span key={dayName} role="listitem" aria-label={label} className={`${shape} ${tone}`}>
             {trained ? (
-              <Check size={14} strokeWidth={2.5} className="text-background" aria-hidden />
+              <Check size={14} strokeWidth={2.5} className="text-foreground" aria-hidden />
             ) : (
               date.getDate()
             )}

@@ -42,7 +42,7 @@ import {
 import { getMuscleActivation } from "@/lib/muscleMap";
 import { detectSessionPRs } from "@/lib/prs";
 import { supabase } from "@/lib/supabase";
-import { Activity, Dumbbell, Plus } from "lucide-react";
+import { Activity, ChevronLeft, Dumbbell, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -400,7 +400,17 @@ const SessionReview = () => {
       {/* ── header — eyebrow row, The Number, hairline stat strip ── */}
       <header className="rule-heavy pt-3 animate-reveal-up">
         <div className="flex min-h-11 items-center justify-between gap-3">
-          <p className="eyebrow">{formatDateLine(startedAt)}</p>
+          <span className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              aria-label="Back"
+              className="relative -ml-1 flex h-8 w-8 items-center justify-center rounded-full text-fg-muted transition after:absolute after:-inset-1.5 after:content-[''] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <p className="eyebrow">{formatDateLine(startedAt)}</p>
+          </span>
           {/* Quiet secondary, right: the ShareButton for saved logs (it
               renders the SAVED log, so unsaved edits don't leak into the
               card); the capture source otherwise. */}

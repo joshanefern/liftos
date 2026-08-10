@@ -331,7 +331,7 @@ const Dashboard = () => {
   const newestPending = pendingSessions[0] ?? null;
 
   return (
-    <div className="relative mx-auto min-h-screen w-full max-w-2xl overflow-x-clip p-5 pb-9 md:p-10 lg:p-12">
+    <div className="relative mx-auto min-h-screen w-full max-w-2xl overflow-x-clip p-6 pb-9 md:p-10 lg:p-12">
 
       {/* ── Eyebrow row — the only header ── */}
       <header className="flex items-center justify-between gap-3 animate-reveal-up">
@@ -350,24 +350,30 @@ const Dashboard = () => {
       <section className="mt-6 md:mt-8 animate-reveal-up">
         <div className="relative overflow-hidden rounded-[18px] bg-foreground p-5 text-background shadow-[0_8px_24px_rgba(16,22,35,0.16)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
           <div className="relative z-10">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--primary-on-inverse))]">
               This week
             </p>
 
-            <div className="mt-3.5">
+            {/* The week strip doubles as the mobile route into the
+                Performance Ledger — /calendar has no tab-bar slot. */}
+            <Link
+              to="/calendar"
+              aria-label="Open your training calendar"
+              className="mt-3.5 block rounded-lg transition-transform duration-150 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
               <WeekBadgeRow workedDayIndices={weekStats.workedDayIndices} />
-            </div>
+            </Link>
 
             {/* Stat trio — inset row on the panel */}
             <div className="mt-4 grid grid-cols-3 divide-x divide-background/10 rounded-xl bg-background/10 py-2.5 backdrop-blur-md">
               <div className="flex flex-col items-center gap-0.5 px-2">
                 <p className="text-[22px] font-extralight leading-7 tabular-nums text-background">
                   {weekStats.sessions}
-                  <span className="ml-0.5 text-[11px] font-normal text-background/50">
+                  <span className="ml-0.5 text-[11px] font-normal text-background/70">
                     /{frequency}
                   </span>
                 </p>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-background/50">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-background/70">
                   Sessions
                 </p>
               </div>
@@ -375,7 +381,7 @@ const Dashboard = () => {
                 <p className="text-[22px] font-extralight leading-7 tabular-nums text-background">
                   {fmtVolCompact(weekStats.totalVolume)}
                 </p>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-background/50">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-background/70">
                   {units} volume
                 </p>
               </div>
@@ -383,7 +389,7 @@ const Dashboard = () => {
                 <p className="text-[22px] font-extralight leading-7 tabular-nums text-background">
                   {fmtHours(weekStats.totalMinutes)}
                 </p>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-background/50">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-background/70">
                   Hours
                 </p>
               </div>

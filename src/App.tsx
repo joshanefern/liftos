@@ -148,6 +148,8 @@ const App = () => {
                 element={<RequireAuth><AppShell><Coach /></AppShell></RequireAuth>}
               />
               <Route path="/sign-in" element={<SignIn />} />
+              <Route path="/signin" element={<Navigate to="/sign-in" replace />} />
+              <Route path="/createaccount" element={<Navigate to="/create-account" replace />} />
               <Route path="/create-account" element={<CreateAccount />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />

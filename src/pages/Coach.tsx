@@ -67,23 +67,37 @@ const buildSuggestions = (context: CoachContext): string[] => {
   return out.slice(0, 2);
 };
 
-/** Honest empty state — shown instead of any fabricated reply. */
-const OfflineNotice = () => (
+/** Honest failure state — user-facing, with a retry. The deploy hint is
+    developer noise and only renders in dev builds. */
+const OfflineNotice = ({ onRetry }: { onRetry?: () => void }) => (
   <div className="w-full rule-hairline pt-4 animate-fade-in">
     <div className="mb-2 flex items-center gap-2.5">
       <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border">
         <CloudOff size={11} className="text-gold" />
       </div>
       <span className="eyebrow !text-[10px]">
-        Coach offline
+        Coach unavailable
       </span>
     </div>
-    <p className="text-sm leading-6 text-fg-soft">Coach isn't connected yet.</p>
-    <p className="mt-1 text-xs leading-5 text-fg-muted">
-      Deploy the <span className="mono text-gold">coach</span> Edge Function
-      and set <span className="mono text-gold">ANTHROPIC_API_KEY</span> to
-      bring it online.
+    <p className="text-sm leading-6 text-fg-soft">
+      The coach couldn't respond just now — check your connection and try
+      again.
     </p>
+    {onRetry && (
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-2.5 inline-flex min-h-11 items-center rounded-full border border-border px-4 text-[12.5px] font-semibold text-fg transition hover:border-primary/40 active:scale-[0.98]"
+      >
+        Try again
+      </button>
+    )}
+    {import.meta.env.DEV && (
+      <p className="mt-2 text-xs leading-5 text-fg-muted">
+        Dev: deploy the <span className="mono text-gold">coach</span> Edge
+        Function and set <span className="mono text-gold">ANTHROPIC_API_KEY</span>.
+      </p>
+    )}
   </div>
 );
 
@@ -203,6 +217,8 @@ const Coach = () => {
                 muscle{context.muscles_behind.length === 1 ? "" : "s"} behind
               </span>
             </>
+          ) : context.week_stats.sessions === 0 && context.top_lifts.length === 0 ? (
+            <span className="text-fg-muted">no training data yet</span>
           ) : (
             <span className="text-fg-muted">all muscles current</span>
           )}
@@ -228,7 +244,7 @@ const Coach = () => {
         }}
         rows={rows}
         placeholder={placeholder}
-        className="max-h-[200px] w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-fg-faint"
+        className="max-h-[200px] w-full resize-none bg-transparent text-sm leading-6 outline-none "
       />
       <div className="mt-2 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
@@ -241,7 +257,7 @@ const Coach = () => {
           type="submit"
           disabled={!input.trim() || streaming}
           aria-label="Send"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-30"
+          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-[opacity,transform] duration-150 after:absolute after:-inset-1.5 after:content-[''] hover:opacity-90 active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-30"
         >
           <ArrowUp size={15} strokeWidth={2.5} />
         </button>
@@ -301,7 +317,14 @@ const Coach = () => {
                   }
                 />
               ))}
-              {offline && <OfflineNotice />}
+              {offline && (
+                <OfflineNotice
+                  onRetry={() => {
+                    const last = [...messages].reverse().find((m) => m.role === "user");
+                    if (last && !streaming) sendPrompt(last.content);
+                  }}
+                />
+              )}
               <div ref={bottomRef} />
             </div>
           </div>

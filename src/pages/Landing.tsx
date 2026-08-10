@@ -134,8 +134,8 @@ const Landing = () => {
               </p>
 
               <div className="mt-8 flex justify-center">
-                <CTAButton to="/sign-in">
-                  Open LiftOS
+                <CTAButton to="/create-account">
+                  Start training free
                   <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
                 </CTAButton>
               </div>
@@ -535,8 +535,8 @@ const Landing = () => {
           <p className="text-fg-muted text-sm md:text-base max-w-sm mx-auto mb-8 leading-relaxed">
             Built for lifters who take their training seriously.<br />Because progress deserves to be seen.
           </p>
-          <CTAButton to="/sign-in">
-            Open LiftOS
+          <CTAButton to="/create-account">
+            Start training free
             <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" />
           </CTAButton>
         </div>

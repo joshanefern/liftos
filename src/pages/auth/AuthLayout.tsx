@@ -25,7 +25,7 @@ const AuthLayout = ({ eyebrow, title, children }: { eyebrow: string; title: stri
             Premium workout logging, progress tracking, and coaching guidance for serious lifters.
           </p>
           <div className="mt-8 grid max-w-md grid-cols-2 gap-3">
-            {["Fast logging", "Charted progress", "Coaching context", "Real auth"].map((item) => (
+            {["Fast logging", "Charted progress", "AI coaching", "Synced across devices"].map((item) => (
               <div key={item} className="rounded-[14px] border border-border bg-card p-4 text-sm text-fg-soft">
                 {item}
               </div>

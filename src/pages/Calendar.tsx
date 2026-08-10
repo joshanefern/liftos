@@ -232,7 +232,7 @@ const Calendar = () => {
 
       {/* ── The Number — sessions in the viewed month ── */}
       <section className="mb-8 animate-reveal-up">
-        <p key={`count-${monthKey}`} className="stat-hero !text-[64px] md:!text-7xl animate-fade-in">
+        <p key={`count-${monthKey}`} className="stat-hero !text-6xl md:!text-7xl animate-fade-in">
           {monthLogs.length}
         </p>
         <p className="eyebrow mt-3">Sessions in {monthNameLong}</p>
@@ -301,7 +301,7 @@ const Calendar = () => {
             type="button"
             onClick={() => shiftMonth(-1)}
             aria-label="Previous month"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-fg-muted transition-all duration-200 hover:bg-secondary hover:text-fg active:scale-95"
+            className="relative flex h-9 w-9 items-center justify-center rounded-full border border-border after:absolute after:-inset-1 after:content-[''] text-fg-muted transition-all duration-200 hover:bg-secondary hover:text-fg active:scale-95"
           >
             <ChevronLeft size={16} />
           </button>
@@ -316,7 +316,7 @@ const Calendar = () => {
             onClick={() => shiftMonth(1)}
             disabled={isCurrentMonth}
             aria-label="Next month"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-fg-muted transition-all duration-200 hover:bg-secondary hover:text-fg active:scale-95 disabled:pointer-events-none disabled:opacity-25"
+            className="relative flex h-9 w-9 items-center justify-center rounded-full border border-border after:absolute after:-inset-1 after:content-[''] text-fg-muted transition-all duration-200 hover:bg-secondary hover:text-fg active:scale-95 disabled:pointer-events-none disabled:opacity-25"
           >
             <ChevronRight size={16} />
           </button>

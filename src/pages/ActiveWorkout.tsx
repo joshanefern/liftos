@@ -33,7 +33,7 @@ const ActiveWorkout = () => {
 
         {/* The Number: a clock that hasn't started */}
         <section className="relative mt-12 animate-reveal-up md:mt-20">
-          <p className="stat-hero whitespace-nowrap !text-6xl !text-fg-faint md:!text-7xl">
+          <p className="stat-hero whitespace-nowrap !text-6xl !text-fg-muted md:!text-7xl">
             00:00
           </p>
           <p className="eyebrow mt-4">No active session</p>

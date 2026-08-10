@@ -163,7 +163,7 @@ const Progress = () => {
           </>
         ) : (
           <>
-            <p className="stat-hero !text-6xl md:!text-7xl !text-fg-disabled">0</p>
+            <p className="stat-hero !text-6xl md:!text-7xl !text-fg-muted">0</p>
             <p className="eyebrow mt-4">Training volume · 8 weeks</p>
             <p className="body-sm mt-4 max-w-sm">
               Your volume trend and personal records will appear here as you log

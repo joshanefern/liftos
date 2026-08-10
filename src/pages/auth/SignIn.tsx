@@ -87,11 +87,11 @@ const SignIn = () => {
         {errors.form && <FieldError message={errors.form} />}
 
         <div className="flex items-center justify-between text-sm">
-          <label className="flex items-center gap-2 text-fg-soft">
-            <input type="checkbox" defaultChecked className="accent-[hsl(var(--primary))]" />
+          <label className="flex min-h-11 items-center gap-2 text-fg-soft">
+            <input type="checkbox" defaultChecked className="h-5 w-5 accent-[hsl(var(--primary))]" />
             Remember me
           </label>
-          <Link to="/forgot-password" className="text-gold hover:underline">Forgot?</Link>
+          <Link to="/forgot-password" className="inline-flex min-h-11 items-center text-gold hover:underline">Forgot?</Link>
         </div>
         <CTAButton type="submit" fullWidth disabled={isSubmitting}>
           <Mail size={16} />
@@ -100,7 +100,7 @@ const SignIn = () => {
       </form>
       <p className="mt-5 text-center text-sm text-fg-muted">
         New to LiftOS?{" "}
-        <Link to="/create-account" className="text-gold hover:underline">Create account</Link>
+        <Link to="/create-account" className="inline-flex min-h-11 items-center text-gold hover:underline">Create account</Link>
       </p>
     </AuthLayout>
   );

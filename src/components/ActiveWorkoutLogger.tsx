@@ -723,7 +723,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
             <button
               type="button"
               onClick={() => setDiscardOpen(true)}
-              className="relative rounded-md text-xs font-medium text-fg-muted transition after:absolute after:-inset-2 after:content-[''] hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/30"
+              className="relative rounded-md text-xs font-medium text-fg-muted transition after:absolute after:-inset-x-2 after:-inset-y-3.5 after:content-[''] hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/30"
             >
               Discard
             </button>
@@ -844,7 +844,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   <button
                     type="button"
                     onClick={() => addWarmupRamp(exercise.id)}
-                    className="mb-2 flex min-h-[36px] w-full items-center gap-1.5 rule-hairline pt-2 text-xs text-fg-muted transition hover:text-fg"
+                    className="mb-2 flex min-h-11 w-full items-center gap-1.5 rule-hairline pt-2 text-xs text-fg-muted transition hover:text-fg"
                   >
                     <Plus size={13} />
                     Add warm-up ramp
