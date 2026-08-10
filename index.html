@@ -2,23 +2,35 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>KINETIC — Intelligent Fitness Training</title>
-    <meta name="description" content="Structured fitness programs designed around how your body actually moves. Strength, cardio, yoga, and HIIT — all in one place." />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- TODO: Set the document title to the name of your application -->
-    <title>Lovable App</title>
-    <meta name="description" content="Lovable Generated Project" />
-    <meta name="author" content="Lovable" />
+    <title>LiftOS — The workout that logs itself</title>
+    <meta name="description" content="Wear your watch, lift, then confirm your sets in 60 seconds. LiftOS turns wearable data into a fully logged strength workout — with an AI coach that actually watched your session." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="LiftOS" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FAE7D3" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#191410" />
 
-    <!-- TODO: Update og:title to match your application name -->
-    <meta property="og:title" content="Lovable App" />
-    <meta property="og:description" content="Lovable Generated Project" />
+    <!-- Apply the stored theme before first paint so neither mode flashes
+         the other. Must stay in sync with ThemeContext's storage key. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("liftos-theme");
+          var dark =
+            t === "dark" ||
+            ((t === null || t === "system") &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+        } catch (e) { /* default to light */ }
+      })();
+    </script>
+
+    <meta property="og:title" content="LiftOS — The workout that logs itself" />
+    <meta property="og:description" content="Wear your watch, lift, then confirm your sets in 60 seconds." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@Lovable" />
-    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
   </head>
 
   <body>

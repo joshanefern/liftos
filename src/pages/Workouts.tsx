@@ -5,15 +5,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { GoldButton } from "@/components/GoldButton";
+import { CTAButton } from "@/components/GoldButton";
 import type { WorkoutExercise } from "@/data/liftosMock";
+import { starterPrograms, type StarterProgram } from "@/data/starterPrograms";
 import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import {
+  buildSessionFromStarter,
+  buildSessionFromTemplate,
+  persistActiveSession,
+} from "@/lib/startSession";
 import { toast } from "@/components/ui/use-toast";
-import { Check, Dumbbell, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Dumbbell, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
 
 type ExerciseDraft = {
   id: string;
@@ -61,6 +65,56 @@ const createExerciseDraftFromTemplate = (exercise: WorkoutExercise): ExerciseDra
   });
 };
 
+type StarterProgramRowProps = {
+  program: StarterProgram;
+  saved: boolean;
+  saving: boolean;
+  saveDisabled: boolean;
+  onSave: () => void;
+  onStart: () => void;
+};
+
+/* One hairline index row per starter program — label left, quiet actions right. */
+const StarterProgramRow = ({ program, saved, saving, saveDisabled, onSave, onStart }: StarterProgramRowProps) => (
+  <div className="flex items-center justify-between gap-3 border-b border-border py-3">
+    <div className="w-0 flex-1">
+      <p className="truncate text-sm font-semibold text-fg">{program.name}</p>
+      <p className="caption truncate">
+        {program.split} · {program.duration} min · {program.difficulty}
+      </p>
+    </div>
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saveDisabled}
+        className="inline-flex min-h-11 items-center gap-1 rounded-full px-2.5 text-xs font-medium text-fg-muted transition hover:bg-secondary hover:text-fg focus:outline-none focus:ring-2 focus:ring-ring/40 disabled:cursor-default disabled:opacity-60"
+      >
+        {saved ? (
+          <>
+            <Check size={12} />
+            Saved
+          </>
+        ) : saving ? (
+          "Saving…"
+        ) : (
+          <>
+            <Plus size={12} />
+            Save
+          </>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={onStart}
+        className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-medium text-fg transition hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+      >
+        Start
+      </button>
+    </div>
+  </div>
+);
+
 const Workouts = () => {
   const navigate = useNavigate();
   const { templates, loading, save, remove } = useWorkoutTemplates();
@@ -69,6 +123,9 @@ const Workouts = () => {
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
   const [workoutName, setWorkoutName] = useState("");
   const [exercises, setExercises] = useState<ExerciseDraft[]>([]);
+  const [starterOpen, setStarterOpen] = useState(false);
+  const [savingProgramId, setSavingProgramId] = useState<string | null>(null);
+  const [savedProgramIds, setSavedProgramIds] = useState<Set<string>>(new Set());
 
   const completedExercises = useMemo(
     () => exercises.filter((exercise) => exercise.name.trim()),
@@ -117,12 +174,29 @@ const Workouts = () => {
     }
   };
 
-  const startWorkout = (template: { id: string; name: string; exercises: WorkoutExercise[] }) => {
-    window.localStorage.setItem(
-      ACTIVE_WORKOUT_STORAGE_KEY,
-      JSON.stringify({ name: template.name, exercises: template.exercises, templateId: template.id, startedAt: new Date().toISOString() }),
-    );
+  const startWorkout = (template: { id?: string; name: string; exercises: WorkoutExercise[] }) => {
+    persistActiveSession(buildSessionFromTemplate(template));
     navigate("/workouts/active");
+  };
+
+  // Starter programs start without a templateId — see buildSessionFromStarter.
+  const startProgram = (program: StarterProgram) => {
+    persistActiveSession(buildSessionFromStarter(program));
+    navigate("/workouts/active");
+  };
+
+  const saveProgramAsTemplate = async (program: StarterProgram) => {
+    if (savingProgramId !== null || savedProgramIds.has(program.id)) return;
+    setSavingProgramId(program.id);
+    try {
+      await save({ id: null, name: program.name, exercises: program.exercises });
+      setSavedProgramIds((current) => new Set(current).add(program.id));
+      toast({ title: `Saved "${program.name}" to your workouts` });
+    } catch {
+      toast({ title: "Could not save program", variant: "destructive" });
+    } finally {
+      setSavingProgramId(null);
+    }
   };
 
   const addExercise = () => {
@@ -171,104 +245,157 @@ const Workouts = () => {
   };
 
   return (
-    <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_50%_0%,rgba(184,147,66,0.07),transparent_60%)]" />
+    <div className="min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
+      {/* ── Eyebrow header — context left, quiet count right ── */}
+      <header className="mb-8 flex items-baseline justify-between gap-4 animate-reveal-up">
+        <h1 className="eyebrow">Workout Library</h1>
+        {!loading && templates.length > 0 && (
+          <p className="mono text-xs tabular-nums text-fg-muted">{templates.length} saved</p>
+        )}
+      </header>
 
-      <div className="relative mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between animate-reveal-up">
-        <div>
-          <p className="label-xs mb-2">Workout Library</p>
-          <h1 className="heading-lg">Routines and templates</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-foreground/50">
-            Manage reusable splits, refine exercise structure, and jump straight into a low-friction logging flow.
+      {/* ── One supporting line (empty state only) + the single CTA ── */}
+      <div className="mb-10 animate-reveal-up">
+        {!loading && templates.length === 0 && (
+          <p className="body-sm mb-4 max-w-md">
+            No saved workouts yet — build your own or run a starter session below.
           </p>
-        </div>
-        <GoldButton onClick={openBuilder}>
-          <Dumbbell className="h-4 w-4 shrink-0 translate-x-[0.5px] translate-y-[0.5px]" strokeWidth={1.9} />
+        )}
+        <CTAButton onClick={openBuilder}>
+          <Plus size={16} />
           New workout
-        </GoldButton>
+        </CTAButton>
       </div>
 
-      {!loading && templates.length > 0 ? (
-        <section className="relative grid gap-4 md:grid-cols-2 xl:grid-cols-3 animate-reveal-up">
-          {templates.map((template) => {
-            const totalSets = template.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
-            return (
-              <article key={template.id} className="relative overflow-hidden rounded-[1.25rem] bg-white/[0.04] border border-white/10 p-5">
-                <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent)]" />
-                <div className="mb-4 flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-base font-semibold">{template.name}</p>
-                    <p className="mt-1 text-xs text-foreground/30">Ready to start</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      aria-label={`Edit ${template.name}`}
-                      onClick={() => editWorkout(template)}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] border border-white/8 bg-white/[0.03] text-foreground/50 transition hover:border-gold/30 hover:text-gold focus:outline-none focus:ring-2 focus:ring-gold/40"
-                    >
-                      <Pencil size={14} />
-                    </button>
+      {loading ? (
+        <section aria-hidden="true" className="border-t border-border animate-reveal-up">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 border-b border-border py-3">
+              <div className="h-9 w-44 max-w-[60%] animate-pulse rounded-lg bg-card" />
+              <div className="h-9 w-20 animate-pulse rounded-full bg-card" />
+            </div>
+          ))}
+        </section>
+      ) : templates.length > 0 ? (
+        <>
+        <section className="animate-reveal-up">
+          <div className="rule-heavy pb-3 pt-4">
+            <p className="eyebrow">Your workouts</p>
+          </div>
+          <div className="border-t border-border">
+            {templates.map((template) => {
+              const totalSets = template.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+              return (
+                <div
+                  key={template.id}
+                  className="flex items-center justify-between gap-3 border-b border-border py-3"
+                >
+                  {/* Row tap opens the template's detail (edit) — data lives there */}
+                  <button
+                    type="button"
+                    onClick={() => editWorkout(template)}
+                    aria-label={`Edit ${template.name}`}
+                    className="min-h-11 w-0 flex-1 rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  >
+                    <p className="truncate text-sm font-semibold text-fg">{template.name}</p>
+                    <p className="caption truncate">
+                      {template.exercises.length} exercise{template.exercises.length === 1 ? "" : "s"} · {totalSets}{" "}
+                      sets
+                    </p>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
                       aria-label={`Delete ${template.name}`}
                       onClick={() => removeWorkout(template.id)}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] border border-white/8 bg-white/[0.03] text-foreground/50 transition hover:border-destructive/40 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-fg-muted transition hover:bg-destructive/10 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
                     >
                       <Trash2 size={14} />
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => startWorkout(template)}
+                      className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-medium text-fg transition hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+                    >
+                      Start
+                    </button>
                   </div>
                 </div>
-                <p className="text-sm text-foreground/50">
-                  {template.exercises.length} exercise{template.exercises.length === 1 ? "" : "s"} <span>&bull;</span>{" "}
-                  {totalSets} total sets
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {template.exercises.slice(0, 3).map((exercise) => (
-                    <span key={exercise.id} className="rounded-full bg-white/[0.03] px-2.5 py-1 text-xs text-foreground/50">
-                      {exercise.name}
-                    </span>
-                  ))}
-                </div>
-                <GoldButton onClick={() => startWorkout(template)} fullWidth className="mt-5">
-                  <Dumbbell className="h-4 w-4 shrink-0 translate-x-[0.5px] translate-y-[0.5px]" strokeWidth={1.9} />
-                  Start workout
-                </GoldButton>
-              </article>
-            );
-          })}
+              );
+            })}
+          </div>
         </section>
-      ) : (
-        <section className="relative overflow-hidden border-y border-white/8 py-16 animate-reveal-up md:py-20">
-          <div className="relative mx-auto flex max-w-xl flex-col items-center text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[0.875rem] border border-gold/20 bg-gold/10">
-              <Dumbbell className="h-[18px] w-[18px] translate-x-[0.5px] translate-y-[0.5px] text-gold" strokeWidth={1.9} />
+
+        {/* Starter programs — compact rail once the user has their own templates */}
+        <section className="mt-10 animate-reveal-up">
+          <div className="rule-heavy">
+            <button
+              type="button"
+              onClick={() => setStarterOpen((open) => !open)}
+              aria-expanded={starterOpen}
+              className="flex w-full items-center justify-between gap-4 py-4 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <div>
+                <p className="eyebrow">Starter programs</p>
+                <p className="caption mt-1">Curated sessions you can run today.</p>
+              </div>
+              <ChevronDown
+                size={16}
+                className={`shrink-0 text-fg-muted transition-transform ${starterOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+          </div>
+          {starterOpen && (
+            <div className="border-t border-border md:grid md:grid-cols-2 md:gap-x-10">
+              {starterPrograms.map((program) => (
+                <StarterProgramRow
+                  key={program.id}
+                  program={program}
+                  saved={savedProgramIds.has(program.id)}
+                  saving={savingProgramId === program.id}
+                  saveDisabled={savingProgramId !== null || savedProgramIds.has(program.id)}
+                  onSave={() => saveProgramAsTemplate(program)}
+                  onStart={() => startProgram(program)}
+                />
+              ))}
             </div>
-            <p className="label-xs mt-5 mb-2">Workout Library</p>
-            <h2 className="text-xl font-semibold tracking-tight">No workouts yet</h2>
-            <p className="mt-3 max-w-md text-sm leading-relaxed text-foreground/50">
-              Create your first routine and it will show up here ready to edit, start, or reuse.
-            </p>
-            <GoldButton onClick={openBuilder} className="mt-6">
-              <Plus size={16} />
-              Create workout
-            </GoldButton>
+          )}
+        </section>
+        </>
+      ) : (
+        /* Starter programs — the screen's content while the library is empty */
+        <section className="animate-reveal-up">
+          <div className="rule-heavy pb-3 pt-4">
+            <p className="eyebrow">Starter programs</p>
+            <p className="caption mt-1">Curated sessions you can run today.</p>
+          </div>
+          <div className="border-t border-border md:grid md:grid-cols-2 md:gap-x-10">
+            {starterPrograms.map((program) => (
+              <StarterProgramRow
+                key={program.id}
+                program={program}
+                saved={savedProgramIds.has(program.id)}
+                saving={savingProgramId === program.id}
+                saveDisabled={savingProgramId !== null || savedProgramIds.has(program.id)}
+                onSave={() => saveProgramAsTemplate(program)}
+                onStart={() => startProgram(program)}
+              />
+            ))}
           </div>
         </section>
       )}
 
       <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
-        <DialogContent className="grid h-[min(88dvh,780px)] max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[780px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#0d1125]/60 p-0 shadow-2xl backdrop-blur-xl sm:w-[calc(100vw-2rem)]">
-          <div className="relative border-b border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.04)_0%,rgba(255,255,255,0.02)_48%,rgba(255,255,255,0.0)_100%)] px-5 pb-5 pt-8 md:px-6">
-            <div className="pointer-events-none absolute inset-x-[8%] top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(184,147,66,0.22),transparent)]" />
+        <DialogContent className="grid h-[min(88dvh,780px)] max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[780px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[14px] border border-border bg-background p-0 sm:w-[calc(100vw-2rem)]">
+          <div className="border-b border-border px-5 pb-4 pt-6 md:px-6">
             <DialogHeader className="pr-9">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[0.875rem] border border-gold/25 bg-gold/10">
-                  <Dumbbell className="h-[18px] w-[18px] translate-x-[0.5px] translate-y-[0.5px] text-gold" strokeWidth={1.9} />
+                <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-border bg-card sm:flex">
+                  <Dumbbell className="h-[18px] w-[18px] translate-x-[0.5px] translate-y-[0.5px] text-primary" strokeWidth={1.9} />
                 </div>
                 <div className="min-w-0">
                   <DialogTitle className="text-lg md:text-xl">{editingWorkoutId ? "Edit Workout" : "Create Workout"}</DialogTitle>
-                  <DialogDescription className="mt-2 max-w-xl text-sm leading-relaxed text-foreground/50">
+                  <DialogDescription className="mt-1.5 max-w-xl text-sm leading-relaxed text-fg-soft max-sm:line-clamp-2">
                     {editingWorkoutId
                       ? "Update the workout details, revise exercises, or remove anything you no longer want in the template."
                       : "Add the workout details and exercises you want to track. Leave targets flexible when you want to decide during the session."}
@@ -276,72 +403,72 @@ const Workouts = () => {
                 </div>
               </div>
             </DialogHeader>
-            <div className="mt-5 grid grid-cols-3 gap-2 pr-9 sm:max-w-md">
+            <div className="mt-4 grid grid-cols-3 gap-2 sm:max-w-md">
               {[
                 ["Exercises", exercises.length],
                 ["Sets", plannedSets],
                 ["Volume", `${plannedVolume.toLocaleString()} lb`],
               ].map(([label, value]) => (
-                <div key={label} className="rounded-[1rem] border border-white/8 bg-white/[0.03] px-3 py-2">
-                  <p className="text-[10px] uppercase tracking-widest text-foreground/30">{label}</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">{value}</p>
+                <div key={label} className="min-w-0 rounded-lg border border-border px-2.5 py-2">
+                  <p className="truncate text-[10px] uppercase tracking-[0.12em] text-fg-muted">{label}</p>
+                  <p className="stat-md mt-1 truncate">{value}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain bg-white/[0.01] px-5 py-5 md:px-6">
-            <div className="space-y-6">
+          <div className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-5 py-4 md:px-6">
+            <div className="space-y-5">
               <section>
                 <div>
-                  <p className="label-xs mb-2">Workout Info</p>
-                  <h3 className="text-sm font-semibold">Name your routine</h3>
+                  <p className="eyebrow mb-1.5">Workout Info</p>
+                  <h3 className="text-sm font-semibold text-fg">Name your routine</h3>
                 </div>
-                <label className="mt-4 block min-w-0">
-                  <span className="mb-2 block text-xs text-foreground/30">Workout name</span>
+                <label className="mt-3 block min-w-0">
+                  <span className="mb-1.5 block text-xs text-fg-muted">Workout name</span>
                   <input
                     value={workoutName}
                     onChange={(event) => setWorkoutName(event.target.value)}
                     placeholder="Arm Day, Leg Day, Push A..."
-                    className="h-12 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none transition focus:border-gold/50 focus:ring-2 focus:ring-gold/20"
+                    className="h-12 w-full rounded-lg border border-border bg-card px-3 text-sm text-fg outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/25"
                   />
                 </label>
               </section>
 
-              <section className="space-y-3 border-t border-white/8 pt-5">
+              <section className="space-y-3 border-t border-border pt-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="label-xs mb-2">Exercises</p>
-                    <h3 className="text-sm font-semibold">Build the workout</h3>
+                    <p className="eyebrow mb-1.5">Exercises</p>
+                    <h3 className="text-sm font-semibold text-fg">Build the workout</h3>
                   </div>
-                  <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-xs text-foreground/50">
+                  <span className="rounded-full border border-border px-2.5 py-1 text-xs text-fg-muted">
                     {exercises.length} added
                   </span>
                 </div>
 
                 <div className="space-y-3">
                   {exercises.length === 0 ? (
-                    <div className="rounded-[1.25rem] border border-dashed border-white/10 bg-white/[0.02] p-6 text-center">
-                      <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[0.875rem] border border-white/8 bg-white/[0.03]">
-                        <Dumbbell className="h-4 w-4 translate-x-[0.5px] translate-y-[0.5px] text-gold" strokeWidth={1.9} />
+                    <div className="rounded-[14px] border border-dashed border-border p-6 text-center">
+                      <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[0.875rem] border border-border bg-card">
+                        <Dumbbell className="h-4 w-4 translate-x-[0.5px] translate-y-[0.5px] text-primary" strokeWidth={1.9} />
                       </div>
-                      <p className="text-sm font-semibold">No exercises added yet.</p>
-                      <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-foreground/50">
+                      <p className="text-sm font-semibold text-fg">No exercises added yet.</p>
+                      <p className="body-md mx-auto mt-2 max-w-sm">
                         Use the Add exercise button below to start building this workout.
                       </p>
                     </div>
                   ) : (
                     <>
                       {exercises.map((exercise, index) => (
-                        <article key={exercise.id} className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4 shadow-sm">
-                          <div className="mb-4 flex items-start justify-between gap-3">
+                        <article key={exercise.id} className="rounded-[14px] border border-border bg-card p-4">
+                          <div className="mb-3 flex items-start justify-between gap-3">
                             <div className="flex min-w-0 items-start gap-3">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.75rem] border border-gold/20 bg-gold/10 text-xs font-semibold text-gold">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.75rem] border border-border text-xs font-semibold text-fg">
                                 {index + 1}
                               </div>
                               <div className="min-w-0">
-                                <p className="text-sm font-semibold">Exercise {index + 1}</p>
-                                <p className="mt-1 text-xs leading-relaxed text-foreground/30">
+                                <p className="text-sm font-semibold text-fg">Exercise {index + 1}</p>
+                                <p className="mt-1 text-xs leading-relaxed text-fg-muted">
                                   Leave targets blank or decide during the session.
                                 </p>
                               </div>
@@ -350,26 +477,26 @@ const Workouts = () => {
                               type="button"
                               aria-label="Remove exercise"
                               onClick={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))}
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] text-foreground/30 transition hover:bg-destructive/10 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] text-fg-muted transition hover:bg-destructive/10 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
                             >
                               <Trash2 size={14} />
                             </button>
                           </div>
 
-                          <div className="grid gap-4">
+                          <div className="grid gap-3">
                             <label className="block min-w-0">
-                              <span className="mb-2 block text-xs text-foreground/30">Exercise name</span>
+                              <span className="mb-1.5 block text-xs text-fg-muted">Exercise name</span>
                               <input
                                 value={exercise.name}
                                 onChange={(event) => updateExercise(exercise.id, "name", event.target.value)}
                                 placeholder="Bench press, leg press, hammer curl..."
-                                className="h-11 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none transition focus:border-gold/50 focus:ring-2 focus:ring-gold/20"
+                                className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/25"
                               />
                             </label>
 
-                            <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="grid grid-cols-3 gap-2 sm:gap-3">
                               <label className="block min-w-0">
-                                <span className="mb-2 block text-xs text-foreground/30">Sets</span>
+                                <span className="mb-1.5 block text-xs text-fg-muted">Sets</span>
                                 <input
                                   type="text"
                                   inputMode="numeric"
@@ -377,11 +504,11 @@ const Workouts = () => {
                                   value={exercise.sets}
                                   disabled={exercise.decideLater}
                                   onChange={(event) => updateExercise(exercise.id, "sets", integerInput(event.target.value))}
-                                  className="h-11 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none transition focus:border-gold/50 focus:ring-2 focus:ring-gold/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-40"
                                 />
                               </label>
                               <label className="block min-w-0">
-                                <span className="mb-2 block text-xs text-foreground/30">Reps</span>
+                                <span className="mb-1.5 block text-xs text-fg-muted">Reps</span>
                                 <input
                                   type="text"
                                   inputMode="numeric"
@@ -389,18 +516,18 @@ const Workouts = () => {
                                   value={exercise.reps}
                                   disabled={exercise.decideLater}
                                   onChange={(event) => updateExercise(exercise.id, "reps", integerInput(event.target.value))}
-                                  className="h-11 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none transition focus:border-gold/50 focus:ring-2 focus:ring-gold/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-40"
                                 />
                               </label>
                               <label className="block min-w-0">
-                                <span className="mb-2 block text-xs text-foreground/30">Weight</span>
+                                <span className="mb-1.5 block text-xs text-fg-muted">Weight</span>
                                 <input
                                   type="text"
                                   inputMode="decimal"
                                   value={exercise.weight}
                                   disabled={exercise.decideLater}
                                   onChange={(event) => updateExercise(exercise.id, "weight", decimalInput(event.target.value))}
-                                  className="h-11 w-full rounded-[1rem] border border-white/8 bg-white/[0.04] px-3 text-sm outline-none transition focus:border-gold/50 focus:ring-2 focus:ring-gold/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-40"
                                 />
                               </label>
                             </div>
@@ -408,10 +535,10 @@ const Workouts = () => {
                             <button
                               type="button"
                               onClick={() => updateExercise(exercise.id, "decideLater", !exercise.decideLater)}
-                              className={`inline-flex w-full items-center justify-center rounded-full border px-4 py-2.5 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-gold/40 sm:w-fit ${
+                              className={`inline-flex min-h-11 w-full items-center justify-center rounded-full border px-4 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-ring/40 sm:w-fit ${
                                 exercise.decideLater
-                                  ? "border-gold/50 bg-gold/10 text-gold"
-                                  : "border-white/8 text-foreground/50 hover:border-gold/30 hover:text-foreground"
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-border text-fg-muted hover:bg-secondary hover:text-fg"
                               }`}
                             >
                               Decide later
@@ -426,12 +553,12 @@ const Workouts = () => {
             </div>
           </div>
 
-          <div className="border-t border-white/8 bg-[#0d1125]/60 px-5 py-4 md:px-6">
+          <div className="border-t border-border px-5 py-4 md:px-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="button"
                 onClick={addExercise}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-gold/30 bg-gold/10 px-4 py-3 text-sm font-medium text-gold transition hover:bg-gold hover:text-background focus:outline-none focus:ring-2 focus:ring-gold/50"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-border px-4 py-3 text-sm font-medium text-fg transition hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
               >
                 <Plus size={16} />
                 Add exercise
@@ -443,14 +570,14 @@ const Workouts = () => {
                     setBuilderOpen(false);
                     setEditingWorkoutId(null);
                   }}
-                  className="inline-flex items-center justify-center rounded-full border border-white/8 px-4 py-3 text-sm text-foreground/50 transition hover:border-gold/30 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-gold/40"
+                  className="inline-flex items-center justify-center rounded-full border border-border px-4 py-3 text-sm text-fg-muted transition hover:bg-secondary hover:text-fg focus:outline-none focus:ring-2 focus:ring-ring/40"
                 >
                   Cancel
                 </button>
-                <GoldButton onClick={saveWorkout} disabled={!canSave || saving}>
+                <CTAButton onClick={saveWorkout} disabled={!canSave || saving}>
                   <Check size={15} />
                   {saving ? "Saving…" : editingWorkoutId ? "Save changes" : "Done"}
-                </GoldButton>
+                </CTAButton>
               </div>
             </div>
           </div>

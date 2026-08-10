@@ -1,5 +1,5 @@
 import AuthLayout from "@/pages/auth/AuthLayout";
-import { GoldButton } from "@/components/GoldButton";
+import { CTAButton } from "@/components/GoldButton";
 import { signIn } from "@/lib/auth";
 import { toast } from "@/components/ui/use-toast";
 import { AlertCircle, Mail } from "lucide-react";
@@ -9,9 +9,9 @@ import { Link, useNavigate } from "react-router-dom";
 type FieldErrors = { email?: string; password?: string; form?: string };
 
 const FieldError = ({ message }: { message: string }) => (
-  <div className="flex items-start gap-2 rounded-[0.75rem] border border-red-500/20 bg-red-500/[0.07] px-3 py-2.5">
-    <AlertCircle size={13} className="mt-px shrink-0 text-red-400" />
-    <p className="text-xs text-red-300/90">{message}</p>
+  <div className="flex items-start gap-2 rounded-[0.75rem] border border-destructive/30 bg-destructive/[0.08] px-3 py-2.5">
+    <AlertCircle size={13} className="mt-px shrink-0 text-destructive" />
+    <p className="text-xs text-destructive">{message}</p>
   </div>
 );
 
@@ -32,8 +32,8 @@ const SignIn = () => {
 
   return (
     <AuthLayout eyebrow="Welcome Back" title="Pick up training exactly where you left off.">
-      <p className="label-xs mb-2">Sign in</p>
-      <h2 className="heading-md mb-6">Sign in to LiftOS</h2>
+      <p className="label-xs mb-1.5">Sign in</p>
+      <h2 className="heading-md mb-5">Sign in to LiftOS</h2>
       <form
         noValidate
         className="space-y-4"
@@ -58,12 +58,12 @@ const SignIn = () => {
       >
         <div className="space-y-1.5">
           <label className="block">
-            <span className="mb-2 block text-xs text-foreground/30">Email</span>
+            <span className="mb-2 block text-xs text-fg-muted">Email</span>
             <input
               type="email"
               value={email}
               onChange={(e) => { setEmail(e.target.value); setErrors((prev) => ({ ...prev, email: undefined })); }}
-              className={`h-12 w-full rounded-[1rem] border bg-white/[0.04] px-3 text-sm outline-none transition-colors ${errors.email ? "border-red-500/40 focus:border-red-500/60" : "border-white/8 focus:border-gold/50"}`}
+              className={`h-12 w-full rounded-[14px] border bg-background px-3 text-sm text-fg placeholder:text-fg-faint outline-none transition-colors ${errors.email ? "border-destructive/50 focus:border-destructive" : "border-border focus:border-primary"}`}
               placeholder="you@example.com"
             />
           </label>
@@ -72,12 +72,12 @@ const SignIn = () => {
 
         <div className="space-y-1.5">
           <label className="block">
-            <span className="mb-2 block text-xs text-foreground/30">Password</span>
+            <span className="mb-2 block text-xs text-fg-muted">Password</span>
             <input
               type="password"
               value={password}
               onChange={(e) => { setPassword(e.target.value); setErrors((prev) => ({ ...prev, password: undefined })); }}
-              className={`h-12 w-full rounded-[1rem] border bg-white/[0.04] px-3 text-sm outline-none transition-colors ${errors.password ? "border-red-500/40 focus:border-red-500/60" : "border-white/8 focus:border-gold/50"}`}
+              className={`h-12 w-full rounded-[14px] border bg-background px-3 text-sm text-fg placeholder:text-fg-faint outline-none transition-colors ${errors.password ? "border-destructive/50 focus:border-destructive" : "border-border focus:border-primary"}`}
               placeholder="Your password"
             />
           </label>
@@ -87,18 +87,18 @@ const SignIn = () => {
         {errors.form && <FieldError message={errors.form} />}
 
         <div className="flex items-center justify-between text-sm">
-          <label className="flex items-center gap-2 text-foreground/50">
-            <input type="checkbox" defaultChecked className="accent-[hsl(var(--gold))]" />
+          <label className="flex items-center gap-2 text-fg-soft">
+            <input type="checkbox" defaultChecked className="accent-[hsl(var(--primary))]" />
             Remember me
           </label>
           <Link to="/forgot-password" className="text-gold hover:underline">Forgot?</Link>
         </div>
-        <GoldButton type="submit" fullWidth disabled={isSubmitting}>
+        <CTAButton type="submit" fullWidth disabled={isSubmitting}>
           <Mail size={16} />
           {isSubmitting ? "Signing in..." : "Sign in"}
-        </GoldButton>
+        </CTAButton>
       </form>
-      <p className="mt-6 text-center text-sm text-foreground/50">
+      <p className="mt-5 text-center text-sm text-fg-muted">
         New to LiftOS?{" "}
         <Link to="/create-account" className="text-gold hover:underline">Create account</Link>
       </p>

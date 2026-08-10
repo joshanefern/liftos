@@ -20,6 +20,8 @@ export type WeekStats = {
   sessions: number;
   workedDayIndices: number[];
   totalVolume: number;
+  /** Sum of duration_minutes for this week's logs (null durations count as 0). */
+  totalMinutes: number;
 };
 
 export const getWeekStats = (logs: WorkoutLog[]): WeekStats => {
@@ -30,7 +32,21 @@ export const getWeekStats = (logs: WorkoutLog[]): WeekStats => {
     sessions: weekLogs.length,
     workedDayIndices: indices,
     totalVolume: weekLogs.reduce((s, l) => s + l.total_volume, 0),
+    totalMinutes: weekLogs.reduce((s, l) => s + (l.duration_minutes ?? 0), 0),
   };
+};
+
+/** Weekly volume goal for the dot-matrix meter: 10% above the trailing
+    4-week average weekly volume, floored at 5,000 and rounded to the
+    nearest 500 so the target reads as a round number. */
+export const getWeeklyVolumeTarget = (logs: WorkoutLog[]): number => {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 28);
+  const recentVolume = logs
+    .filter((l) => new Date(l.finished_at) >= cutoff)
+    .reduce((s, l) => s + l.total_volume, 0);
+  const avgWeekly = recentVolume / 4;
+  return Math.round(Math.max(avgWeekly * 1.1, 5000) / 500) * 500;
 };
 
 export const getStreak = (logs: WorkoutLog[]): number => {
@@ -64,6 +80,24 @@ export const getConsistency = (logs: WorkoutLog[], frequencyStr: string | null):
   return Math.min(Math.round((actual / target) * 100), 100);
 };
 
+export type SessionPoint = {
+  date: string;
+  volume: number;
+  name: string;
+  finished_at: string;
+};
+
+export const getRecentSessions = (logs: WorkoutLog[], limit = 10): SessionPoint[] =>
+  [...logs]
+    .sort((a, b) => new Date(a.finished_at).getTime() - new Date(b.finished_at).getTime())
+    .slice(-limit)
+    .map((log) => ({
+      date: new Date(log.finished_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      volume: log.total_volume,
+      name: log.name,
+      finished_at: log.finished_at,
+    }));
+
 export type VolumePoint = { week: string; volume: number };
 
 export const getVolumeTrend = (logs: WorkoutLog[]): VolumePoint[] => {
@@ -87,7 +121,9 @@ export const getTopLifts = (logs: WorkoutLog[]): TopLift[] => {
   for (const log of logs) {
     for (const exercise of log.exercises) {
       for (const set of exercise.sets) {
-        if (!set.completed || set.weight <= 0) continue;
+        // Warmup sets never count toward bests (or any per-set stat here —
+        // volume/set counts come from precomputed log totals).
+        if (!set.completed || set.isWarmup || set.weight <= 0) continue;
         const existing = bests[exercise.name];
         if (!existing || set.weight > existing.weight) {
           bests[exercise.name] = { name: exercise.name, weight: set.weight, reps: set.reps };

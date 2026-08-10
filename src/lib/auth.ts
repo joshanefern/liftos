@@ -90,3 +90,23 @@ export const signOut = async () => {
 };
 
 export const getSession = () => supabase.auth.getSession();
+
+/* Password recovery — Supabase emails a magic link that lands the user back
+   in the app with a recovery session; updatePassword finishes the job. */
+export const requestPasswordReset = async (email: string): Promise<void> => {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("rate limit") || msg.includes("email rate")) {
+      throw new Error("Too many reset requests. Please wait a few minutes and try again.");
+    }
+    throw new Error(error.message);
+  }
+};
+
+export const updatePassword = async (password: string): Promise<void> => {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw new Error(error.message);
+};

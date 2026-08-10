@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 .env
 backend/.env
+
+# Secrets and local CLI state — never commit
+.backend.env.backup
+supabase/.temp/

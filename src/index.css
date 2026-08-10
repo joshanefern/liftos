@@ -1,64 +1,131 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ════════════════════════════════════════════════════════════════
+ * LIFTOS theme — champagne & espresso
+ *
+ * Light: Josh's champagne swatch (#FAE7D3) as the canvas, ink
+ * typography (#241C14), hairline structure (#E3CBAD), terracotta
+ * accent (#C8502E) doing the quiet talking.
+ * Dark: the espresso sibling (#191410) — same warmth inverted, the
+ * champagne becomes the text (#F6E7D5), terracotta glows one notch
+ * brighter (#E06A40). No cold blues, no pure black.
+ * ════════════════════════════════════════════════════════════════ */
+
 @layer base {
   :root {
-    --background: 229 36% 6%;
-    --foreground: 220 10% 92%;
+    color-scheme: light;
 
-    --card: 0 0% 9%;
-    --card-foreground: 45 5% 90%;
+    --background: 31 80% 90%;        /* #FAE7D3 champagne */
+    --foreground: 30 29% 11%;        /* #241C14 ink */
 
-    --popover: 0 0% 9%;
-    --popover-foreground: 45 5% 90%;
+    --card: 33 82% 94%;              /* barely-lifted champagne */
+    --card-foreground: 30 29% 11%;
 
-    --primary: 43 56% 52%;
-    --primary-foreground: 0 0% 6%;
+    --popover: 33 82% 94%;
+    --popover-foreground: 30 29% 11%;
 
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 45 5% 70%;
+    --primary: 13 63% 48%;           /* #C8502E terracotta */
+    --primary-foreground: 31 80% 95%;
 
-    --muted: 0 0% 14%;
-    --muted-foreground: 0 0% 45%;
+    --secondary: 33 60% 84%;         /* soft champagne-deep chip */
+    --secondary-foreground: 33 25% 32%;
 
-    --accent: 43 56% 52%;
-    --accent-foreground: 0 0% 6%;
+    --muted: 33 60% 84%;
+    --muted-foreground: 32 24% 55%;  /* #A98F72 */
 
-    --destructive: 0 62% 50%;
+    --accent: 13 63% 48%;
+    --accent-foreground: 31 80% 95%;
+
+    --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 0 0% 14%;
-    --input: 0 0% 14%;
-    --ring: 43 56% 52%;
+    --border: 33 49% 78%;            /* #E3CBAD hairline */
+    --input: 33 49% 78%;
+    --ring: 13 63% 48%;
 
-    --radius: 0.75rem;
+    --radius: 0.875rem;
 
-    --sidebar-background: 229 40% 4%;
-    --sidebar-foreground: 220 10% 55%;
-    --sidebar-primary: 43 56% 52%;
-    --sidebar-primary-foreground: 0 0% 6%;
-    --sidebar-accent: 229 30% 11%;
-    --sidebar-accent-foreground: 220 10% 92%;
-    --sidebar-border: 229 15% 12%;
-    --sidebar-ring: 43 56% 52%;
+    --sidebar-background: 33 75% 92%;
+    --sidebar-foreground: 32 24% 55%;
+    --sidebar-primary: 13 63% 48%;
+    --sidebar-primary-foreground: 31 80% 95%;
+    --sidebar-accent: 33 60% 86%;
+    --sidebar-accent-foreground: 30 29% 11%;
+    --sidebar-border: 33 49% 78%;
+    --sidebar-ring: 13 63% 48%;
 
-    /* Semantic tokens */
-    --gold: 43 56% 52%;
-    --gold-dim: 43 30% 30%;
-    --gold-glow: 43 56% 52%;
-    --surface-1: 229 36% 8%;
-    --surface-2: 229 30% 11%;
-    --surface-3: 229 25% 14%;
-    --text-primary: 220 10% 92%;
-    --text-secondary: 220 8% 55%;
-    --text-tertiary: 220 6% 38%;
-    --border: 229 15% 14%;
-    --chart-line: 43 56% 52%;
-    --success: 142 50% 45%;
-    --warning: 38 92% 50%;
+    /* Semantic tokens — --gold kept as an alias for the accent so
+       legacy call sites read terracotta, never the old casino gold */
+    --gold: 13 63% 48%;
+    --gold-dim: 13 40% 38%;
+    --gold-glow: 13 63% 48%;
+    --surface-1: 33 78% 94%;
+    --surface-2: 33 70% 87%;
+    --surface-3: 33 55% 82%;
+    --text-primary: 30 29% 11%;
+    --text-secondary: 33 20% 47%;    /* #8F7A60 */
+    --text-tertiary: 32 24% 55%;     /* #A98F72 */
+    --chart-line: 13 63% 48%;
+    --success: 142 45% 32%;
+    --warning: 30 90% 40%;
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    --background: 27 22% 8%;         /* #191410 espresso */
+    --foreground: 33 65% 90%;        /* #F6E7D5 champagne text */
+
+    --card: 27 20% 11%;
+    --card-foreground: 33 65% 90%;
+
+    --popover: 27 20% 11%;
+    --popover-foreground: 33 65% 90%;
+
+    --primary: 16 72% 56%;           /* #E06A40 terracotta, brighter */
+    --primary-foreground: 27 22% 8%;
+
+    --secondary: 28 25% 14%;
+    --secondary-foreground: 33 30% 75%;
+
+    --muted: 28 25% 14%;
+    --muted-foreground: 31 18% 46%;  /* #8A7660 */
+
+    --accent: 16 72% 56%;
+    --accent-foreground: 27 22% 8%;
+
+    --destructive: 0 62% 52%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 29 28% 16%;            /* #35291E hairline */
+    --input: 29 28% 16%;
+    --ring: 16 72% 56%;
+
+    --sidebar-background: 27 25% 6%;
+    --sidebar-foreground: 31 18% 46%;
+    --sidebar-primary: 16 72% 56%;
+    --sidebar-primary-foreground: 27 22% 8%;
+    --sidebar-accent: 28 22% 13%;
+    --sidebar-accent-foreground: 33 65% 90%;
+    --sidebar-border: 29 28% 14%;
+    --sidebar-ring: 16 72% 56%;
+
+    --gold: 16 72% 56%;
+    --gold-dim: 16 45% 40%;
+    --gold-glow: 16 72% 56%;
+    --surface-1: 27 20% 11%;
+    --surface-2: 28 22% 13%;
+    --surface-3: 29 24% 16%;
+    --text-primary: 33 65% 90%;
+    --text-secondary: 33 20% 53%;    /* #A08A70 */
+    --text-tertiary: 31 18% 46%;     /* #8A7660 */
+    --chart-line: 16 72% 56%;
+    --success: 142 45% 55%;
+    --warning: 38 90% 55%;
   }
 }
 
@@ -67,13 +134,40 @@
     @apply border-border;
   }
 
+  :root {
+    /* iOS safe-area insets (notch / Dynamic Island / home indicator) */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+  }
+
+  html {
+    overscroll-behavior: none;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     overflow-wrap: break-word;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
   }
+
+  /* Native-app feel: no text-selection or long-press callouts on chrome,
+     while keeping inputs and content editable/selectable */
+  button, a, nav, header {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .pt-safe { padding-top: var(--safe-top); }
+  .pb-safe { padding-bottom: var(--safe-bottom); }
+  .pl-safe { padding-left: var(--safe-left); }
+  .pr-safe { padding-right: var(--safe-right); }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Inter', sans-serif;
@@ -87,15 +181,16 @@
 }
 
 @layer utilities {
-  .text-gold {
+  /* Accent — .text-gold et al. kept as aliases; they now read terracotta */
+  .text-gold, .text-accent-warm {
     color: hsl(var(--gold));
   }
 
-  .bg-gold {
+  .bg-gold, .bg-accent-warm {
     background-color: hsl(var(--gold));
   }
 
-  .border-gold {
+  .border-gold, .border-accent-warm {
     border-color: hsl(var(--gold));
   }
 
@@ -112,44 +207,137 @@
   }
 
   .surface-2 {
-    background-color: rgba(255, 255, 255, 0.04);
+    background-color: hsl(var(--surface-2));
   }
 
   .surface-3 {
-    background-color: rgba(255, 255, 255, 0.03);
+    background-color: hsl(var(--surface-3));
   }
 
+  /* Hairline structure replaces the old glow system. The class names
+     survive so unswept call sites degrade to a flat, quiet card. */
   .glow-gold {
-    box-shadow: 0 0 20px hsl(var(--gold) / 0.08), 0 0 60px hsl(var(--gold) / 0.04);
+    box-shadow: 0 1px 2px hsl(var(--foreground) / 0.05);
   }
 
   .glow-gold-hover {
-    transition: box-shadow 0.3s ease-out, transform 0.2s ease-out;
+    transition: background-color 0.2s ease-out, transform 0.2s ease-out;
   }
 
   .glow-gold-hover:hover {
-    box-shadow: 0 0 24px hsl(var(--gold) / 0.12), 0 0 80px hsl(var(--gold) / 0.06);
-    transform: scale(1.01);
+    background-color: hsl(var(--surface-2));
   }
 
-  .label-xs {
-    @apply text-xs font-medium uppercase tracking-widest text-foreground/30;
+  /* Section-top rule — the 1.5px ink line that opens a content block */
+  .rule-heavy {
+    border-top: 1.5px solid hsl(var(--foreground));
   }
 
-  .heading-hero {
-    @apply text-6xl md:text-8xl font-semibold tracking-tighter;
-    line-height: 0.9;
+  .rule-hairline {
+    border-top: 1px solid hsl(var(--border));
+  }
+
+  /* ════════════════════════════════════════════════════════
+   * Typography system
+   *
+   * Use these instead of raw `text-{size}` and `text-foreground/{alpha}`.
+   *
+   * Headings:  heading-display | heading-lg | heading-md | heading-sm
+   * Body:      body-md | body-sm | caption
+   * Numerics:  stat-hero | stat-xl | stat-lg | stat-md  (auto tabular-nums,
+   *            ultra-light per the champagne mockup — pair with <b> for
+   *            the emphasized segment)
+   * Labels:    eyebrow                          (uppercase + tracking)
+   * Color:     text-fg | text-fg-soft | text-fg-muted | text-fg-faint | text-fg-disabled
+   *
+   * (label-xs, heading-hero, heading-lg, heading-md kept as aliases for back-compat.)
+   * ════════════════════════════════════════════════════════ */
+
+  .heading-display {
+    @apply text-4xl md:text-7xl font-semibold tracking-[-0.05em] text-fg;
+    line-height: 0.95;
+  }
+  .heading-hero { /* alias */
+    @apply heading-display;
   }
 
   .heading-lg {
-    @apply text-2xl md:text-3xl font-semibold tracking-tight;
-    line-height: 1.1;
+    @apply text-xl md:text-3xl font-semibold tracking-tight text-fg;
+    line-height: 1.15;
   }
 
   .heading-md {
-    @apply text-lg md:text-xl font-medium tracking-tight;
-    line-height: 1.2;
+    @apply text-base md:text-xl font-semibold tracking-tight text-fg;
+    line-height: 1.25;
   }
+
+  .heading-sm {
+    @apply text-base font-semibold tracking-tight text-fg;
+    line-height: 1.3;
+  }
+
+  .body-md {
+    @apply text-sm leading-6 text-fg-soft;
+  }
+
+  .body-sm {
+    @apply text-[13px] leading-5 text-fg-soft;
+  }
+
+  .caption {
+    @apply text-xs leading-5 text-fg-muted;
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-muted;
+  }
+  .label-xs { /* alias — preserves existing call sites */
+    @apply eyebrow;
+  }
+
+  /* Ultra-light hero numeral — 56px-class, weight 200, with <b> at 600
+     for the emphasized digits (mockup: .num / .num b) */
+  .stat-hero {
+    @apply text-5xl md:text-6xl font-extralight tracking-[-0.04em] tabular-nums text-fg;
+    line-height: 0.95;
+    font-feature-settings: 'tnum';
+  }
+  .stat-hero b {
+    @apply font-semibold;
+  }
+
+  .stat-xl {
+    @apply text-3xl md:text-4xl font-light tracking-tight tabular-nums text-fg;
+    font-feature-settings: 'tnum';
+  }
+  .stat-xl b {
+    @apply font-semibold;
+  }
+
+  .stat-lg {
+    @apply text-xl md:text-2xl font-light tracking-tight tabular-nums text-fg;
+    font-feature-settings: 'tnum';
+  }
+  .stat-lg b {
+    @apply font-semibold;
+  }
+
+  .stat-md {
+    @apply text-base font-semibold tabular-nums text-fg;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Phones get slightly tighter uppercase labels — wide tracking eats width */
+  .eyebrow {
+    @apply max-md:text-[10px] max-md:tracking-[0.14em];
+  }
+
+  /* Foreground color tiers — pick by emphasis, not by hex */
+  .text-fg          { color: hsl(var(--foreground)); }
+  .text-fg-soft     { color: hsl(var(--foreground) / 0.72); }
+  .text-fg-muted    { color: hsl(var(--text-tertiary)); }
+  .text-fg-faint    { color: hsl(var(--foreground) / 0.3); }
+  .text-fg-disabled { color: hsl(var(--foreground) / 0.16); }
 
   .mono {
     font-family: 'JetBrains Mono', monospace;
@@ -159,30 +347,26 @@
   .gradient-surface {
     background: linear-gradient(
       135deg,
-      rgba(184, 147, 66, 0.07) 0%,
-      rgba(184, 147, 66, 0.03) 100%
+      hsl(var(--primary) / 0.07) 0%,
+      hsl(var(--primary) / 0.03) 100%
     );
   }
 
+  /* Legacy name — now the flat terracotta fill */
   .gradient-gold {
-    background: linear-gradient(
-      135deg,
-      hsl(43 56% 52%) 0%,
-      hsl(43 40% 40%) 100%
-    );
+    background: hsl(var(--primary));
   }
 }
 
-/* Scroll reveal animations */
+/* Scroll reveal animations — champagne, not casino: fades and small
+   translations only, and reduced-motion users get plain fades. */
 @keyframes reveal-up {
   from {
     opacity: 0;
-    filter: blur(4px);
-    transform: translateY(16px);
+    transform: translateY(14px);
   }
   to {
     opacity: 1;
-    filter: blur(0);
     transform: translateY(0);
   }
 }
@@ -190,7 +374,7 @@
 @keyframes reveal-scale {
   from {
     opacity: 0;
-    transform: scale(0.97);
+    transform: scale(0.98);
   }
   to {
     opacity: 1;
@@ -218,842 +402,9 @@
   100% { background-position: 200% 0; }
 }
 
-@keyframes landing-bg-drift {
-  0%, 100% {
-    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
-  }
-  50% {
-    transform: translate3d(4rem, -3rem, 0) rotate(7deg) scale(1.08);
-  }
-}
-
-@keyframes landing-bg-drift-reverse {
-  0%, 100% {
-    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
-  }
-  50% {
-    transform: translate3d(-4rem, 3.5rem, 0) rotate(-8deg) scale(1.06);
-  }
-}
-
-@keyframes landing-bg-orbit {
-  0%, 100% {
-    transform: translate3d(0, 0, 0) rotate(18deg);
-  }
-  50% {
-    transform: translate3d(1.5rem, -2.5rem, 0) rotate(26deg);
-  }
-}
-
-@keyframes landing-bg-strand {
-  0% {
-    transform: translate3d(-8%, 0, 0) rotate(-10deg);
-    opacity: 0.18;
-  }
-  45% {
-    opacity: 0.36;
-  }
-  100% {
-    transform: translate3d(8%, -8rem, 0) rotate(-10deg);
-    opacity: 0.18;
-  }
-}
-
-@keyframes landing-bg-pulse {
-  0%, 100% {
-    opacity: 0.22;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  50% {
-    opacity: 0.54;
-    transform: translate3d(0, -1.5rem, 0) scale(1.14);
-  }
-}
-
-@keyframes landing-bg-sculpture {
-  0%, 100% {
-    transform: rotateX(58deg) rotateZ(-18deg) translate3d(0, 0, 0);
-  }
-  50% {
-    transform: rotateX(62deg) rotateZ(-10deg) translate3d(1rem, -1.25rem, 3rem);
-  }
-}
-
-@keyframes landing-bg-halo-spin {
-  to {
-    transform: translate(-50%, -50%) rotateZ(360deg);
-  }
-}
-
-@keyframes landing-bg-icon-float {
-  0%, 100% {
-    transform: translate3d(0, 0, 0) rotate(var(--landing-icon-rotate)) scale(1);
-  }
-  50% {
-    transform: translate3d(var(--landing-icon-x), var(--landing-icon-y), 0) rotate(calc(var(--landing-icon-rotate) + 7deg)) scale(1.06);
-  }
-}
-
-@keyframes landing-bg-ribbon {
-  0%, 100% {
-    transform: translateY(0) scaleX(0.68);
-    opacity: 0.22;
-  }
-  50% {
-    transform: translateY(-1.1rem) scaleX(1);
-    opacity: 0.72;
-  }
-}
-
-@keyframes landing-bg-circuit-pan {
-  to {
-    background-position: 0 0, 9rem 6rem, 7rem 4rem;
-  }
-}
-
-.landing-background {
-  z-index: 0;
-  background:
-    radial-gradient(circle at 50% -4%, rgba(222, 181, 89, 0.16), transparent 26rem),
-    radial-gradient(circle at 7% 18%, rgba(73, 124, 183, 0.12), transparent 32rem),
-    radial-gradient(circle at 86% 36%, rgba(35, 132, 101, 0.1), transparent 30rem),
-    radial-gradient(circle at 54% 72%, rgba(100, 79, 197, 0.065), transparent 36rem),
-    linear-gradient(180deg, #08090f 0%, #090a0f 48%, #07080d 100%);
-}
-
-.landing-background ~ section,
-.landing-background ~ footer {
-  z-index: 1;
-}
-
-.landing-bg-vignette {
-  background:
-    radial-gradient(ellipse at center, rgba(7, 8, 13, 0.26) 0%, transparent 42%, rgba(0, 0, 0, 0.54) 100%),
-    linear-gradient(90deg, rgba(7, 8, 13, 0.9), transparent 26%, transparent 74%, rgba(7, 8, 13, 0.9));
-}
-
-.landing-bg-grid {
-  opacity: 0.18;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(rgba(184, 147, 66, 0.075) 1px, transparent 1px);
-  background-position: center top;
-  background-size: 84px 84px, 84px 84px, 100% 18rem;
-  mask-image: linear-gradient(to bottom, transparent 0%, black 10%, black 82%, transparent 100%);
-}
-
-.landing-bg-circuit {
-  opacity: 0.16;
-  background-image:
-    linear-gradient(115deg, transparent 0 46%, rgba(184, 147, 66, 0.12) 46% 46.35%, transparent 46.35% 100%),
-    radial-gradient(circle, rgba(184, 147, 66, 0.22) 0 2px, transparent 2.5px),
-    radial-gradient(circle, rgba(104, 157, 211, 0.2) 0 1.5px, transparent 2px);
-  background-position: 0 0, 0 0, 4rem 3rem;
-  background-size: 26rem 26rem, 9rem 6rem, 7rem 4rem;
-  mask-image: linear-gradient(to bottom, transparent 0%, black 7%, black 76%, transparent 100%);
-  animation: landing-bg-circuit-pan 38s linear infinite;
-}
-
-.landing-bg-aurora {
-  border-radius: 9999px;
-  filter: blur(76px);
-  mix-blend-mode: screen;
-  opacity: 0.27;
-}
-
-.landing-bg-aurora-a {
-  left: -17rem;
-  top: 10rem;
-  width: 42rem;
-  height: 64rem;
-  background: linear-gradient(135deg, rgba(74, 121, 184, 0.34), rgba(184, 147, 66, 0.18), transparent 72%);
-  animation: landing-bg-drift 16s ease-in-out infinite;
-}
-
-.landing-bg-aurora-b {
-  right: -18rem;
-  top: 36rem;
-  width: 48rem;
-  height: 74rem;
-  background: linear-gradient(150deg, rgba(184, 147, 66, 0.27), rgba(50, 149, 111, 0.17), transparent 72%);
-  animation: landing-bg-drift-reverse 19s ease-in-out infinite;
-}
-
-.landing-bg-aurora-c {
-  left: 18%;
-  bottom: -16rem;
-  width: 58rem;
-  height: 34rem;
-  background: linear-gradient(105deg, rgba(184, 147, 66, 0.18), rgba(94, 145, 205, 0.13), transparent 70%);
-  animation: landing-bg-drift 22s ease-in-out infinite;
-}
-
-.landing-bg-3d-stage {
-  top: 5rem;
-  left: 50%;
-  width: min(94vw, 64rem);
-  height: 34rem;
-  perspective: 900px;
-  transform: translateX(-50%);
-  opacity: 0.34;
-  mask-image: radial-gradient(ellipse at center, black 0%, black 44%, transparent 76%);
-}
-
-.landing-bg-barbell {
-  position: absolute;
-  inset: 9rem 4rem auto;
-  height: 9rem;
-  transform-style: preserve-3d;
-  animation: landing-bg-sculpture 12s ease-in-out infinite;
-}
-
-.landing-bg-shaft {
-  position: absolute;
-  left: 13%;
-  right: 13%;
-  top: 50%;
-  height: 0.58rem;
-  border-radius: 9999px;
-  background: linear-gradient(90deg, transparent, rgba(238, 203, 119, 0.62), rgba(130, 174, 219, 0.34), rgba(238, 203, 119, 0.62), transparent);
-  box-shadow: 0 0 30px rgba(184, 147, 66, 0.12), 0 18px 42px rgba(0, 0, 0, 0.24);
-}
-
-.landing-bg-plate {
-  position: absolute;
-  top: 50%;
-  border-radius: 50%;
-  border: 1px solid rgba(238, 203, 119, 0.16);
-  background:
-    radial-gradient(circle at 42% 36%, rgba(255, 255, 255, 0.12), transparent 16%),
-    radial-gradient(circle, rgba(184, 147, 66, 0.16) 0 17%, rgba(31, 35, 44, 0.58) 18% 42%, rgba(184, 147, 66, 0.12) 43% 46%, rgba(10, 12, 18, 0.48) 47% 100%);
-  box-shadow: inset -18px -14px 28px rgba(0, 0, 0, 0.34), inset 12px 10px 22px rgba(255, 255, 255, 0.035), 0 0 42px rgba(184, 147, 66, 0.08);
-  transform: translateY(-50%) rotateX(72deg);
-}
-
-.landing-bg-plate-outer {
-  width: 9rem;
-  height: 9rem;
-}
-
-.landing-bg-plate-inner {
-  width: 6.8rem;
-  height: 6.8rem;
-  opacity: 0.9;
-}
-
-.landing-bg-plate-left.landing-bg-plate-outer {
-  left: 2%;
-}
-
-.landing-bg-plate-left.landing-bg-plate-inner {
-  left: 10%;
-}
-
-.landing-bg-plate-right.landing-bg-plate-inner {
-  right: 10%;
-}
-
-.landing-bg-plate-right.landing-bg-plate-outer {
-  right: 2%;
-}
-
-.landing-bg-halo {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  border-radius: 50%;
-  border: 1px dashed rgba(184, 147, 66, 0.14);
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 46px rgba(184, 147, 66, 0.04);
-  animation: landing-bg-halo-spin 34s linear infinite;
-}
-
-.landing-bg-halo-a {
-  width: 31rem;
-  height: 31rem;
-}
-
-.landing-bg-halo-b {
-  width: 42rem;
-  height: 42rem;
-  border-color: rgba(103, 158, 213, 0.16);
-  animation-duration: 48s;
-  animation-direction: reverse;
-}
-
-.landing-bg-data-ribbon {
-  position: absolute;
-  left: 50%;
-  top: 27rem;
-  display: grid;
-  width: min(80vw, 42rem);
-  gap: 0.7rem;
-  transform: translateX(-50%) rotate(-4deg);
-}
-
-.landing-bg-data-ribbon span {
-  height: 2px;
-  border-radius: 9999px;
-  background: linear-gradient(90deg, transparent, rgba(184, 147, 66, 0.24), rgba(117, 170, 219, 0.15), transparent);
-  transform-origin: center;
-  animation: landing-bg-ribbon 5s ease-in-out infinite;
-}
-
-.landing-bg-data-ribbon span:nth-child(2) {
-  animation-delay: -1.3s;
-}
-
-.landing-bg-data-ribbon span:nth-child(3) {
-  animation-delay: -2.6s;
-}
-
-.landing-bg-data-ribbon span:nth-child(4) {
-  animation-delay: -3.9s;
-}
-
-.landing-bg-icon {
-  position: absolute;
-  z-index: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-width: 5.7rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9999px;
-  padding: 0.58rem 0.74rem;
-  color: rgba(238, 232, 218, 0.46);
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.008)),
-    radial-gradient(circle at 18% 18%, rgba(184, 147, 66, 0.09), transparent 48%);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  opacity: 0.52;
-  animation: landing-bg-icon-float var(--landing-icon-speed) ease-in-out infinite;
-}
-
-.landing-bg-icon span {
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgba(238, 232, 218, 0.32);
-}
-
-.landing-bg-icon-a {
-  --landing-icon-rotate: -10deg;
-  --landing-icon-x: 1.4rem;
-  --landing-icon-y: -2rem;
-  --landing-icon-speed: 8s;
-  top: 18rem;
-  left: 3%;
-}
-
-.landing-bg-icon-b {
-  --landing-icon-rotate: 9deg;
-  --landing-icon-x: -1rem;
-  --landing-icon-y: 2.4rem;
-  --landing-icon-speed: 10s;
-  top: 21rem;
-  right: 4%;
-}
-
-.landing-bg-icon-c {
-  --landing-icon-rotate: -7deg;
-  --landing-icon-x: 1.8rem;
-  --landing-icon-y: 1.2rem;
-  --landing-icon-speed: 11s;
-  top: 66rem;
-  left: 2%;
-}
-
-.landing-bg-icon-d {
-  --landing-icon-rotate: 12deg;
-  --landing-icon-x: -1.6rem;
-  --landing-icon-y: -1.2rem;
-  --landing-icon-speed: 9s;
-  top: 82rem;
-  right: 3%;
-}
-
-.landing-bg-icon-e {
-  --landing-icon-rotate: -11deg;
-  --landing-icon-x: 1.1rem;
-  --landing-icon-y: -1.8rem;
-  --landing-icon-speed: 13s;
-  top: 105rem;
-  left: 4%;
-}
-
-.landing-bg-icon-f {
-  --landing-icon-rotate: 8deg;
-  --landing-icon-x: -1.4rem;
-  --landing-icon-y: 1.8rem;
-  --landing-icon-speed: 12s;
-  top: 126rem;
-  right: 3%;
-}
-
-.landing-bg-icon-g {
-  --landing-icon-rotate: -8deg;
-  --landing-icon-x: 1.7rem;
-  --landing-icon-y: 1rem;
-  --landing-icon-speed: 14s;
-  bottom: 34rem;
-  left: 3%;
-}
-
-.landing-bg-icon-h {
-  --landing-icon-rotate: 10deg;
-  --landing-icon-x: -1rem;
-  --landing-icon-y: -1.8rem;
-  --landing-icon-speed: 10s;
-  bottom: 16rem;
-  right: 4%;
-}
-
-.landing-bg-orbit {
-  border: 1px solid rgba(184, 147, 66, 0.1);
-  border-radius: 9999px;
-  box-shadow: inset 0 0 28px rgba(184, 147, 66, 0.035), 0 0 38px rgba(74, 121, 184, 0.055);
-  opacity: 0.24;
-  animation: landing-bg-orbit 13s ease-in-out infinite;
-}
-
-.landing-bg-orbit-a {
-  top: 17rem;
-  left: 5%;
-  width: 15rem;
-  height: 15rem;
-}
-
-.landing-bg-orbit-b {
-  top: 70rem;
-  right: 7%;
-  width: 21rem;
-  height: 21rem;
-  animation-duration: 17s;
-  animation-delay: -4s;
-}
-
-.landing-bg-orbit-c {
-  bottom: 14rem;
-  left: 12%;
-  width: 18rem;
-  height: 18rem;
-  animation-duration: 20s;
-  animation-delay: -8s;
-}
-
-.landing-bg-strand {
-  width: 130vw;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(184, 147, 66, 0.18), rgba(112, 163, 214, 0.1), transparent);
-  box-shadow: 0 0 24px rgba(184, 147, 66, 0.08);
-  animation: landing-bg-strand 18s linear infinite;
-}
-
-.landing-bg-strand-a {
-  top: 27rem;
-  left: -15vw;
-}
-
-.landing-bg-strand-b {
-  top: 82rem;
-  left: -20vw;
-  animation-duration: 24s;
-  animation-delay: -9s;
-}
-
-.landing-bg-strand-c {
-  bottom: 24rem;
-  left: -18vw;
-  animation-duration: 21s;
-  animation-delay: -14s;
-}
-
-.landing-bg-pulse {
-  border-radius: 9999px;
-  background: radial-gradient(circle, rgba(239, 203, 119, 0.16), rgba(184, 147, 66, 0.045) 38%, transparent 70%);
-  filter: blur(2px);
-  animation: landing-bg-pulse 9s ease-in-out infinite;
-}
-
-.landing-bg-pulse-a {
-  top: 22rem;
-  right: 18%;
-  width: 9rem;
-  height: 9rem;
-}
-
-.landing-bg-pulse-b {
-  top: 100rem;
-  left: 16%;
-  width: 7rem;
-  height: 7rem;
-  animation-duration: 12s;
-  animation-delay: -5s;
-}
-
-.landing-bg-pulse-c {
-  bottom: 18rem;
-  right: 14%;
-  width: 11rem;
-  height: 11rem;
-  animation-duration: 14s;
-  animation-delay: -8s;
-}
-
+/* Legacy hero wash — neutralized; the champagne canvas needs no radiance */
 .landing-hero-radiance {
-  background:
-    radial-gradient(circle at 50% 12%, rgba(224, 183, 91, 0.14), rgba(87, 123, 188, 0.09) 28%, rgba(10, 12, 18, 0) 68%),
-    conic-gradient(from 180deg at 50% 20%, transparent 0deg, rgba(184, 147, 66, 0.045) 62deg, transparent 122deg, rgba(93, 143, 201, 0.04) 240deg, transparent 360deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .landing-bg-aurora,
-  .landing-bg-orbit,
-  .landing-bg-strand,
-  .landing-bg-pulse,
-  .landing-bg-3d-stage,
-  .landing-bg-halo,
-  .landing-bg-icon,
-  .landing-bg-data-ribbon span,
-  .landing-bg-circuit {
-    animation: none;
-  }
-}
-
-@media (max-width: 767px) {
-  .landing-bg-3d-stage {
-    top: 9rem;
-    width: 48rem;
-    opacity: 0.52;
-  }
-
-  .landing-bg-barbell {
-    inset-inline: 6rem;
-  }
-
-  .landing-bg-icon {
-    min-width: auto;
-    padding: 0.62rem;
-  }
-
-  .landing-bg-icon span {
-    display: none;
-  }
-
-  .landing-bg-icon-a,
-  .landing-bg-icon-c,
-  .landing-bg-icon-e,
-  .landing-bg-icon-g {
-    left: 1rem;
-  }
-
-  .landing-bg-icon-b,
-  .landing-bg-icon-d,
-  .landing-bg-icon-f,
-  .landing-bg-icon-h {
-    right: 1rem;
-  }
-}
-
-@keyframes landing-star-drift {
-  to {
-    transform: translate3d(-3rem, 2rem, 0);
-  }
-}
-
-@keyframes landing-nebula-flow {
-  0%, 100% {
-    transform: translate3d(0, 0, 0) rotate(-8deg) scale(1);
-    opacity: 0.34;
-  }
-  50% {
-    transform: translate3d(2.8rem, -1.6rem, 0) rotate(4deg) scale(1.08);
-    opacity: 0.48;
-  }
-}
-
-@keyframes landing-core-breathe {
-  0%, 100% {
-    transform: translate3d(-50%, 0, 0) rotate(-8deg) scale(1);
-    filter: saturate(1.08) brightness(0.96);
-  }
-  50% {
-    transform: translate3d(-50%, -0.8rem, 0) rotate(-3deg) scale(1.035);
-    filter: saturate(1.18) brightness(1.04);
-  }
-}
-
-@keyframes landing-dust-spin {
-  to {
-    transform: translate(-50%, -50%) rotate(360deg);
-  }
-}
-
-@keyframes landing-asteroid-float {
-  0%, 100% {
-    transform: translate3d(0, 0, 0) rotate(var(--asteroid-rotate)) scale(1);
-  }
-  50% {
-    transform: translate3d(var(--asteroid-x), var(--asteroid-y), 0) rotate(calc(var(--asteroid-rotate) + 5deg)) scale(1.03);
-  }
-}
-
-.landing-background {
-  z-index: 0;
-  background:
-    radial-gradient(circle at 50% 18%, rgba(184, 147, 66, 0.12), transparent 34rem),
-    radial-gradient(circle at 18% 16%, rgba(60, 80, 110, 0.14), transparent 30rem),
-    radial-gradient(circle at 88% 32%, rgba(100, 75, 30, 0.12), transparent 30rem),
-    linear-gradient(180deg, #07080c 0%, #08090e 42%, #07080d 100%);
-}
-
-.landing-background ~ section,
-.landing-background ~ footer {
-  z-index: 1;
-}
-
-.landing-space-depth {
-  background:
-    radial-gradient(ellipse at 50% 18%, rgba(220, 160, 50, 0.10), transparent 18rem),
-    radial-gradient(ellipse at 51% 23%, rgba(180, 100, 30, 0.07), transparent 23rem),
-    radial-gradient(ellipse at 8% 32%, rgba(184, 147, 66, 0.08), transparent 24rem),
-    radial-gradient(ellipse at 94% 38%, rgba(70, 100, 150, 0.07), transparent 24rem);
-}
-
-.landing-starfield {
-  opacity: 0.62;
-  background-repeat: repeat;
-  animation: landing-star-drift 46s linear infinite;
-}
-
-.landing-starfield-a {
-  background-image:
-    radial-gradient(circle, rgba(220, 185, 100, 0.7) 0 1px, transparent 1.6px),
-    radial-gradient(circle, rgba(255, 220, 130, 0.55) 0 1px, transparent 1.8px),
-    radial-gradient(circle, rgba(140, 165, 210, 0.5) 0 1px, transparent 1.7px);
-  background-position: 1rem 2rem, 5rem 8rem, 10rem 3rem;
-  background-size: 18rem 20rem, 24rem 26rem, 29rem 22rem;
-}
-
-.landing-starfield-b {
-  opacity: 0.22;
-  filter: blur(0.5px);
-  background-image:
-    radial-gradient(circle, rgba(200, 170, 80, 0.8) 0 1.5px, transparent 2.2px),
-    radial-gradient(circle, rgba(160, 130, 60, 0.6) 0 1.4px, transparent 2.1px);
-  background-position: 7rem 5rem, 12rem 11rem;
-  background-size: 32rem 34rem, 38rem 30rem;
-  animation-duration: 72s;
-  animation-direction: reverse;
-}
-
-.landing-nebula {
-  width: 42rem;
-  height: 28rem;
-  border-radius: 9999px;
-  filter: blur(34px);
-  mix-blend-mode: screen;
-  opacity: 0.34;
-  animation: landing-nebula-flow 18s ease-in-out infinite;
-}
-
-.landing-nebula-a {
-  top: 4rem;
-  left: 14%;
-  background: linear-gradient(135deg, transparent, rgba(184, 147, 66, 0.22), rgba(130, 95, 35, 0.12), transparent);
-}
-
-.landing-nebula-b {
-  top: 12rem;
-  right: 3%;
-  width: 38rem;
-  background: linear-gradient(145deg, transparent, rgba(60, 95, 150, 0.20), rgba(200, 140, 50, 0.10), transparent);
-  animation-duration: 24s;
-  animation-delay: -8s;
-}
-
-.landing-nebula-c {
-  top: 74rem;
-  left: 18%;
-  width: 50rem;
-  background: linear-gradient(115deg, transparent, rgba(184, 147, 66, 0.16), rgba(50, 70, 120, 0.12), transparent);
-  animation-duration: 28s;
-  animation-delay: -13s;
-}
-
-.landing-celestial-stage {
-  top: 8rem;
-  left: 50%;
-  width: min(74vw, 48rem);
-  height: 34rem;
-  transform: translateX(-50%);
-  opacity: 0.58;
-  mask-image: radial-gradient(ellipse at center, black 0%, black 58%, transparent 86%);
-}
-
-.landing-cosmic-core {
-  position: absolute;
-  left: 50%;
-  top: 2rem;
-  width: min(38vw, 20rem);
-  min-width: 15rem;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 36% 32%, rgba(255, 235, 140, 0.55) 0%, transparent 38%),
-    radial-gradient(circle at 68% 72%, rgba(60, 50, 20, 0.80) 0%, transparent 44%),
-    radial-gradient(circle at 50% 50%, rgba(200, 160, 60, 1) 0%, rgba(140, 105, 35, 1) 48%, rgba(60, 70, 100, 0.90) 80%, rgba(30, 35, 55, 0.95) 100%);
-  box-shadow:
-    0 0 60px rgba(184, 147, 66, 0.22),
-    0 0 130px rgba(220, 170, 60, 0.10),
-    inset -40px -40px 70px rgba(20, 14, 4, 0.55),
-    inset 20px 20px 40px rgba(255, 245, 180, 0.10);
-  animation: landing-core-breathe 16s ease-in-out infinite;
-}
-
-.landing-cosmic-core::before {
-  content: none;
-}
-
-.landing-cosmic-core-shine {
-  position: absolute;
-  inset: 12% 30% 58% 14%;
-  border-radius: 50%;
-  background: radial-gradient(circle at 40% 40%, rgba(255, 255, 255, 0.32), transparent 70%);
-  filter: blur(8px);
-}
-
-.landing-orbital-dust {
-  position: absolute;
-  left: 50%;
-  top: 44%;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transform: translate(-50%, -50%);
-  animation: landing-dust-spin 54s linear infinite;
-}
-
-.landing-orbital-dust-a {
-  width: min(62vw, 35rem);
-  height: min(32vw, 15rem);
-  border-color: rgba(255, 221, 150, 0.1);
-}
-
-.landing-orbital-dust-b {
-  width: min(68vw, 42rem);
-  height: min(36vw, 18rem);
-  border-color: rgba(109, 198, 217, 0.08);
-  animation-duration: 78s;
-  animation-direction: reverse;
-}
-
-.landing-asteroid {
-  --asteroid-rotate: 0deg;
-  --asteroid-x: 1rem;
-  --asteroid-y: -1rem;
-  border-radius: 42% 58% 51% 49% / 45% 38% 62% 55%;
-  background:
-    radial-gradient(circle at 38% 28%, rgba(255, 240, 180, 0.10), transparent 18%),
-    linear-gradient(145deg, rgba(90, 105, 130, 0.50), rgba(65, 75, 100, 0.36) 54%, rgba(45, 50, 70, 0.38));
-  box-shadow: 0 0 42px rgba(184, 147, 66, 0.08), inset -16px -18px 24px rgba(0, 0, 0, 0.38);
-  filter: blur(0.2px);
-  opacity: 0.38;
-  animation: landing-asteroid-float 18s ease-in-out infinite;
-}
-
-.landing-asteroid-a {
-  --asteroid-rotate: -12deg;
-  --asteroid-x: 1.6rem;
-  --asteroid-y: -1.4rem;
-  top: 9rem;
-  left: -4rem;
-  width: 18rem;
-  height: 8rem;
-}
-
-.landing-asteroid-b {
-  --asteroid-rotate: 13deg;
-  --asteroid-x: -1.4rem;
-  --asteroid-y: 1.2rem;
-  top: 26rem;
-  right: -6rem;
-  width: 16rem;
-  height: 10rem;
-  animation-duration: 23s;
-  animation-delay: -7s;
-}
-
-.landing-asteroid-c {
-  --asteroid-rotate: -8deg;
-  --asteroid-x: 1rem;
-  --asteroid-y: 1.5rem;
-  top: 42rem;
-  left: 19%;
-  width: 8rem;
-  height: 5rem;
-  opacity: 0.28;
-  animation-duration: 26s;
-  animation-delay: -11s;
-}
-
-.landing-asteroid-d {
-  --asteroid-rotate: 10deg;
-  --asteroid-x: -1.1rem;
-  --asteroid-y: -1.2rem;
-  bottom: 28rem;
-  right: 9%;
-  width: 10rem;
-  height: 6rem;
-  opacity: 0.24;
-  animation-duration: 29s;
-  animation-delay: -15s;
-}
-
-.landing-soft-vignette {
-  background:
-    radial-gradient(ellipse at center, transparent 0%, transparent 46%, rgba(2, 4, 16, 0.46) 100%),
-    linear-gradient(90deg, rgba(3, 6, 24, 0.92), transparent 24%, transparent 76%, rgba(3, 6, 24, 0.92)),
-    linear-gradient(180deg, transparent 0%, rgba(5, 7, 19, 0.18) 38%, rgba(5, 7, 19, 0.72) 100%);
-}
-
-.landing-hero-radiance {
-  background:
-    radial-gradient(circle at 50% 10%, rgba(220, 175, 70, 0.10), rgba(80, 110, 170, 0.05) 30%, rgba(10, 12, 18, 0) 68%);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .landing-starfield,
-  .landing-nebula,
-  .landing-cosmic-core,
-  .landing-orbital-dust,
-  .landing-asteroid {
-    animation: none;
-  }
-}
-
-@media (max-width: 767px) {
-  .landing-celestial-stage {
-    top: 10rem;
-    width: 28rem;
-    opacity: 0.34;
-  }
-
-  .landing-cosmic-core {
-    width: 15rem;
-    min-width: 0;
-  }
-
-  .landing-asteroid-a {
-    left: -9rem;
-  }
-
-  .landing-asteroid-b {
-    right: -10rem;
-  }
+  background: none;
 }
 
 .animate-reveal-up {
@@ -1073,30 +424,15 @@
   animation: draw-line 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-
-/* ── Aurora background ─────────────────────────────────────────────────────── */
-@keyframes orb-1 {
-  0%, 100% { transform: translate(0, 0) scale(1);        opacity: 0.70; }
-  33%       { transform: translate(7vw, -8vh) scale(1.12); opacity: 0.85; }
-  66%       { transform: translate(-5vw, 6vh) scale(0.94); opacity: 0.60; }
-}
-@keyframes orb-2 {
-  0%, 100% { transform: translate(0, 0) scale(1);          opacity: 0.65; }
-  40%       { transform: translate(-9vw, 12vh) scale(1.15); opacity: 0.80; }
-  70%       { transform: translate(6vw, -7vh) scale(0.92);  opacity: 0.55; }
-}
-@keyframes orb-3 {
-  0%, 100% { transform: translate(0, 0) scale(1);         opacity: 0.55; }
-  50%       { transform: translate(10vw, 5vh) scale(1.10); opacity: 0.75; }
-}
-@keyframes orb-4 {
-  0%, 100% { transform: translate(0, 0) scale(1);          opacity: 0.50; }
-  35%       { transform: translate(-6vw, -10vh) scale(1.08); opacity: 0.68; }
-  70%       { transform: translate(8vw, 4vh) scale(0.96);   opacity: 0.42; }
-}
-@keyframes orb-5 {
-  0%, 100% { transform: translate(0, 0) scale(1);         opacity: 0.45; }
-  50%       { transform: translate(-8vw, 8vh) scale(1.14); opacity: 0.62; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-reveal-up,
+  .animate-reveal-scale {
+    animation: fade-in 400ms ease-out both;
+  }
+  .animate-draw-line {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
 }
 
 /* Custom scrollbar */

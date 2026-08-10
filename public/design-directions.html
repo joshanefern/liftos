@@ -1,0 +1,2160 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LiftOS — Design Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Archivo+Black&family=JetBrains+Mono:wght@500;700&family=Sora:wght@400;600;700;800&family=Bebas+Neue&family=Fraunces:ital,wght@0,400;0,600;1,500&family=Manrope:wght@500;700;800&family=Noto+Serif+JP:wght@500;700&family=IBM+Plex+Mono:wght@500;600&family=Anton&family=Oswald:wght@500;600&family=VT323&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{min-height:100vh}
+.screen{display:none;min-height:100vh;padding:54px 0 0}
+.screen.on{display:block}
+.pad{padding-left:20px;padding-right:20px}
+.tabbar{position:fixed;bottom:0;left:0;right:0;height:76px;display:flex;align-items:center;justify-content:space-around;padding-bottom:14px}
+.tab{font-size:10px;letter-spacing:.08em;text-align:center;display:flex;flex-direction:column;gap:4px;align-items:center}
+.tab svg{width:20px;height:20px}
+.plus{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;margin-top:-18px}
+
+/* ═══ V1 · PERFORMANCE LAB ═══ */
+.v1{background:#050505;color:#EDEDED;font-family:'Space Grotesk',sans-serif}
+.v1 .micro{font-size:10px;letter-spacing:.22em;color:#6A6A6A;text-transform:uppercase;font-weight:500}
+.v1 h1{font-size:26px;font-weight:600;letter-spacing:-.02em;margin:6px 0 2px}
+.v1 .sub{font-size:12px;color:#8A8A8A}
+.v1 .hero{margin:18px 20px 0;border:1px solid #1C1C1C;border-radius:6px;padding:16px;background:#0A0A0A}
+.v1 .volt{color:#D4FF00}
+.v1 .bignum{font-family:'JetBrains Mono',monospace;font-size:40px;font-weight:700;letter-spacing:-.03em}
+.v1 .segrow{display:flex;gap:3px;margin:12px 0 4px}
+.v1 .seg{height:6px;flex:1;background:#1B1B1B;border-radius:1px}
+.v1 .seg.f{background:#D4FF00;box-shadow:0 0 8px rgba(212,255,0,.4)}
+.v1 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1C1C1C;border:1px solid #1C1C1C;border-radius:6px;margin:14px 20px;overflow:hidden}
+.v1 .cell{background:#0A0A0A;padding:14px}
+.v1 .cell .bignum{font-size:22px}
+.v1 .cta{display:block;margin:16px 20px;background:#D4FF00;color:#050505;text-align:center;padding:16px;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:.14em;text-transform:uppercase}
+.v1 .rowcard{margin:0 20px 12px;border:1px solid #1C1C1C;border-radius:6px;background:#0A0A0A;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+.v1 .rowcard b{font-size:13px;font-weight:600}
+.v1 .rowcard span{font-size:11px;color:#7c7c7c}
+.v1 .tabbar{background:#070707;border-top:1px solid #1C1C1C;color:#5A5A5A}
+.v1 .tab.on{color:#D4FF00}
+.v1 .plus{background:#D4FF00;color:#050505;border-radius:8px}
+
+/* ═══ V2 · DAYBREAK ═══ */
+.v2{background:#FAF6F0;color:#16181F;font-family:'Inter',sans-serif}
+.v2 .micro{font-size:12px;color:#9A938A;font-weight:600}
+.v2 h1{font-size:30px;font-weight:800;letter-spacing:-.03em;margin:4px 0}
+.v2 .hero{margin:18px 20px;background:#fff;border-radius:26px;padding:22px;box-shadow:0 10px 30px rgba(30,25,15,.07);display:flex;gap:20px;align-items:center}
+.v2 .ring{width:96px;height:96px;position:relative;flex:none}
+.v2 .ring svg{transform:rotate(-90deg)}
+.v2 .ring .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:22px}
+.v2 .ring .num small{font-size:10px;color:#9A938A;font-weight:600}
+.v2 .hstat{font-size:14px;color:#5C5850;line-height:1.55}
+.v2 .hstat b{color:#16181F;font-weight:800;font-size:17px}
+.v2 .cta{display:block;margin:0 20px 16px;background:#FF5A36;color:#fff;text-align:center;padding:18px;border-radius:20px;font-weight:800;font-size:16px;box-shadow:0 12px 24px rgba(255,90,54,.28)}
+.v2 .week{margin:0 20px 16px;background:#fff;border-radius:22px;padding:16px 18px;box-shadow:0 8px 24px rgba(30,25,15,.05);display:flex;justify-content:space-between}
+.v2 .day{text-align:center;font-size:10px;font-weight:700;color:#B5AEA2}
+.v2 .dot{width:30px;height:30px;border-radius:11px;background:#F1EBE1;margin-bottom:6px}
+.v2 .dot.f{background:#FF5A36;box-shadow:0 4px 12px rgba(255,90,54,.35)}
+.v2 .card{margin:0 20px 14px;background:#fff;border-radius:22px;padding:18px;box-shadow:0 8px 24px rgba(30,25,15,.05)}
+.v2 .card h3{font-size:15px;font-weight:800;margin-bottom:4px}
+.v2 .card p{font-size:13px;color:#8A postpone8378;color:#8A8378;line-height:1.5}
+.v2 .tabbar{background:rgba(255,255,255,.92);backdrop-filter:blur(14px);border-top:1px solid #EFE8DC;color:#B5AEA2}
+.v2 .tab.on{color:#FF5A36}
+.v2 .plus{background:#16181F;color:#fff}
+
+/* ═══ V3 · HEAVYWEIGHT ═══ */
+.v3{background:#F2EDE2;color:#111;font-family:'Inter',sans-serif}
+.v3 .micro{font-size:11px;letter-spacing:.14em;font-weight:700;text-transform:uppercase}
+.v3 h1{font-family:'Archivo Black',sans-serif;font-size:30px;text-transform:uppercase;letter-spacing:-.01em;margin:6px 0}
+.v3 .hero{margin:16px 20px;background:#fff;border:3px solid #111;border-radius:14px;padding:18px;box-shadow:6px 6px 0 #111}
+.v3 .bignum{font-family:'Archivo Black',sans-serif;font-size:44px;line-height:1}
+.v3 .volt{color:#FF4D00}
+.v3 .bar{height:16px;background:#E4DDCC;border:2px solid #111;border-radius:8px;margin-top:12px;overflow:hidden}
+.v3 .bar i{display:block;height:100%;width:50%;background:#FF4D00}
+.v3 .cta{display:block;margin:0 20px 14px;background:#FF4D00;color:#fff;text-align:center;padding:18px;border:3px solid #111;border-radius:14px;font-family:'Archivo Black',sans-serif;font-size:16px;text-transform:uppercase;box-shadow:5px 5px 0 #111}
+.v3 .week{margin:0 20px 14px;display:flex;gap:6px}
+.v3 .wd{flex:1;text-align:center}
+.v3 .wbar{height:38px;background:#fff;border:2.5px solid #111;border-radius:8px;margin-bottom:5px}
+.v3 .wbar.f{background:#111}
+.v3 .wd span{font-size:10px;font-weight:800}
+.v3 .card{margin:0 20px 12px;background:#fff;border:3px solid #111;border-radius:14px;padding:16px;box-shadow:5px 5px 0 #111;display:flex;justify-content:space-between;align-items:center}
+.v3 .card b{font-size:14px;font-weight:800;text-transform:uppercase}
+.v3 .card span{font-size:12px;color:#666;font-weight:600}
+.v3 .tabbar{background:#F2EDE2;border-top:3px solid #111;color:#111}
+.v3 .tab{font-weight:800}
+.v3 .tab.on{color:#FF4D00}
+.v3 .plus{background:#111;color:#fff;border:3px solid #111;border-radius:12px}
+
+/* ═══ V4 · MIDNIGHT VOLT ═══ */
+.v4{background:#080B18;color:#EAF0FF;font-family:'Sora',sans-serif}
+.v4 .glow{position:fixed;top:-140px;left:50%;transform:translateX(-50%);width:420px;height:340px;background:radial-gradient(closest-side,rgba(77,124,255,.28),transparent);pointer-events:none}
+.v4 .micro{font-size:11px;letter-spacing:.18em;color:#5F6B8F;text-transform:uppercase;font-weight:600}
+.v4 h1{font-size:27px;font-weight:800;letter-spacing:-.02em;margin:6px 0 2px}
+.v4 .sub{font-size:13px;color:#7D89AE}
+.v4 .hero{margin:18px 20px;background:linear-gradient(140deg,rgba(77,124,255,.14),rgba(157,77,255,.08));border:1px solid rgba(108,140,255,.35);border-radius:22px;padding:20px;display:flex;align-items:center;gap:18px;box-shadow:0 0 40px rgba(77,124,255,.12)}
+.v4 .ring{width:92px;height:92px;position:relative;flex:none}
+.v4 .ring svg{transform:rotate(-90deg)}
+.v4 .ring .num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:20px}
+.v4 .hs{font-size:13px;color:#8E9AC1;line-height:1.7}
+.v4 .hs b{color:#EAF0FF;font-family:'JetBrains Mono',monospace;font-size:16px}
+.v4 .cta{display:block;margin:0 20px 16px;background:linear-gradient(90deg,#4D7CFF,#9D4DFF);color:#fff;text-align:center;padding:17px;border-radius:16px;font-weight:800;font-size:15px;box-shadow:0 10px 30px rgba(99,88,255,.35)}
+.v4 .week{margin:0 20px 16px;display:flex;justify-content:space-between;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:14px 16px}
+.v4 .day{text-align:center;font-size:9px;letter-spacing:.1em;color:#5F6B8F;font-weight:600}
+.v4 .pip{width:8px;height:26px;border-radius:6px;background:rgba(255,255,255,.08);margin:0 auto 6px}
+.v4 .pip.f{background:linear-gradient(180deg,#57E6FF,#4D7CFF);box-shadow:0 0 12px rgba(87,230,255,.5)}
+.v4 .card{margin:0 20px 14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:17px}
+.v4 .card h3{font-size:14px;font-weight:700;margin-bottom:4px}
+.v4 .card h3 i{font-style:normal;background:linear-gradient(90deg,#57E6FF,#9D4DFF);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v4 .card p{font-size:12.5px;color:#7D89AE;line-height:1.6}
+.v4 .tabbar{background:rgba(8,11,24,.9);backdrop-filter:blur(16px);border-top:1px solid rgba(255,255,255,.07);color:#5F6B8F}
+.v4 .tab.on{color:#57E6FF}
+.v4 .plus{background:linear-gradient(135deg,#4D7CFF,#9D4DFF);color:#fff}
+
+/* ═══ V5 · FORGED ═══ */
+.v5{background:#141518;color:#E8E6E3;font-family:'Manrope',sans-serif}
+.v5 .micro{font-size:10px;letter-spacing:.24em;color:#6E6A64;text-transform:uppercase;font-weight:700}
+.v5 h1{font-family:'Bebas Neue',sans-serif;font-size:44px;letter-spacing:.02em;line-height:.95;margin:8px 0 2px}
+.v5 h1 em{font-style:normal;color:#FF5A1F}
+.v5 .sub{font-size:12px;color:#8B8680}
+.v5 .hero{margin:18px 20px;background:linear-gradient(160deg,#1C1D21,#17181B);border:1px solid #26272B;border-left:3px solid #FF5A1F;border-radius:10px;padding:18px}
+.v5 .bignum{font-family:'Bebas Neue';font-size:52px;line-height:1;background:linear-gradient(90deg,#FF3D00,#FF9E45);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v5 .fbar{height:8px;background:#232428;border-radius:4px;margin:12px 0 6px;overflow:hidden}
+.v5 .fbar i{display:block;height:100%;width:50%;background:linear-gradient(90deg,#FF3D00,#FF8A00);box-shadow:0 0 12px rgba(255,90,31,.6)}
+.v5 .duo{display:flex;gap:12px;margin:0 20px 14px}
+.v5 .duo>div{flex:1;background:#1A1B1F;border:1px solid #26272B;border-radius:10px;padding:14px}
+.v5 .duo .bignum{font-size:30px}
+.v5 .cta{display:block;margin:0 20px 16px;background:linear-gradient(90deg,#FF3D00,#FF7A00);color:#141518;text-align:center;padding:17px;border-radius:10px;font-family:'Bebas Neue';font-size:22px;letter-spacing:.08em}
+.v5 .card{margin:0 20px 12px;background:#1A1B1F;border:1px solid #26272B;border-radius:10px;padding:15px 16px;display:flex;justify-content:space-between;align-items:center}
+.v5 .card b{font-size:13px;font-weight:800;letter-spacing:.04em}
+.v5 .card span{font-size:11.5px;color:#8B8680}
+.v5 .tabbar{background:#0F1013;border-top:1px solid #26272B;color:#5E5A55}
+.v5 .tab.on{color:#FF5A1F}
+.v5 .plus{background:linear-gradient(135deg,#FF3D00,#FF8A00);color:#141518;border-radius:12px}
+
+/* ═══ V6 · MONO ═══ */
+.v6{background:#FFFFFF;color:#0A0A0A;font-family:'Inter',sans-serif}
+.v6 .micro{font-size:10px;letter-spacing:.2em;color:#9C9C9C;text-transform:uppercase;font-weight:600}
+.v6 h1{font-size:24px;font-weight:700;letter-spacing:-.02em;margin:6px 0}
+.v6 .hero{margin:26px 20px 20px;border-top:2px solid #0A0A0A;padding-top:18px}
+.v6 .bignum{font-size:72px;font-weight:800;letter-spacing:-.05em;line-height:.95}
+.v6 .bignum small{font-size:16px;font-weight:600;letter-spacing:0;color:#9C9C9C}
+.v6 .meta{display:flex;gap:26px;margin:18px 20px 22px}
+.v6 .meta div{border-top:1px solid #E4E4E4;padding-top:10px;flex:1}
+.v6 .meta b{font-size:20px;font-weight:800;display:block}
+.v6 .meta span{font-size:10px;letter-spacing:.16em;color:#9C9C9C;text-transform:uppercase}
+.v6 .cta{display:block;margin:0 20px 22px;background:#0A0A0A;color:#fff;text-align:center;padding:18px;border-radius:2px;font-weight:700;font-size:14px;letter-spacing:.06em}
+.v6 .line{margin:0 20px;border-top:1px solid #E4E4E4;padding:15px 0;display:flex;justify-content:space-between;align-items:baseline}
+.v6 .line b{font-size:13px;font-weight:700}
+.v6 .line span{font-size:12px;color:#8C8C8C}
+.v6 .dotrow{display:flex;gap:8px;margin:0 20px 8px;padding-top:4px}
+.v6 .d{width:100%;height:3px;background:#ECECEC}
+.v6 .d.f{background:#0A0A0A}
+.v6 .tabbar{background:#fff;border-top:1px solid #E4E4E4;color:#B9B9B9}
+.v6 .tab.on{color:#0A0A0A}
+.v6 .plus{background:#0A0A0A;color:#fff;border-radius:50%}
+
+/* ═══ V7 · TERRA ═══ */
+.v7{background:#101B15;color:#EDE7DB;font-family:'Manrope',sans-serif}
+.v7 .micro{font-size:10.5px;letter-spacing:.18em;color:#7C8B7F;text-transform:uppercase;font-weight:700}
+.v7 h1{font-family:'Fraunces',serif;font-size:30px;font-weight:600;margin:6px 0 2px}
+.v7 h1 em{font-style:italic;color:#D9A05B}
+.v7 .sub{font-size:12.5px;color:#9AA694}
+.v7 .hero{margin:18px 20px;background:#18271F;border:1px solid #24382C;border-radius:24px;padding:20px;display:flex;gap:18px;align-items:center}
+.v7 .ring{width:90px;height:90px;position:relative;flex:none}
+.v7 .ring svg{transform:rotate(-90deg)}
+.v7 .ring .num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-size:20px;font-weight:600}
+.v7 .hs{font-size:13px;color:#9AA694;line-height:1.7}
+.v7 .hs b{color:#EDE7DB;font-weight:800}
+.v7 .cta{display:block;margin:0 20px 16px;background:#D9A05B;color:#101B15;text-align:center;padding:17px;border-radius:18px;font-weight:800;font-size:15px}
+.v7 .week{margin:0 20px 16px;display:flex;justify-content:space-between;background:#18271F;border:1px solid #24382C;border-radius:20px;padding:14px 16px}
+.v7 .day{text-align:center;font-size:9px;letter-spacing:.12em;color:#7C8B7F;font-weight:700}
+.v7 .leaf{width:22px;height:22px;border-radius:50% 50% 50% 4px;background:#22352A;margin:0 auto 6px}
+.v7 .leaf.f{background:#D9A05B}
+.v7 .card{margin:0 20px 14px;background:#18271F;border:1px solid #24382C;border-radius:20px;padding:17px}
+.v7 .card h3{font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-bottom:4px}
+.v7 .card p{font-size:12.5px;color:#9AA694;line-height:1.6}
+.v7 .tabbar{background:#0C1510;border-top:1px solid #24382C;color:#5F6E62}
+.v7 .tab.on{color:#D9A05B}
+.v7 .plus{background:#D9A05B;color:#101B15}
+
+/* ═══ V8 · ARCADE ═══ */
+.v8{background:#0D0714;color:#F2EAFF;font-family:'Space Grotesk',sans-serif}
+.v8 .scan{position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.012) 3px 4px)}
+.v8 .micro{font-size:10px;letter-spacing:.2em;color:#7A6C93;text-transform:uppercase;font-weight:600}
+.v8 h1{font-size:26px;font-weight:700;margin:6px 0 2px}
+.v8 .lvl{display:inline-block;margin-top:4px;background:linear-gradient(90deg,#FF2E88,#7C4DFF);border-radius:999px;padding:4px 12px;font-family:'JetBrains Mono';font-size:11px;font-weight:700;color:#fff}
+.v8 .hero{margin:16px 20px;background:#160D22;border:1px solid #2C1E42;border-radius:18px;padding:18px;box-shadow:0 0 30px rgba(255,46,136,.08)}
+.v8 .xp{display:flex;justify-content:space-between;font-family:'JetBrains Mono';font-size:11px;color:#9C8BBB;margin-bottom:8px}
+.v8 .xp b{color:#57E6FF}
+.v8 .xpbar{height:12px;background:#221636;border-radius:6px;overflow:hidden;border:1px solid #2C1E42}
+.v8 .xpbar i{display:block;height:100%;width:62%;background:linear-gradient(90deg,#FF2E88,#7C4DFF,#57E6FF);box-shadow:0 0 14px rgba(255,46,136,.5)}
+.v8 .quest{margin-top:14px;font-size:12.5px;color:#B4A6CE;line-height:1.6}
+.v8 .quest b{color:#FF2E88}
+.v8 .cta{display:block;margin:0 20px 16px;background:linear-gradient(90deg,#FF2E88,#7C4DFF);color:#fff;text-align:center;padding:17px;border-radius:14px;font-weight:700;font-size:15px;letter-spacing:.04em;box-shadow:0 10px 26px rgba(255,46,136,.3)}
+.v8 .grid2{display:flex;gap:12px;margin:0 20px 14px}
+.v8 .grid2>div{flex:1;background:#160D22;border:1px solid #2C1E42;border-radius:14px;padding:14px}
+.v8 .grid2 b{font-family:'JetBrains Mono';font-size:22px;color:#57E6FF;display:block}
+.v8 .grid2 span{font-size:10px;letter-spacing:.14em;color:#7A6C93;text-transform:uppercase}
+.v8 .card{margin:0 20px 12px;background:#160D22;border:1px solid #2C1E42;border-radius:14px;padding:15px 16px}
+.v8 .card h3{font-size:13.5px;font-weight:700;margin-bottom:3px}
+.v8 .card h3 i{font-style:normal;color:#FF2E88}
+.v8 .card p{font-size:12px;color:#9C8BBB;line-height:1.55}
+.v8 .tabbar{background:#0A0510;border-top:1px solid #2C1E42;color:#5C4F75}
+.v8 .tab.on{color:#FF2E88}
+.v8 .plus{background:linear-gradient(135deg,#FF2E88,#7C4DFF);color:#fff}
+
+
+/* ═══ V9 · CHROME ═══ */
+.v9{background:#060607;color:#E9E9EC;font-family:'Space Grotesk',sans-serif}
+.v9 .micro{font-size:10px;letter-spacing:.26em;color:#5F5F66;text-transform:uppercase;font-weight:500}
+.v9 h1{font-size:30px;font-weight:700;letter-spacing:-.02em;margin:6px 0 2px;background:linear-gradient(180deg,#FFFFFF 0%,#B9BEC9 35%,#6E7480 50%,#E6E9F0 65%,#8E939E 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v9 .sub{font-size:12px;color:#7C7C85}
+.v9 .hero{margin:18px 20px;background:linear-gradient(160deg,#101013,#0A0A0C);border:1px solid #222228;border-radius:18px;padding:20px;position:relative;overflow:hidden}
+.v9 .hero:before{content:"";position:absolute;inset:-40% -20%;background:conic-gradient(from 200deg,transparent 0 40%,rgba(190,200,220,.10) 50%,transparent 60% 100%)}
+.v9 .bignum{font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:700;letter-spacing:-.02em;background:linear-gradient(180deg,#fff,#8E939E);-webkit-background-clip:text;background-clip:text;color:transparent;position:relative}
+.v9 .chrbar{height:8px;border-radius:4px;background:#1A1A1F;margin:14px 0 6px;overflow:hidden;position:relative}
+.v9 .chrbar i{display:block;height:100%;width:50%;background:linear-gradient(90deg,#E8ECF4,#9AA2B1,#F4F7FC);box-shadow:0 0 14px rgba(220,230,245,.35)}
+.v9 .duo{display:flex;gap:12px;margin:0 20px 14px}
+.v9 .duo>div{flex:1;background:#0E0E11;border:1px solid #222228;border-radius:14px;padding:14px}
+.v9 .duo .bignum{font-size:24px}
+.v9 .cta{display:block;margin:0 20px 16px;background:linear-gradient(180deg,#F4F6FA,#B9BEC9 55%,#D9DEE8);color:#0A0A0C;text-align:center;padding:17px;border-radius:14px;font-weight:700;font-size:14px;letter-spacing:.1em;text-transform:uppercase}
+.v9 .card{margin:0 20px 12px;background:#0E0E11;border:1px solid #222228;border-radius:14px;padding:15px 16px;display:flex;justify-content:space-between;align-items:center}
+.v9 .card b{font-size:13px;font-weight:600}
+.v9 .card span{font-size:11.5px;color:#7C7C85}
+.v9 .tabbar{background:#08080A;border-top:1px solid #222228;color:#55555C}
+.v9 .tab.on{color:#E9E9EC}
+.v9 .plus{background:linear-gradient(180deg,#F4F6FA,#B9BEC9);color:#0A0A0C}
+
+/* ═══ V10 · INK & PAPER ═══ */
+.v10{background:#F5F1E8;color:#1C1A17;font-family:'Inter',sans-serif}
+.v10 .micro{font-size:10px;letter-spacing:.3em;color:#A39B8B;text-transform:uppercase;font-weight:600}
+.v10 h1{font-family:'Noto Serif JP',serif;font-size:27px;font-weight:700;margin:8px 0 2px}
+.v10 .stamp{display:inline-block;background:#C93A2B;color:#F5F1E8;font-family:'Noto Serif JP';font-weight:700;font-size:11px;padding:5px 9px;border-radius:4px;letter-spacing:.1em}
+.v10 .hero{margin:20px 20px 16px;background:#FBF8F1;border:1px solid #E5DECE;border-radius:8px;padding:20px;box-shadow:0 2px 0 #E5DECE}
+.v10 .bignum{font-family:'Noto Serif JP',serif;font-size:46px;font-weight:700;line-height:1}
+.v10 .brush{height:10px;margin:14px 0 6px;background:linear-gradient(90deg,#1C1A17 0 49%,#DDD5C2 49% 100%);border-radius:6px 2px 8px 3px;transform:rotate(-.4deg)}
+.v10 .duo{display:flex;gap:12px;margin:0 20px 16px}
+.v10 .duo>div{flex:1;background:#FBF8F1;border:1px solid #E5DECE;border-radius:8px;padding:14px}
+.v10 .duo b{font-family:'Noto Serif JP';font-size:24px;display:block}
+.v10 .duo span{font-size:9.5px;letter-spacing:.22em;color:#A39B8B;text-transform:uppercase}
+.v10 .cta{display:block;margin:0 20px 16px;background:#1C1A17;color:#F5F1E8;text-align:center;padding:17px;border-radius:8px;font-weight:600;font-size:14px;letter-spacing:.14em}
+.v10 .line{margin:0 20px;border-top:1px solid #E5DECE;padding:14px 2px;display:flex;justify-content:space-between;align-items:baseline}
+.v10 .line b{font-family:'Noto Serif JP';font-size:14px}
+.v10 .line span{font-size:12px;color:#8F8776}
+.v10 .tabbar{background:#F5F1E8;border-top:1px solid #E5DECE;color:#B5AC99}
+.v10 .tab.on{color:#C93A2B}
+.v10 .plus{background:#C93A2B;color:#F5F1E8;border-radius:8px}
+
+/* ═══ V11 · BLUEPRINT ═══ */
+.v11{background:#0B2545;color:#DCE9F7;font-family:'IBM Plex Mono',monospace;background-image:linear-gradient(rgba(120,170,220,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(120,170,220,.07) 1px,transparent 1px);background-size:24px 24px}
+.v11 .micro{font-size:9.5px;letter-spacing:.2em;color:#6C93BC;text-transform:uppercase}
+.v11 h1{font-size:22px;font-weight:600;letter-spacing:.02em;margin:6px 0 2px;color:#FFFFFF}
+.v11 .sub{font-size:11px;color:#8FB3D9}
+.v11 .hero{margin:18px 20px;border:1.5px solid #3E6E9E;border-radius:4px;padding:18px;position:relative;background:rgba(10,30,58,.6)}
+.v11 .hero:before{content:"FIG. 01 — WEEKLY OUTPUT";position:absolute;top:-8px;left:12px;background:#0B2545;padding:0 6px;font-size:8.5px;letter-spacing:.18em;color:#7FC4FF}
+.v11 .bignum{font-size:38px;font-weight:600;color:#7FC4FF}
+.v11 .dim{display:flex;align-items:center;gap:6px;margin:12px 0 4px;color:#5E86B0;font-size:9px}
+.v11 .dim .ln{flex:1;height:1px;background:#3E6E9E;position:relative}
+.v11 .dim .ln:before,.v11 .dim .ln:after{content:"";position:absolute;top:-3px;width:1px;height:7px;background:#3E6E9E}
+.v11 .dim .ln:after{right:0}
+.v11 .duo{display:flex;gap:12px;margin:14px 20px}
+.v11 .duo>div{flex:1;border:1.5px solid #3E6E9E;border-radius:4px;padding:12px;background:rgba(10,30,58,.6)}
+.v11 .duo b{font-size:20px;color:#7FC4FF;display:block}
+.v11 .duo span{font-size:8.5px;letter-spacing:.16em;color:#6C93BC;text-transform:uppercase}
+.v11 .cta{display:block;margin:16px 20px;background:#7FC4FF;color:#0B2545;text-align:center;padding:16px;border-radius:4px;font-weight:600;font-size:13px;letter-spacing:.16em;text-transform:uppercase}
+.v11 .card{margin:0 20px 12px;border:1.5px dashed #3E6E9E;border-radius:4px;padding:13px 14px;display:flex;justify-content:space-between;background:rgba(10,30,58,.45)}
+.v11 .card b{font-size:11px;letter-spacing:.08em}
+.v11 .card span{font-size:10px;color:#8FB3D9}
+.v11 .tabbar{background:#081B36;border-top:1.5px solid #3E6E9E;color:#557CA6}
+.v11 .tab.on{color:#7FC4FF}
+.v11 .plus{background:#7FC4FF;color:#0B2545;border-radius:4px}
+
+/* ═══ V12 · AURORA ═══ */
+.v12{background:#0E1016;color:#F0EFF5;font-family:'Sora',sans-serif;position:relative}
+.v12 .aur{position:fixed;top:-160px;left:-60px;right:-60px;height:420px;background:radial-gradient(ellipse 60% 50% at 30% 40%,rgba(126,231,196,.16),transparent),radial-gradient(ellipse 55% 45% at 70% 30%,rgba(186,156,255,.18),transparent),radial-gradient(ellipse 50% 40% at 55% 65%,rgba(255,184,156,.12),transparent);pointer-events:none}
+.v12 .micro{font-size:10.5px;letter-spacing:.18em;color:#8B8A99;text-transform:uppercase;font-weight:600}
+.v12 h1{font-size:27px;font-weight:800;letter-spacing:-.02em;margin:6px 0 2px}
+.v12 .sub{font-size:12.5px;color:#9C9BAD}
+.v12 .hero{margin:18px 20px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);border-radius:24px;padding:20px;backdrop-filter:blur(10px);display:flex;gap:18px;align-items:center}
+.v12 .ring{width:92px;height:92px;position:relative;flex:none}
+.v12 .ring svg{transform:rotate(-90deg)}
+.v12 .ring .num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px}
+.v12 .hs{font-size:13px;color:#9C9BAD;line-height:1.7}
+.v12 .hs b{color:#F0EFF5;font-weight:800}
+.v12 .cta{display:block;margin:0 20px 16px;background:linear-gradient(90deg,#7EE7C4,#BA9CFF 55%,#FFB89C);color:#12131A;text-align:center;padding:17px;border-radius:18px;font-weight:800;font-size:15px}
+.v12 .week{margin:0 20px 16px;display:flex;justify-content:space-between;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:20px;padding:14px 16px}
+.v12 .day{text-align:center;font-size:9px;letter-spacing:.1em;color:#77768A;font-weight:600}
+.v12 .orb{width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.07);margin:0 auto 6px}
+.v12 .orb.f{background:linear-gradient(135deg,#7EE7C4,#BA9CFF);box-shadow:0 0 14px rgba(158,206,255,.45)}
+.v12 .card{margin:0 20px 14px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:17px}
+.v12 .card h3{font-size:14px;font-weight:700;margin-bottom:4px}
+.v12 .card h3 i{font-style:normal;background:linear-gradient(90deg,#7EE7C4,#BA9CFF);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v12 .card p{font-size:12.5px;color:#9C9BAD;line-height:1.6}
+.v12 .tabbar{background:rgba(14,16,22,.9);backdrop-filter:blur(16px);border-top:1px solid rgba(255,255,255,.08);color:#77768A}
+.v12 .tab.on{color:#BA9CFF}
+.v12 .plus{background:linear-gradient(135deg,#7EE7C4,#BA9CFF);color:#12131A}
+
+
+/* ═══ V13 · ATLAS — the body IS the interface ═══ */
+.v13{background:radial-gradient(120% 90% at 50% 0%,#16181D 0%,#0B0C0F 55%,#080809 100%);color:#E8E4DE;font-family:'Sora',sans-serif;position:relative;overflow:hidden}
+.v13 .micro{font-size:10px;letter-spacing:.22em;color:#6D675F;text-transform:uppercase;font-weight:600}
+.v13 .top{display:flex;justify-content:space-between;align-items:flex-start}
+.v13 h1{font-size:21px;font-weight:800;margin-top:4px}
+.v13 .streak{text-align:right}
+.v13 .streak b{font-family:'JetBrains Mono';font-size:20px;color:#FF7A45;display:block}
+.v13 .stage{position:relative;height:430px;margin-top:6px}
+.v13 .stage svg{position:absolute;left:50%;top:0;transform:translateX(-50%)}
+.v13 .hint{position:absolute;left:50%;transform:translateX(-50%);bottom:2px;font-size:10px;letter-spacing:.18em;color:#6D675F;text-transform:uppercase}
+.v13 .tag{position:absolute;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.06em;color:#B0A99F}
+.v13 .tag i{font-style:normal;color:#FF7A45}
+.v13 .tag:before{content:"";position:absolute;width:26px;height:1px;background:#3A3833;top:50%}
+.v13 .tag.l{text-align:right}
+.v13 .tag.l:before{right:-32px}
+.v13 .tag.r:before{left:-32px}
+.v13 .sheet{position:absolute;bottom:76px;left:0;right:0;background:linear-gradient(180deg,rgba(20,21,25,.86),#101114);border-top:1px solid #26272B;border-radius:22px 22px 0 0;padding:16px 20px 14px;backdrop-filter:blur(8px)}
+.v13 .grab{width:36px;height:4px;border-radius:2px;background:#31322F;margin:0 auto 12px}
+.v13 .sheet .row{display:flex;justify-content:space-between;align-items:center}
+.v13 .sheet b{font-size:15px;font-weight:800}
+.v13 .sheet span{font-size:11px;color:#8C857C}
+.v13 .go{background:linear-gradient(90deg,#FF7A45,#FFB03A);color:#0B0C0F;font-weight:800;font-size:13px;padding:12px 22px;border-radius:12px}
+.v13 .tabbar{background:#0A0A0C;border-top:1px solid #1F2023;color:#57534E}
+.v13 .tab.on{color:#FF9A45}
+.v13 .plus{background:linear-gradient(135deg,#FF7A45,#FFB03A);color:#0B0C0F}
+
+/* ═══ V14 · DIAL — instrument face ═══ */
+.v14{background:#0A0B0D;color:#DFE5E8;font-family:'Space Grotesk',sans-serif}
+.v14 .micro{font-size:10px;letter-spacing:.24em;color:#4E565C;text-transform:uppercase;font-weight:500}
+.v14 .head{text-align:center;margin-bottom:4px}
+.v14 h1{font-size:15px;font-weight:600;letter-spacing:.3em;text-transform:uppercase;color:#9AA6AD}
+.v14 .dial{position:relative;width:320px;height:320px;margin:14px auto 6px}
+.v14 .dial svg{position:absolute;inset:0}
+.v14 .core{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v14 .core .big{font-family:'JetBrains Mono';font-size:44px;font-weight:700;color:#EDF3F5;letter-spacing:-.03em}
+.v14 .core .lbl{font-size:9px;letter-spacing:.3em;color:#5AE0C8;text-transform:uppercase;margin-top:2px}
+.v14 .core .sub2{font-size:10.5px;color:#5E6A70;margin-top:8px;font-family:'JetBrains Mono'}
+.v14 .comps{display:flex;gap:12px;margin:10px 20px 14px}
+.v14 .comp{flex:1;background:#0F1114;border:1px solid #1D2126;border-radius:50%;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v14 .comp b{font-family:'JetBrains Mono';font-size:19px;color:#5AE0C8}
+.v14 .comp span{font-size:8px;letter-spacing:.22em;color:#4E565C;text-transform:uppercase;margin-top:3px}
+.v14 .cta{display:block;margin:0 84px 16px;background:transparent;color:#5AE0C8;border:1.5px solid #5AE0C8;text-align:center;padding:13px;border-radius:999px;font-weight:600;font-size:12px;letter-spacing:.26em;text-transform:uppercase;box-shadow:0 0 24px rgba(90,224,200,.15),inset 0 0 12px rgba(90,224,200,.06)}
+.v14 .tabbar{background:#08090B;border-top:1px solid #1D2126;color:#454D53}
+.v14 .tab.on{color:#5AE0C8}
+.v14 .plus{background:#5AE0C8;color:#0A0B0D}
+
+/* ═══ V15 · HEADLINE — typographic poster ═══ */
+.v15{background:#0C0C0C;color:#F4F2ED;font-family:'Inter',sans-serif;position:relative}
+.v15 .rail{position:absolute;top:64px;bottom:150px;left:20px;width:1px;background:#262626}
+.v15 .meta{position:absolute;top:70px;right:20px;text-align:right;font-family:'JetBrains Mono';font-size:10px;color:#7A776F;line-height:2.1}
+.v15 .meta b{color:#F4F2ED}
+.v15 .meta i{font-style:normal;color:#FF2B2B}
+.v15 .poster{position:absolute;left:34px;top:118px}
+.v15 .kicker{font-family:'JetBrains Mono';font-size:10px;letter-spacing:.3em;color:#7A776F;margin-bottom:10px}
+.v15 .poster h1{font-family:'Anton',sans-serif;font-size:96px;line-height:.84;letter-spacing:.01em;text-transform:uppercase}
+.v15 .poster h1 .accent{color:#FF2B2B}
+.v15 .poster .under{margin-top:18px;font-size:12.5px;color:#9C988F;max-width:230px;line-height:1.65}
+.v15 .under b{color:#F4F2ED}
+.v15 .foot{position:absolute;left:20px;right:20px;bottom:150px;display:flex;justify-content:space-between;font-family:'JetBrains Mono';font-size:9.5px;color:#7A776F;letter-spacing:.12em}
+.v15 .cta{position:absolute;left:0;right:0;bottom:76px;background:#FF2B2B;color:#0C0C0C;text-align:center;padding:20px;font-family:'Anton';font-size:19px;letter-spacing:.12em;text-transform:uppercase}
+.v15 .tabbar{background:#0C0C0C;border-top:1px solid #262626;color:#5A5850}
+.v15 .tab.on{color:#F4F2ED}
+.v15 .plus{background:#F4F2ED;color:#0C0C0C}
+
+/* ═══ V16 · CANYON — the journey rail ═══ */
+.v16{background:linear-gradient(180deg,#191125 0%,#241531 40%,#3A1B33 72%,#5C2530 100%);color:#F3E9E2;font-family:'Manrope',sans-serif;position:relative}
+.v16 .micro{font-size:10.5px;letter-spacing:.18em;color:#A0879C;text-transform:uppercase;font-weight:700}
+.v16 h1{font-size:24px;font-weight:800;margin:4px 0 2px}
+.v16 .sub{font-size:12px;color:#C4A9B4}
+.v16 .trail{position:relative;margin:20px 20px 0;padding-left:34px}
+.v16 .trail:before{content:"";position:absolute;left:11px;top:6px;bottom:6px;width:2px;background:linear-gradient(180deg,rgba(255,255,255,.12),#FFA24D 62%,rgba(255,255,255,.10) 72%);border-radius:2px}
+.v16 .node{position:relative;margin-bottom:14px}
+.v16 .node .pip{position:absolute;left:-31px;top:14px;width:12px;height:12px;border-radius:50%;background:#3D2C42;border:2px solid #6B4E66}
+.v16 .node.done .pip{background:#FFA24D;border-color:#FFC98F}
+.v16 .node.now .pip{background:#FF6B3D;border-color:#FFD9A8;box-shadow:0 0 0 5px rgba(255,107,61,.22),0 0 18px rgba(255,107,61,.55)}
+.v16 .ncard{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);border-radius:16px;padding:13px 15px}
+.v16 .node.now .ncard{background:rgba(255,138,61,.13);border-color:rgba(255,162,77,.45)}
+.v16 .ncard .t{display:flex;justify-content:space-between;align-items:baseline}
+.v16 .ncard b{font-size:13.5px;font-weight:800}
+.v16 .ncard span{font-family:'JetBrains Mono';font-size:10px;color:#C4A9B4}
+.v16 .ncard p{font-size:11.5px;color:#C4A9B4;margin-top:3px}
+.v16 .node.ghost .ncard{opacity:.45;border-style:dashed}
+.v16 .go{display:inline-block;margin-top:9px;background:linear-gradient(90deg,#FF6B3D,#FFA24D);color:#241531;font-weight:800;font-size:12px;padding:9px 16px;border-radius:10px}
+.v16 .tabbar{background:rgba(20,10,26,.88);backdrop-filter:blur(12px);border-top:1px solid rgba(255,255,255,.09);color:#8A7189}
+.v16 .tab.on{color:#FFA24D}
+.v16 .plus{background:linear-gradient(135deg,#FF6B3D,#FFA24D);color:#241531}
+
+
+/* ═══ V17 · TERMINAL ═══ */
+.v17{background:#050705;color:#B7F5C4;font-family:'JetBrains Mono',monospace;padding-top:46px!important}
+.v17 .crt{position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 2px,transparent 2px 4px)}
+.v17 .term{margin:8px 14px;border:1px solid #1E3A26;border-radius:8px;background:#070B08;padding:14px 14px 18px;box-shadow:0 0 34px rgba(64,255,128,.05) inset}
+.v17 .bar{display:flex;gap:6px;margin-bottom:12px}
+.v17 .bar i{width:9px;height:9px;border-radius:50%;background:#1E3A26}
+.v17 .ln{font-size:12px;line-height:1.9;color:#7FCF92}
+.v17 .ln b{color:#D8FFE0;font-weight:600}
+.v17 .p{color:#49E86B}
+.v17 .dim2{color:#3F6B4B}
+.v17 .warn{color:#FFD75E}
+.v17 .bar2{color:#49E86B;letter-spacing:-1px}
+.v17 .cur{display:inline-block;width:8px;height:14px;background:#49E86B;vertical-align:-2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.v17 .cta{display:block;margin:14px 14px;background:#0D1810;color:#49E86B;border:1px solid #2A5436;text-align:center;padding:15px;border-radius:8px;font-size:13px;letter-spacing:.1em}
+.v17 .tabbar{background:#050705;border-top:1px solid #1E3A26;color:#3F6B4B;font-family:'JetBrains Mono'}
+.v17 .tab.on{color:#49E86B}
+.v17 .plus{background:#49E86B;color:#050705;border-radius:6px}
+
+/* ═══ V18 · GALLERY ═══ */
+.v18{background:#EFEDE7;color:#22211E;font-family:'Inter',sans-serif}
+.v18 .no{font-family:'Playfair Display',serif;font-size:13px;color:#8D8A81;text-align:center;letter-spacing:.28em;margin-bottom:22px}
+.v18 .art{margin:0 44px;background:#FBFAF7;border:1px solid #DAD6CB;padding:26px 22px 20px;box-shadow:0 18px 40px rgba(40,38,30,.10)}
+.v18 .art .frame{border:1px solid #E4E1D7;padding:20px 10px;display:flex;justify-content:center}
+.v18 .plate{margin:26px 44px 0;text-align:left}
+.v18 .plate h1{font-family:'Playfair Display',serif;font-size:24px;font-weight:600;margin-bottom:4px}
+.v18 .plate h1 em{font-style:italic}
+.v18 .plate .med{font-size:11px;color:#8D8A81;line-height:1.8;letter-spacing:.02em}
+.v18 .caption{margin:20px 44px 0;font-size:12.5px;color:#55534C;line-height:1.75;border-top:1px solid #DAD6CB;padding-top:14px}
+.v18 .caption b{font-weight:700}
+.v18 .cta{display:block;margin:24px 44px;background:#22211E;color:#EFEDE7;text-align:center;padding:16px;font-family:'Playfair Display';font-size:15px;letter-spacing:.16em}
+.v18 .tabbar{background:#EFEDE7;border-top:1px solid #DAD6CB;color:#A5A198}
+.v18 .tab.on{color:#22211E}
+.v18 .plus{background:#22211E;color:#EFEDE7;border-radius:0}
+
+/* ═══ V19 · BROADCAST ═══ */
+.v19{background:#0B0D12;color:#EDF1F7;font-family:'Oswald',sans-serif;position:relative}
+.v19 .crt2{position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.014) 0 2px,transparent 2px 5px)}
+.v19 .rec{position:absolute;top:64px;right:20px;font-family:'JetBrains Mono';font-size:11px;color:#FF4444;letter-spacing:.14em}
+.v19 .rec i{display:inline-block;width:8px;height:8px;border-radius:50%;background:#FF4444;margin-right:6px;animation:blink 1.2s steps(1) infinite}
+.v19 .stamp2{position:absolute;top:64px;left:20px;font-family:'JetBrains Mono';font-size:11px;color:#9AA6BB;letter-spacing:.1em}
+.v19 .big{margin:96px 20px 0}
+.v19 .chy{display:inline-block;background:linear-gradient(100deg,#FFD400,#FFA800);color:#0B0D12;font-size:13px;font-weight:600;letter-spacing:.1em;padding:5px 12px;transform:skewX(-8deg);text-transform:uppercase}
+.v19 h1{font-size:58px;font-weight:600;text-transform:uppercase;letter-spacing:.01em;line-height:1.02;margin:10px 0 4px;font-style:italic}
+.v19 .sub{font-family:'JetBrains Mono';font-size:11px;color:#8E9AB0;letter-spacing:.08em}
+.v19 .score{margin:22px 20px;background:#11141B;border:1px solid #232837;border-left:4px solid #FFD400;display:flex}
+.v19 .score>div{flex:1;padding:13px 10px;text-align:center;border-right:1px solid #232837}
+.v19 .score b{font-size:26px;font-style:italic;display:block}
+.v19 .score span{font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.2em;color:#8E9AB0;text-transform:uppercase}
+.v19 .lower{margin:0 20px;background:#11141B;border:1px solid #232837;padding:13px 16px}
+.v19 .lower .l1{font-size:15px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.v19 .lower .l2{font-family:'JetBrains Mono';font-size:11px;color:#8E9AB0;margin-top:3px}
+.v19 .cta{display:block;margin:18px 20px;background:linear-gradient(100deg,#FFD400,#FFA800);color:#0B0D12;text-align:center;padding:16px;font-size:18px;font-weight:600;font-style:italic;letter-spacing:.1em;text-transform:uppercase;transform:skewX(-4deg)}
+.v19 .tabbar{background:#0B0D12;border-top:1px solid #232837;color:#5E6880}
+.v19 .tab.on{color:#FFD400}
+.v19 .plus{background:#FFD400;color:#0B0D12}
+
+/* ═══ V20 · TOPO ═══ */
+.v20{background:#171C1E;color:#E6E9E4;font-family:'Manrope',sans-serif;position:relative;overflow:hidden}
+.v20 .contours{position:fixed;inset:0;pointer-events:none;opacity:.5}
+.v20 .micro{font-size:10px;letter-spacing:.22em;color:#7C8A80;text-transform:uppercase;font-weight:700}
+.v20 h1{font-size:24px;font-weight:800;margin:5px 0 2px}
+.v20 .sub{font-size:12px;color:#9AA79D}
+.v20 .summit{position:relative;margin:18px 20px;background:rgba(23,28,30,.72);border:1px solid #2C3A34;border-radius:18px;padding:18px;backdrop-filter:blur(2px)}
+.v20 .alt{font-family:'JetBrains Mono';font-size:40px;font-weight:700;color:#E8FF57}
+.v20 .alt small{font-size:14px;color:#7C8A80}
+.v20 .elev{display:flex;align-items:flex-end;gap:5px;height:44px;margin:14px 0 6px}
+.v20 .elev i{flex:1;background:#26332C;border-radius:3px 3px 0 0}
+.v20 .elev i.f{background:#E8FF57}
+.v20 .duo{display:flex;gap:12px;margin:0 20px 14px}
+.v20 .duo>div{flex:1;background:rgba(23,28,30,.72);border:1px solid #2C3A34;border-radius:14px;padding:13px}
+.v20 .duo b{font-family:'JetBrains Mono';font-size:21px;color:#E8FF57;display:block}
+.v20 .duo span{font-size:9px;letter-spacing:.18em;color:#7C8A80;text-transform:uppercase}
+.v20 .cta{display:block;margin:0 20px 14px;background:#E8FF57;color:#171C1E;text-align:center;padding:16px;border-radius:14px;font-weight:800;font-size:15px}
+.v20 .card{margin:0 20px 12px;background:rgba(23,28,30,.72);border:1px solid #2C3A34;border-radius:14px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+.v20 .card b{font-size:13px;font-weight:800}
+.v20 .card span{font-size:11px;color:#9AA79D}
+.v20 .tabbar{background:rgba(18,22,24,.92);border-top:1px solid #2C3A34;color:#5F6E64}
+.v20 .tab.on{color:#E8FF57}
+.v20 .plus{background:#E8FF57;color:#171C1E}
+
+
+/* ═══ V21 · LUMEN — the fusion (dark) ═══ */
+.v21{background:#0D1214;color:#EDF2F0;font-family:'Sora',sans-serif;position:relative;overflow:hidden}
+.v21 .topo{position:fixed;inset:0;pointer-events:none;opacity:.32}
+.v21 .aur2{position:fixed;top:-180px;left:-40px;right:-40px;height:400px;background:radial-gradient(ellipse 55% 45% at 30% 40%,rgba(94,224,200,.13),transparent),radial-gradient(ellipse 50% 42% at 72% 32%,rgba(186,156,255,.12),transparent),radial-gradient(ellipse 45% 38% at 55% 60%,rgba(255,184,156,.08),transparent);pointer-events:none}
+.v21 .micro{font-size:10.5px;letter-spacing:.2em;color:#6E7F7B;text-transform:uppercase;font-weight:600}
+.v21 .toprow{display:flex;justify-content:space-between;align-items:flex-start}
+.v21 h1{font-size:25px;font-weight:800;letter-spacing:-.01em;margin:5px 0 2px}
+.v21 .sub{font-size:12.5px;color:#8FA39D}
+.v21 .streakpill{background:rgba(232,255,87,.1);border:1px solid rgba(232,255,87,.35);color:#E8FF57;font-family:'JetBrains Mono';font-size:11px;font-weight:700;border-radius:999px;padding:6px 12px}
+.v21 .dial{position:relative;width:280px;height:280px;margin:16px auto 4px}
+.v21 .dial svg{position:absolute;inset:0}
+.v21 .core{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v21 .core .big{font-family:'JetBrains Mono';font-size:40px;font-weight:700;letter-spacing:-.03em}
+.v21 .core .lbl{font-size:9px;letter-spacing:.28em;color:#5EE0C8;text-transform:uppercase;margin-top:3px}
+.v21 .core .s2{font-family:'JetBrains Mono';font-size:10px;color:#6E7F7B;margin-top:7px}
+.v21 .comps{display:flex;gap:12px;margin:10px 20px 16px}
+.v21 .comp{flex:1;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:13px 8px;text-align:center;backdrop-filter:blur(6px)}
+.v21 .comp b{font-family:'JetBrains Mono';font-size:20px;display:block}
+.v21 .comp span{font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:#6E7F7B;margin-top:3px;display:block}
+.v21 .c-volt b{color:#E8FF57}.v21 .c-mint b{color:#5EE0C8}.v21 .c-peach b{color:#FFB89C}
+.v21 .cta{display:block;margin:0 20px 16px;background:linear-gradient(90deg,#5EE0C8,#BA9CFF 55%,#FFB89C);color:#0D1214;text-align:center;padding:17px;border-radius:18px;font-weight:800;font-size:15px;box-shadow:0 10px 30px rgba(122,200,190,.22)}
+.v21 .week{margin:0 20px 14px;display:flex;justify-content:space-between;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:20px;padding:13px 16px}
+.v21 .day{text-align:center;font-size:9px;letter-spacing:.1em;color:#5E706B;font-weight:600}
+.v21 .orb{width:19px;height:19px;border-radius:50%;background:rgba(255,255,255,.07);margin:0 auto 6px}
+.v21 .orb.f{background:linear-gradient(135deg,#5EE0C8,#BA9CFF);box-shadow:0 0 12px rgba(94,224,200,.5)}
+.v21 .card{margin:0 20px 12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:15px 17px}
+.v21 .card h3{font-size:13.5px;font-weight:700;margin-bottom:3px}
+.v21 .card h3 i{font-style:normal;background:linear-gradient(90deg,#5EE0C8,#BA9CFF);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v21 .card p{font-size:12px;color:#8FA39D;line-height:1.6}
+.v21 .tabbar{background:rgba(11,15,17,.92);backdrop-filter:blur(14px);border-top:1px solid rgba(255,255,255,.08);color:#5E706B}
+.v21 .tab.on{color:#5EE0C8}
+.v21 .plus{background:linear-gradient(135deg,#5EE0C8,#BA9CFF);color:#0D1214}
+
+/* ═══ V22 · LUMEN LIGHT — daybreak twin ═══ */
+.v22{background:#FAF6EF;color:#191C1B;font-family:'Sora',sans-serif;position:relative;overflow:hidden}
+.v22 .topo{position:fixed;inset:0;pointer-events:none;opacity:.5}
+.v22 .micro{font-size:10.5px;letter-spacing:.2em;color:#A8A296;text-transform:uppercase;font-weight:600}
+.v22 .toprow{display:flex;justify-content:space-between;align-items:flex-start}
+.v22 h1{font-size:25px;font-weight:800;letter-spacing:-.01em;margin:5px 0 2px}
+.v22 .sub{font-size:12.5px;color:#8B857A}
+.v22 .streakpill{background:#191C1B;color:#E8FF57;font-family:'JetBrains Mono';font-size:11px;font-weight:700;border-radius:999px;padding:6px 12px}
+.v22 .dial{position:relative;width:280px;height:280px;margin:16px auto 4px}
+.v22 .dial svg{position:absolute;inset:0}
+.v22 .core{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v22 .core .big{font-family:'JetBrains Mono';font-size:40px;font-weight:700;letter-spacing:-.03em}
+.v22 .core .lbl{font-size:9px;letter-spacing:.28em;color:#17A08B;text-transform:uppercase;margin-top:3px}
+.v22 .core .s2{font-family:'JetBrains Mono';font-size:10px;color:#A8A296;margin-top:7px}
+.v22 .comps{display:flex;gap:12px;margin:10px 20px 16px}
+.v22 .comp{flex:1;background:#FFFFFF;border-radius:20px;padding:13px 8px;text-align:center;box-shadow:0 8px 22px rgba(60,50,30,.07)}
+.v22 .comp b{font-family:'JetBrains Mono';font-size:20px;display:block}
+.v22 .comp span{font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:#A8A296;margin-top:3px;display:block}
+.v22 .c-volt b{color:#8FA800}.v22 .c-mint b{color:#17A08B}.v22 .c-peach b{color:#F07048}
+.v22 .cta{display:block;margin:0 20px 16px;background:linear-gradient(90deg,#2BC5A8,#8F6FE8 55%,#FF8E63);color:#fff;text-align:center;padding:17px;border-radius:18px;font-weight:800;font-size:15px;box-shadow:0 12px 26px rgba(120,110,190,.25)}
+.v22 .week{margin:0 20px 14px;display:flex;justify-content:space-between;background:#FFFFFF;border-radius:20px;padding:13px 16px;box-shadow:0 8px 22px rgba(60,50,30,.06)}
+.v22 .day{text-align:center;font-size:9px;letter-spacing:.1em;color:#B5AFA3;font-weight:700}
+.v22 .orb{width:19px;height:19px;border-radius:50%;background:#F0EADE;margin:0 auto 6px}
+.v22 .orb.f{background:linear-gradient(135deg,#2BC5A8,#8F6FE8);box-shadow:0 4px 12px rgba(90,150,190,.35)}
+.v22 .card{margin:0 20px 12px;background:#FFFFFF;border-radius:20px;padding:15px 17px;box-shadow:0 8px 22px rgba(60,50,30,.06)}
+.v22 .card h3{font-size:13.5px;font-weight:700;margin-bottom:3px}
+.v22 .card h3 i{font-style:normal;background:linear-gradient(90deg,#17A08B,#8F6FE8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v22 .card p{font-size:12px;color:#8B857A;line-height:1.6}
+.v22 .tabbar{background:rgba(250,246,239,.95);backdrop-filter:blur(14px);border-top:1px solid #ECE5D8;color:#B5AFA3}
+.v22 .tab.on{color:#17A08B}
+.v22 .plus{background:linear-gradient(135deg,#2BC5A8,#8F6FE8);color:#fff}
+
+
+/* ═══ V23 · IVORY — cream + black, pure ═══ */
+.v23,.v24{background:#F4EFE6;color:#151310;font-family:'Sora',sans-serif;position:relative;overflow:hidden}
+.v23 .topo,.v24 .topo{position:fixed;inset:0;pointer-events:none;opacity:.55}
+.v23 .micro,.v24 .micro{font-size:10.5px;letter-spacing:.2em;color:#A79F8F;text-transform:uppercase;font-weight:700}
+.v23 .toprow,.v24 .toprow{display:flex;justify-content:space-between;align-items:flex-start;position:relative}
+.v23 h1,.v24 h1{font-size:25px;font-weight:800;letter-spacing:-.01em;margin:5px 0 2px}
+.v23 .sub,.v24 .sub{font-size:12.5px;color:#8A8272}
+.v23 .streakpill,.v24 .streakpill{background:#151310;color:#F4EFE6;font-family:'JetBrains Mono';font-size:11px;font-weight:700;border-radius:999px;padding:6px 13px}
+.v23 .dial,.v24 .dial{position:relative;width:280px;height:280px;margin:16px auto 4px}
+.v23 .dial svg,.v24 .dial svg{position:absolute;inset:0}
+.v23 .core,.v24 .core{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v23 .core .big,.v24 .core .big{font-family:'JetBrains Mono';font-size:42px;font-weight:700;letter-spacing:-.03em}
+.v23 .core .lbl,.v24 .core .lbl{font-size:9px;letter-spacing:.3em;color:#A79F8F;text-transform:uppercase;margin-top:3px}
+.v23 .core .s2,.v24 .core .s2{font-family:'JetBrains Mono';font-size:10px;color:#8A8272;margin-top:7px}
+.v23 .comps,.v24 .comps{display:flex;gap:12px;margin:12px 20px 16px}
+.v23 .comp,.v24 .comp{flex:1;background:#FCFAF4;border:1.5px solid #151310;border-radius:20px;padding:13px 8px;text-align:center}
+.v23 .comp b,.v24 .comp b{font-family:'JetBrains Mono';font-size:20px;display:block;color:#151310}
+.v23 .comp span,.v24 .comp span{font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:#A79F8F;margin-top:3px;display:block}
+.v23 .comp.inv{background:#151310;border-color:#151310}
+.v23 .comp.inv b{color:#F4EFE6}
+.v23 .comp.inv span{color:#8A8272}
+.v23 .cta,.v24 .cta{display:block;margin:0 20px 16px;background:#151310;color:#F4EFE6;text-align:center;padding:17px;border-radius:18px;font-weight:800;font-size:15px;box-shadow:0 10px 26px rgba(21,19,16,.22)}
+.v23 .week,.v24 .week{margin:0 20px 14px;display:flex;justify-content:space-between;background:#FCFAF4;border:1.5px solid #151310;border-radius:20px;padding:13px 16px}
+.v23 .day,.v24 .day{text-align:center;font-size:9px;letter-spacing:.1em;color:#A79F8F;font-weight:700}
+.v23 .orb,.v24 .orb{width:19px;height:19px;border-radius:50%;background:#F4EFE6;border:1.5px solid #C9C0AC;margin:0 auto 6px}
+.v23 .orb.f{background:#151310;border-color:#151310}
+.v23 .card,.v24 .card{margin:0 20px 12px;background:#FCFAF4;border:1.5px solid #151310;border-radius:20px;padding:15px 17px}
+.v23 .card h3,.v24 .card h3{font-size:13.5px;font-weight:800;margin-bottom:3px}
+.v23 .card p,.v24 .card p{font-size:12px;color:#8A8272;line-height:1.6}
+.v23 .tabbar,.v24 .tabbar{background:rgba(244,239,230,.95);backdrop-filter:blur(12px);border-top:1.5px solid #151310;color:#B3AB9A}
+.v23 .tab.on,.v24 .tab.on{color:#151310}
+.v23 .plus,.v24 .plus{background:#151310;color:#F4EFE6}
+
+/* V24 differences: one drop of vermilion */
+.v24 .comp.inv{background:#D8401F;border-color:#D8401F}
+.v24 .comp.inv b{color:#F4EFE6}
+.v24 .comp.inv span{color:rgba(244,239,230,.75)}
+.v24 .orb.f{background:#151310;border-color:#151310}
+.v24 .orb.today{border-color:#D8401F;border-width:2px}
+.v24 .card h3 i{font-style:normal;color:#D8401F}
+.v24 .streakpill{background:#D8401F}
+
+
+/* ═══ V25/V26 · NOIR CREAM — black bg, cream lead ═══ */
+.v25,.v26{background:#0C0B09;color:#E7D9B7;font-family:'Sora',sans-serif;position:relative;overflow:hidden}
+.v25 .topo,.v26 .topo{position:fixed;inset:0;pointer-events:none;opacity:.4}
+.v25 .micro,.v26 .micro{font-size:10.5px;letter-spacing:.2em;color:#8D7F5E;text-transform:uppercase;font-weight:700}
+.v25 .toprow,.v26 .toprow{display:flex;justify-content:space-between;align-items:flex-start;position:relative}
+.v25 h1,.v26 h1{font-size:25px;font-weight:800;letter-spacing:-.01em;margin:5px 0 2px;color:#EFE3C6}
+.v25 .sub,.v26 .sub{font-size:12.5px;color:#A89873}
+.v25 .streakpill{background:rgba(126,231,196,.12);border:1px solid rgba(126,231,196,.4);color:#7EE7C4;font-family:'JetBrains Mono';font-size:11px;font-weight:700;border-radius:999px;padding:6px 13px}
+.v26 .streakpill{background:rgba(232,255,87,.1);border:1px solid rgba(232,255,87,.4);color:#E8FF57;font-family:'JetBrains Mono';font-size:11px;font-weight:700;border-radius:999px;padding:6px 13px}
+.v25 .dial,.v26 .dial{position:relative;width:280px;height:280px;margin:16px auto 4px}
+.v25 .dial svg,.v26 .dial svg{position:absolute;inset:0}
+.v25 .core,.v26 .core{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v25 .core .big,.v26 .core .big{font-family:'JetBrains Mono';font-size:42px;font-weight:700;letter-spacing:-.03em;color:#EFE3C6}
+.v25 .core .lbl{font-size:9px;letter-spacing:.3em;color:#7EE7C4;text-transform:uppercase;margin-top:3px}
+.v26 .core .lbl{font-size:9px;letter-spacing:.3em;color:#E8FF57;text-transform:uppercase;margin-top:3px}
+.v25 .core .s2,.v26 .core .s2{font-family:'JetBrains Mono';font-size:10px;color:#7A7264;margin-top:7px}
+.v25 .comps,.v26 .comps{display:flex;gap:12px;margin:12px 20px 16px}
+.v25 .comp,.v26 .comp{flex:1;background:rgba(231,217,183,.05);border:1px solid rgba(231,217,183,.16);border-radius:20px;padding:13px 8px;text-align:center}
+.v25 .comp b,.v26 .comp b{font-family:'JetBrains Mono';font-size:20px;display:block;color:#E7D9B7}
+.v25 .comp span,.v26 .comp span{font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:#7A7264;margin-top:3px;display:block}
+.v25 .comp.inv,.v26 .comp.inv{background:#E7D9B7;border-color:#E7D9B7}
+.v25 .comp.inv b,.v26 .comp.inv b{color:#0C0B09}
+.v25 .comp.inv span,.v26 .comp.inv span{color:#8A8272}
+.v25 .comp.hot b{color:#FFB89C}
+.v26 .comp.hot b{color:#FF5A3C}
+.v25 .cta,.v26 .cta{display:block;margin:0 20px 16px;background:#E7D9B7;color:#0C0B09;text-align:center;padding:17px;border-radius:18px;font-weight:800;font-size:15px;box-shadow:0 10px 30px rgba(231,217,183,.14)}
+.v25 .week,.v26 .week{margin:0 20px 14px;display:flex;justify-content:space-between;background:rgba(231,217,183,.05);border:1px solid rgba(231,217,183,.14);border-radius:20px;padding:13px 16px}
+.v25 .day,.v26 .day{text-align:center;font-size:9px;letter-spacing:.1em;color:#6E6759;font-weight:700}
+.v25 .orb,.v26 .orb{width:19px;height:19px;border-radius:50%;background:rgba(231,217,183,.08);border:1px solid rgba(231,217,183,.2);margin:0 auto 6px}
+.v25 .orb.f{background:#E7D9B7;border-color:#E7D9B7;box-shadow:0 0 10px rgba(231,217,183,.35)}
+.v26 .orb.f{background:#E7D9B7;border-color:#E7D9B7;box-shadow:0 0 10px rgba(231,217,183,.35)}
+.v25 .orb.today{border-color:#7EE7C4;border-width:2px}
+.v26 .orb.today{border-color:#E8FF57;border-width:2px}
+.v25 .card,.v26 .card{margin:0 20px 12px;background:rgba(231,217,183,.05);border:1px solid rgba(231,217,183,.14);border-radius:20px;padding:15px 17px}
+.v25 .card h3,.v26 .card h3{font-size:13.5px;font-weight:800;margin-bottom:3px;color:#EFE3C6}
+.v25 .card h3 i{font-style:normal;background:linear-gradient(90deg,#7EE7C4,#BA9CFF,#FFB89C);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v26 .card h3 i{font-style:normal;color:#FF5A3C}
+.v25 .card p,.v26 .card p{font-size:12px;color:#A89873;line-height:1.6}
+.v25 .tabbar,.v26 .tabbar{background:rgba(10,9,8,.94);backdrop-filter:blur(14px);border-top:1px solid rgba(231,217,183,.12);color:#6E6759}
+.v25 .tab.on{color:#7EE7C4}
+.v26 .tab.on{color:#E8FF57}
+.v25 .plus,.v26 .plus{background:#E7D9B7;color:#0C0B09}
+
+
+/* ═══ V21 · LUME — Dial gauge × Aurora gradients (dark) ═══ */
+.v21{background:#0B0D12;color:#EAECF4;font-family:'Sora',sans-serif}
+.v21 .aur2{position:fixed;top:-140px;left:-40px;right:-40px;height:380px;background:radial-gradient(ellipse 55% 45% at 30% 40%,rgba(126,231,196,.13),transparent),radial-gradient(ellipse 50% 42% at 72% 32%,rgba(186,156,255,.15),transparent);pointer-events:none}
+.v21 .micro{font-size:10px;letter-spacing:.24em;color:#5C6172;text-transform:uppercase;font-weight:600}
+.v21 .head{text-align:center;margin-bottom:2px;position:relative}
+.v21 h1{font-size:15px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;color:#B9BFD4}
+.v21 .dial{position:relative;width:300px;height:300px;margin:16px auto 8px}
+.v21 .core{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v21 .core .big{font-family:'JetBrains Mono';font-size:42px;font-weight:700;letter-spacing:-.03em}
+.v21 .core .lbl{font-size:9px;letter-spacing:.3em;color:#7EE7C4;text-transform:uppercase;margin-top:3px}
+.v21 .core .sub2{font-family:'JetBrains Mono';font-size:10.5px;color:#5C6172;margin-top:8px}
+.v21 .comps{display:flex;gap:12px;margin:8px 20px 16px}
+.v21 .comp{flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:20px;padding:14px 8px;text-align:center;backdrop-filter:blur(8px)}
+.v21 .comp b{font-family:'JetBrains Mono';font-size:20px;background:linear-gradient(90deg,#7EE7C4,#BA9CFF);-webkit-background-clip:text;background-clip:text;color:transparent;display:block}
+.v21 .comp span{font-size:8.5px;letter-spacing:.2em;color:#5C6172;text-transform:uppercase;margin-top:3px;display:block}
+.v21 .cta{display:block;margin:0 20px 16px;background:linear-gradient(90deg,#7EE7C4,#BA9CFF);color:#0B0D12;text-align:center;padding:17px;border-radius:999px;font-weight:800;font-size:14px;letter-spacing:.06em}
+.v21 .card{margin:0 20px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:15px 17px;display:flex;justify-content:space-between;align-items:center}
+.v21 .card b{font-size:13px;font-weight:700}
+.v21 .card span{font-size:11.5px;color:#8B90A6}
+.v21 .tabbar{background:rgba(11,13,18,.92);backdrop-filter:blur(14px);border-top:1px solid rgba(255,255,255,.08);color:#565B6E}
+.v21 .tab.on{color:#7EE7C4}
+.v21 .plus{background:linear-gradient(135deg,#7EE7C4,#BA9CFF);color:#0B0D12}
+
+/* ═══ V22 · BASECAMP — Topo structure × Daybreak warmth (light) ═══ */
+.v22{background:#FAF6EE;color:#1B231D;font-family:'Manrope',sans-serif}
+.v22 .micro{font-size:10.5px;letter-spacing:.2em;color:#A29A88;text-transform:uppercase;font-weight:800}
+.v22 h1{font-size:27px;font-weight:800;letter-spacing:-.02em;margin:5px 0 2px}
+.v22 .sub{font-size:12.5px;color:#8A8272}
+.v22 .summit{margin:18px 20px;background:#FFFFFF;border-radius:24px;padding:20px;box-shadow:0 12px 32px rgba(60,55,35,.08)}
+.v22 .alt{font-family:'JetBrains Mono';font-size:38px;font-weight:700;color:#1B231D}
+.v22 .alt small{font-size:14px;color:#A29A88}
+.v22 .elev{display:flex;align-items:flex-end;gap:6px;height:48px;margin:14px 0 8px}
+.v22 .elev i{flex:1;background:#EFE9DC;border-radius:6px 6px 2px 2px}
+.v22 .elev i.f{background:linear-gradient(180deg,#9BD84A,#6FB52E)}
+.v22 .elev i.now{background:#FF6B3D;box-shadow:0 6px 14px rgba(255,107,61,.35)}
+.v22 .duo{display:flex;gap:12px;margin:0 20px 16px}
+.v22 .duo>div{flex:1;background:#fff;border-radius:18px;padding:14px;box-shadow:0 8px 22px rgba(60,55,35,.06)}
+.v22 .duo b{font-family:'JetBrains Mono';font-size:21px;color:#1B231D;display:block}
+.v22 .duo span{font-size:9px;letter-spacing:.16em;color:#A29A88;text-transform:uppercase}
+.v22 .cta{display:block;margin:0 20px 16px;background:#FF6B3D;color:#fff;text-align:center;padding:18px;border-radius:20px;font-weight:800;font-size:15px;box-shadow:0 12px 26px rgba(255,107,61,.3)}
+.v22 .card{margin:0 20px 14px;background:#fff;border-radius:20px;padding:16px 18px;box-shadow:0 8px 22px rgba(60,55,35,.06)}
+.v22 .card h3{font-size:14.5px;font-weight:800;margin-bottom:3px}
+.v22 .card h3 i{font-style:normal;color:#6FB52E}
+.v22 .card p{font-size:12.5px;color:#8A8272;line-height:1.6}
+.v22 .tabbar{background:rgba(250,246,238,.94);backdrop-filter:blur(12px);border-top:1px solid #EDE6D6;color:#B4AC9A}
+.v22 .tab.on{color:#FF6B3D}
+.v22 .plus{background:#1B231D;color:#fff}
+
+/* ═══ V23 · PULSE — Dial gauge × Topo volt (dark) ═══ */
+.v23{background:#12171A;color:#E9EDE6;font-family:'Space Grotesk',sans-serif;position:relative;overflow:hidden}
+.v23 .cont2{position:fixed;inset:0;pointer-events:none;opacity:.55}
+.v23 .micro{font-size:10px;letter-spacing:.24em;color:#5E6B62;text-transform:uppercase;font-weight:500}
+.v23 .head{text-align:center;position:relative}
+.v23 h1{font-size:14px;font-weight:600;letter-spacing:.28em;text-transform:uppercase;color:#9AA79B}
+.v23 .dial{position:relative;width:290px;height:290px;margin:14px auto 4px}
+.v23 .core{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v23 .core .big{font-family:'JetBrains Mono';font-size:42px;font-weight:700;color:#E8FF57}
+.v23 .core .lbl{font-size:9px;letter-spacing:.3em;color:#8A9B8D;text-transform:uppercase;margin-top:3px}
+.v23 .core .sub2{font-family:'JetBrains Mono';font-size:10px;color:#5E6B62;margin-top:7px}
+.v23 .elevrow{display:flex;align-items:flex-end;gap:4px;height:30px;margin:6px 60px 14px}
+.v23 .elevrow i{flex:1;background:#232D26;border-radius:2px}
+.v23 .elevrow i.f{background:#E8FF57}
+.v23 .comps{display:flex;gap:12px;margin:0 20px 14px}
+.v23 .comp{flex:1;background:rgba(20,26,22,.8);border:1px solid #2A362E;border-radius:50%;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v23 .comp b{font-family:'JetBrains Mono';font-size:18px;color:#E8FF57}
+.v23 .comp span{font-size:7.5px;letter-spacing:.2em;color:#5E6B62;text-transform:uppercase;margin-top:3px}
+.v23 .cta{display:block;margin:0 66px 16px;background:transparent;color:#E8FF57;border:1.5px solid #E8FF57;text-align:center;padding:14px;border-radius:999px;font-weight:600;font-size:12px;letter-spacing:.24em;text-transform:uppercase;box-shadow:0 0 26px rgba(232,255,87,.14)}
+.v23 .card{margin:0 20px 12px;background:rgba(20,26,22,.8);border:1px solid #2A362E;border-radius:14px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+.v23 .card b{font-size:12.5px;font-weight:600;letter-spacing:.03em}
+.v23 .card span{font-size:11px;color:#8A9B8D}
+.v23 .tabbar{background:rgba(15,20,17,.94);border-top:1px solid #2A362E;color:#4E5B52}
+.v23 .tab.on{color:#E8FF57}
+.v23 .plus{background:#E8FF57;color:#12171A}
+
+/* ═══ V24 · SOFTLIGHT — Aurora gradients × Daybreak light ═══ */
+.v24{background:#FBF9F4;color:#1E1E28;font-family:'Sora',sans-serif}
+.v24 .aur3{position:fixed;top:-120px;left:-60px;right:-60px;height:360px;background:radial-gradient(ellipse 55% 45% at 28% 42%,rgba(126,231,196,.25),transparent),radial-gradient(ellipse 52% 44% at 70% 30%,rgba(186,156,255,.22),transparent),radial-gradient(ellipse 48% 40% at 55% 68%,rgba(255,184,156,.20),transparent);pointer-events:none}
+.v24 .micro{font-size:11px;letter-spacing:.16em;color:#9C99A8;text-transform:uppercase;font-weight:700}
+.v24 h1{font-size:28px;font-weight:800;letter-spacing:-.025em;margin:5px 0 2px}
+.v24 .sub{font-size:13px;color:#8A8795}
+.v24 .hero{margin:18px 20px;background:rgba(255,255,255,.86);border:1px solid #EFEBE2;border-radius:26px;padding:20px;box-shadow:0 14px 36px rgba(90,80,120,.08);display:flex;gap:18px;align-items:center;backdrop-filter:blur(6px)}
+.v24 .ring{width:96px;height:96px;position:relative;flex:none}
+.v24 .ring svg{transform:rotate(-90deg)}
+.v24 .ring .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:21px}
+.v24 .ring .num small{font-size:9px;color:#9C99A8;font-weight:700;letter-spacing:.1em}
+.v24 .hs{font-size:13.5px;color:#8A8795;line-height:1.7}
+.v24 .hs b{color:#1E1E28;font-weight:800}
+.v24 .cta{display:block;margin:0 20px 16px;background:linear-gradient(90deg,#5BD6AC,#9C7BFF 55%,#FF9D7E);color:#fff;text-align:center;padding:18px;border-radius:22px;font-weight:800;font-size:15px;box-shadow:0 14px 30px rgba(140,120,220,.28)}
+.v24 .week{margin:0 20px 16px;background:rgba(255,255,255,.86);border:1px solid #EFEBE2;border-radius:22px;padding:15px 18px;display:flex;justify-content:space-between}
+.v24 .day{text-align:center;font-size:9.5px;font-weight:700;color:#B9B6C4}
+.v24 .orb2{width:24px;height:24px;border-radius:50%;background:#F0EDE5;margin:0 auto 6px}
+.v24 .orb2.f{background:linear-gradient(135deg,#5BD6AC,#9C7BFF);box-shadow:0 4px 14px rgba(140,120,220,.35)}
+.v24 .card{margin:0 20px 14px;background:rgba(255,255,255,.86);border:1px solid #EFEBE2;border-radius:22px;padding:17px 18px;box-shadow:0 10px 26px rgba(90,80,120,.06)}
+.v24 .card h3{font-size:14.5px;font-weight:800;margin-bottom:4px}
+.v24 .card h3 i{font-style:normal;background:linear-gradient(90deg,#3EB98F,#9C7BFF);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v24 .card p{font-size:12.5px;color:#8A8795;line-height:1.65}
+.v24 .tabbar{background:rgba(251,249,244,.94);backdrop-filter:blur(14px);border-top:1px solid #EFEBE2;color:#B9B6C4}
+.v24 .tab.on{color:#8B6CF0}
+.v24 .plus{background:linear-gradient(135deg,#5BD6AC,#9C7BFF);color:#fff}
+
+
+/* ═══ V25 · GLASSCORE — Liquid Glass bento (2026 trend stack) ═══ */
+.v25{background:#0A0F1E;color:#F2F5FC;font-family:'Barlow',sans-serif;position:relative;overflow:hidden}
+.v25 .lights{position:fixed;inset:0;pointer-events:none}
+.v25 .lights i{position:absolute;border-radius:50%;filter:blur(70px)}
+.v25 .lights .l1{width:300px;height:300px;left:-80px;top:60px;background:rgba(45,212,191,.32)}
+.v25 .lights .l2{width:340px;height:340px;right:-100px;top:290px;background:rgba(129,90,255,.30)}
+.v25 .lights .l3{width:240px;height:240px;left:60px;bottom:40px;background:rgba(255,120,90,.16)}
+.v25 .pad2{padding:0 16px;position:relative}
+.v25 .micro{font-size:10.5px;letter-spacing:.2em;color:#8A93AC;text-transform:uppercase;font-weight:600}
+.v25 h1{font-size:26px;font-weight:700;letter-spacing:-.01em;margin:4px 0 14px}
+.v25 .bento{display:grid;grid-template-columns:1fr 1fr;gap:12px;position:relative}
+.v25 .tile{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:24px;padding:16px;backdrop-filter:blur(22px);box-shadow:0 8px 32px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.12)}
+.v25 .tile.big{grid-column:span 2;display:flex;align-items:center;gap:18px}
+.v25 .ring{width:104px;height:104px;position:relative;flex:none}
+.v25 .ring svg{transform:rotate(-90deg)}
+.v25 .ring .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v25 .ring .num b{font-family:'Barlow Condensed';font-size:30px;font-weight:700;line-height:1}
+.v25 .ring .num span{font-size:8.5px;letter-spacing:.2em;color:#8A93AC}
+.v25 .hs{font-size:13px;color:#B7BFD4;line-height:1.75}
+.v25 .hs b{color:#F2F5FC;font-family:'Barlow Condensed';font-size:19px;font-weight:600;letter-spacing:.01em}
+.v25 .tile .k{font-family:'Barlow Condensed';font-size:34px;font-weight:700;line-height:1;background:linear-gradient(90deg,#2DD4BF,#815AFF);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v25 .tile .lab{font-size:9.5px;letter-spacing:.18em;color:#8A93AC;text-transform:uppercase;margin-top:6px}
+.v25 .tile.wide{grid-column:span 2;display:flex;justify-content:space-between;align-items:center}
+.v25 .tile.wide p{font-size:12.5px;color:#B7BFD4;max-width:230px;line-height:1.55}
+.v25 .tile.wide p b{color:#2DD4BF}
+.v25 .pulse{width:44px;height:44px;border-radius:50%;background:radial-gradient(circle,#2DD4BF 0 30%,rgba(45,212,191,.25) 60%,transparent 70%);flex:none;animation:pgrow 2.4s ease-in-out infinite}
+@keyframes pgrow{50%{transform:scale(1.15)}}
+.v25 .cta{display:block;margin:14px 16px;background:linear-gradient(90deg,#2DD4BF,#815AFF);color:#0A0F1E;text-align:center;padding:17px;border-radius:20px;font-weight:700;font-size:15.5px;box-shadow:0 14px 34px rgba(84,150,255,.3)}
+.v25 .tabbar{background:rgba(14,19,36,.6);backdrop-filter:blur(24px);border-top:1px solid rgba(255,255,255,.1);color:#6B7490}
+.v25 .tab.on{color:#2DD4BF}
+.v25 .plus{background:linear-gradient(135deg,#2DD4BF,#815AFF);color:#0A0F1E}
+
+/* ═══ V26 · AMOLED ATHLETE — pure black flagship ═══ */
+.v26{background:#000;color:#F5F5F5;font-family:'Barlow',sans-serif}
+.v26 .micro{font-size:10px;letter-spacing:.24em;color:#5D5D5D;text-transform:uppercase;font-weight:600}
+.v26 h1{font-family:'Barlow Condensed';font-size:34px;font-weight:700;text-transform:uppercase;letter-spacing:.01em;margin:4px 0 0}
+.v26 h1 i{font-style:normal;background:linear-gradient(90deg,#FF5C29,#FF2E63);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v26 .hero2{position:relative;margin:8px auto 4px;width:280px;height:280px}
+.v26 .hero2 svg{position:absolute;inset:0;transform:rotate(-90deg)}
+.v26 .core2{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v26 .core2 .big{font-family:'Barlow Condensed';font-size:74px;font-weight:700;line-height:.9;letter-spacing:-.01em}
+.v26 .core2 .un{font-size:11px;letter-spacing:.3em;color:#5D5D5D;text-transform:uppercase;margin-top:2px}
+.v26 .core2 .st{font-family:'JetBrains Mono';font-size:11px;color:#FF5C29;margin-top:10px}
+.v26 .duo{display:flex;gap:10px;margin:10px 16px 14px}
+.v26 .duo>div{flex:1;background:#0D0D0D;border:1px solid #1C1C1C;border-radius:18px;padding:14px;text-align:center}
+.v26 .duo b{font-family:'Barlow Condensed';font-size:30px;font-weight:700;display:block;line-height:1}
+.v26 .duo span{font-size:8.5px;letter-spacing:.22em;color:#5D5D5D;text-transform:uppercase;margin-top:5px;display:block}
+.v26 .duo .hot b{background:linear-gradient(90deg,#FF5C29,#FF2E63);-webkit-background-clip:text;background-clip:text;color:transparent}
+.v26 .cta{display:block;margin:0 16px 14px;background:linear-gradient(90deg,#FF5C29,#FF2E63);color:#fff;text-align:center;padding:18px;border-radius:18px;font-family:'Barlow Condensed';font-size:20px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;box-shadow:0 14px 34px rgba(255,70,60,.35)}
+.v26 .strip{margin:0 16px 12px;background:#0D0D0D;border:1px solid #1C1C1C;border-radius:18px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+.v26 .strip b{font-size:13px;font-weight:600;letter-spacing:.02em}
+.v26 .strip span{font-size:11.5px;color:#8A8A8A}
+.v26 .strip .dotp{width:8px;height:8px;border-radius:50%;background:#FF5C29;box-shadow:0 0 10px #FF5C29;margin-right:10px;flex:none}
+.v26 .tabbar{background:#050505;border-top:1px solid #1C1C1C;color:#4C4C4C}
+.v26 .tab.on{color:#FF5C29}
+.v26 .plus{background:linear-gradient(135deg,#FF5C29,#FF2E63);color:#fff}
+
+/* ═══ V27 · HALO — tactile neo-depth instrument ═══ */
+.v27{background:#181C22;color:#E8EBF0;font-family:'Sora',sans-serif}
+.v27 .micro{font-size:10px;letter-spacing:.22em;color:#6A7382;text-transform:uppercase;font-weight:600}
+.v27 .head{text-align:center;margin-bottom:6px}
+.v27 h1{font-size:16px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:#A9B2C2}
+.v27 .well{width:290px;height:290px;margin:14px auto 10px;border-radius:50%;background:#181C22;box-shadow:14px 14px 30px #101318,-14px -14px 30px #21262e,inset 0 0 0 1px rgba(255,255,255,.03);display:flex;align-items:center;justify-content:center;position:relative}
+.v27 .well svg{position:absolute;transform:rotate(-90deg)}
+.v27 .corein{width:196px;height:196px;border-radius:50%;background:#181C22;box-shadow:inset 8px 8px 18px #101318,inset -8px -8px 18px #22272f;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.v27 .corein .big{font-family:'JetBrains Mono';font-size:38px;font-weight:700;color:#C6FF4D}
+.v27 .corein .lbl{font-size:8.5px;letter-spacing:.28em;color:#6A7382;text-transform:uppercase;margin-top:4px}
+.v27 .corein .sub2{font-family:'JetBrains Mono';font-size:10px;color:#4E5764;margin-top:8px}
+.v27 .pods{display:flex;gap:14px;margin:6px 22px 16px}
+.v27 .pod{flex:1;border-radius:20px;background:#181C22;box-shadow:8px 8px 18px #101318,-8px -8px 18px #21262e;padding:14px 8px;text-align:center}
+.v27 .pod b{font-family:'JetBrains Mono';font-size:19px;color:#C6FF4D;display:block}
+.v27 .pod span{font-size:8px;letter-spacing:.2em;color:#6A7382;text-transform:uppercase;margin-top:4px;display:block}
+.v27 .cta{display:block;margin:0 22px 16px;background:#C6FF4D;color:#181C22;text-align:center;padding:16px;border-radius:18px;font-weight:800;font-size:14.5px;box-shadow:8px 8px 20px #101318,-6px -6px 16px #22272f,0 0 30px rgba(198,255,77,.14)}
+.v27 .row2{margin:0 22px 12px;border-radius:18px;background:#181C22;box-shadow:inset 6px 6px 14px #12151b,inset -6px -6px 14px #20252d;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+.v27 .row2 b{font-size:12.5px;font-weight:700}
+.v27 .row2 span{font-size:11px;color:#8A93A2}
+.v27 .tabbar{background:#14181d;border-top:1px solid rgba(255,255,255,.04);color:#525B69}
+.v27 .tab.on{color:#C6FF4D}
+.v27 .plus{background:#C6FF4D;color:#181C22;box-shadow:0 6px 18px rgba(198,255,77,.3)}
+
+
+/* ═══ V28-30 · CREAM — definitive minimal (accent variants) ═══ */
+.vcream{background:#F8F4EB;color:#1D1B16;font-family:'Inter',sans-serif}
+.vcream .wrap{padding:0 24px}
+.vcream .micro{font-size:10px;letter-spacing:.22em;color:#A69D8A;text-transform:uppercase;font-weight:600}
+.vcream h1{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:6px 0 0}
+.vcream .hero3{margin-top:30px;padding-top:22px;border-top:1.5px solid #1D1B16;display:flex;justify-content:space-between;align-items:flex-start}
+.vcream .hero3 .num{font-size:56px;font-weight:250;letter-spacing:-.04em;line-height:.95;font-variant-numeric:tabular-nums}
+.vcream .hero3 .num b{font-weight:600}
+.vcream .hero3 .unit{font-size:12px;color:#A69D8A;font-weight:500;margin-top:8px}
+.vcream .ring3{width:74px;height:74px;position:relative;margin-top:4px}
+.vcream .ring3 svg{transform:rotate(-90deg)}
+.vcream .ring3 .rnum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.vcream .meta3{display:flex;gap:0;margin-top:26px}
+.vcream .meta3>div{flex:1;border-top:1px solid #E4DCC9;padding-top:12px}
+.vcream .meta3>div+div{margin-left:22px}
+.vcream .meta3 b{font-size:19px;font-weight:600;display:block;font-variant-numeric:tabular-nums}
+.vcream .meta3 span{font-size:9.5px;letter-spacing:.18em;color:#A69D8A;text-transform:uppercase;font-weight:600;display:block;margin-top:3px}
+.vcream .days3{display:flex;gap:7px;margin-top:26px;align-items:center}
+.vcream .days3 .lab{font-size:9.5px;letter-spacing:.18em;color:#A69D8A;text-transform:uppercase;font-weight:600;margin-right:auto}
+.vcream .d3{width:7px;height:7px;border-radius:50%;background:#E4DCC9}
+.vcream .cta3{display:block;margin:30px 24px 0;background:#1D1B16;color:#F8F4EB;text-align:center;padding:17px;border-radius:14px;font-weight:600;font-size:14.5px;letter-spacing:.02em}
+.vcream .list3{margin:26px 24px 0}
+.vcream .li3{border-top:1px solid #E4DCC9;padding:15px 2px;display:flex;justify-content:space-between;align-items:baseline}
+.vcream .li3:last-child{border-bottom:1px solid #E4DCC9}
+.vcream .li3 b{font-size:13.5px;font-weight:600}
+.vcream .li3 span{font-size:12px;color:#8D8571;text-align:right;max-width:200px;line-height:1.5}
+.vcream .tabbar{background:rgba(248,244,235,.95);backdrop-filter:blur(10px);border-top:1px solid #E4DCC9;color:#B8AF9B}
+.vcream .tab{font-weight:600}
+.vcream .tab.on{color:#1D1B16}
+.vcream .plus{background:#1D1B16;color:#F8F4EB}
+/* accent variants */
+.a-coral .acc{color:#E4572E}.a-coral .accbg{background:#E4572E}.a-coral .accst{stroke:#E4572E}
+.a-brass .acc{color:#9C7A2E}.a-brass .accbg{background:#9C7A2E}.a-brass .accst{stroke:#9C7A2E}
+.a-sage .acc{color:#5F7A5A}.a-sage .accbg{background:#5F7A5A}.a-sage .accst{stroke:#5F7A5A}
+.vcream .d3.f{background:currentColor}
+
+
+/* ═══ V31-33 · TRUE BEIGE — deep warm latte ═══ */
+.vbeige{background:#E9DFC9;color:#231F16;font-family:'Inter',sans-serif}
+.vbeige .wrap{padding:0 24px}
+.vbeige .micro{font-size:10px;letter-spacing:.22em;color:#9A8D72;text-transform:uppercase;font-weight:600}
+.vbeige h1{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:6px 0 0}
+.vbeige .hero3{margin-top:30px;padding-top:22px;border-top:1.5px solid #231F16;display:flex;justify-content:space-between;align-items:flex-start}
+.vbeige .num{font-size:56px;font-weight:250;letter-spacing:-.04em;line-height:.95;font-variant-numeric:tabular-nums}
+.vbeige .num b{font-weight:600}
+.vbeige .unit{font-size:12px;color:#9A8D72;font-weight:500;margin-top:8px}
+.vbeige .ring3{width:74px;height:74px;position:relative;margin-top:4px}
+.vbeige .ring3 svg{transform:rotate(-90deg)}
+.vbeige .rnum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.vbeige .meta3{display:flex;margin-top:26px}
+.vbeige .meta3>div{flex:1;border-top:1px solid #CDBFA0;padding-top:12px}
+.vbeige .meta3>div+div{margin-left:22px}
+.vbeige .meta3 b{font-size:19px;font-weight:600;display:block;font-variant-numeric:tabular-nums}
+.vbeige .meta3 span{font-size:9.5px;letter-spacing:.18em;color:#9A8D72;text-transform:uppercase;font-weight:600;display:block;margin-top:3px}
+.vbeige .days3{display:flex;gap:7px;margin-top:26px;align-items:center}
+.vbeige .days3 .lab{font-size:9.5px;letter-spacing:.18em;color:#9A8D72;text-transform:uppercase;font-weight:600;margin-right:auto}
+.vbeige .d3{width:7px;height:7px;border-radius:50%;background:#CDBFA0}
+.vbeige .d3.f{background:currentColor}
+.vbeige .cta3{display:block;margin:30px 24px 0;background:#231F16;color:#EFE7D6;text-align:center;padding:17px;border-radius:14px;font-weight:600;font-size:14.5px}
+.vbeige .list3{margin:26px 24px 0}
+.vbeige .li3{border-top:1px solid #CDBFA0;padding:15px 2px;display:flex;justify-content:space-between;align-items:baseline}
+.vbeige .li3:last-child{border-bottom:1px solid #CDBFA0}
+.vbeige .li3 b{font-size:13.5px;font-weight:600}
+.vbeige .li3 span{font-size:12px;color:#847863;text-align:right;max-width:200px;line-height:1.5}
+.vbeige .tabbar{background:rgba(233,223,201,.95);backdrop-filter:blur(10px);border-top:1px solid #CDBFA0;color:#A99B7E}
+.vbeige .tab{font-weight:600}
+.vbeige .tab.on{color:#231F16}
+.vbeige .plus{background:#231F16;color:#EFE7D6}
+.b-coral .acc{color:#D4502A}.b-coral .accst{stroke:#D4502A}
+.b-espresso .acc{color:#6B4A2F}.b-espresso .accst{stroke:#6B4A2F}
+.b-olive .acc{color:#5C6437}.b-olive .accst{stroke:#5C6437}
+
+
+/* ═══ V34/35 · FINAL — champagne peach + warm dark sibling ═══ */
+.vfin{font-family:'Inter',sans-serif}
+.vfin .wrap{padding:0 24px}
+.vfin .micro{font-size:10px;letter-spacing:.22em;text-transform:uppercase;font-weight:600}
+.vfin h1{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:6px 0 0}
+.vfin .hero3{margin-top:30px;padding-top:22px;display:flex;justify-content:space-between;align-items:flex-start}
+.vfin .num{font-size:56px;font-weight:250;letter-spacing:-.04em;line-height:.95;font-variant-numeric:tabular-nums}
+.vfin .num b{font-weight:600}
+.vfin .unit{font-size:12px;font-weight:500;margin-top:8px}
+.vfin .ring3{width:74px;height:74px;position:relative;margin-top:4px}
+.vfin .ring3 svg{transform:rotate(-90deg)}
+.vfin .rnum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.vfin .meta3{display:flex;margin-top:26px}
+.vfin .meta3>div{flex:1;padding-top:12px}
+.vfin .meta3>div+div{margin-left:22px}
+.vfin .meta3 b{font-size:19px;font-weight:600;display:block;font-variant-numeric:tabular-nums}
+.vfin .meta3 span{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;display:block;margin-top:3px}
+.vfin .days3{display:flex;gap:7px;margin-top:26px;align-items:center}
+.vfin .days3 .lab{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;margin-right:auto}
+.vfin .d3{width:7px;height:7px;border-radius:50%}
+.vfin .cta3{display:block;margin:30px 24px 0;text-align:center;padding:17px;border-radius:14px;font-weight:600;font-size:14.5px}
+.vfin .list3{margin:26px 24px 0}
+.vfin .li3{padding:15px 2px;display:flex;justify-content:space-between;align-items:baseline}
+.vfin .li3 b{font-size:13.5px;font-weight:600}
+.vfin .li3 span{font-size:12px;text-align:right;max-width:200px;line-height:1.5}
+.vfin .tab{font-weight:600}
+
+/* LIGHT — his exact swatch */
+.vfl{background:#FAE7D3;color:#241C14}
+.vfl .micro,.vfl .unit,.vfl .meta3 span,.vfl .days3 .lab{color:#A98F72}
+.vfl .hero3{border-top:1.5px solid #241C14}
+.vfl .meta3>div{border-top:1px solid #E3CBAD}
+.vfl .li3{border-top:1px solid #E3CBAD}
+.vfl .li3:last-child{border-bottom:1px solid #E3CBAD}
+.vfl .li3 span{color:#8F7A60}
+.vfl .d3{background:#E3CBAD}
+.vfl .d3.f{background:#C8502E}
+.vfl .acc{color:#C8502E}.vfl .accst{stroke:#C8502E}.vfl .ringtrack{stroke:#E3CBAD}
+.vfl .cta3{background:#241C14;color:#FAE7D3}
+.vfl .tabbar{background:rgba(250,231,211,.95);backdrop-filter:blur(10px);border-top:1px solid #E3CBAD;color:#B99E80}
+.vfl .tab.on{color:#241C14}
+.vfl .plus{background:#241C14;color:#FAE7D3}
+
+/* DARK — warm espresso sibling */
+.vfd{background:#191410;color:#F6E7D5}
+.vfd .micro,.vfd .unit,.vfd .meta3 span,.vfd .days3 .lab{color:#8A7660}
+.vfd .hero3{border-top:1.5px solid #F6E7D5}
+.vfd .meta3>div{border-top:1px solid #35291E}
+.vfd .li3{border-top:1px solid #35291E}
+.vfd .li3:last-child{border-bottom:1px solid #35291E}
+.vfd .li3 span{color:#A08A70}
+.vfd .d3{background:#35291E}
+.vfd .d3.f{background:#E06A40}
+.vfd .acc{color:#E06A40}.vfd .accst{stroke:#E06A40}.vfd .ringtrack{stroke:#35291E}
+.vfd .cta3{background:#F6E7D5;color:#191410}
+.vfd .tabbar{background:rgba(25,20,16,.95);backdrop-filter:blur(10px);border-top:1px solid #35291E;color:#6E5D4A}
+.vfd .tab.on{color:#F6E7D5}
+.vfd .plus{background:#F6E7D5;color:#191410}
+
+</style></head>
+<body>
+
+<!-- V1 PERFORMANCE LAB -->
+<section class="screen v1" id="v1">
+  <div class="pad">
+    <p class="micro">FRI 08.07 — WK 32</p>
+    <h1>Joshane<span class="volt">.</span></h1>
+    <p class="sub">2 sessions banked · 24,510 lb moved</p>
+  </div>
+  <div class="hero">
+    <p class="micro">WEEKLY LOAD</p>
+    <p class="bignum volt">24.5k<span style="font-size:14px;color:#6A6A6A"> lb</span></p>
+    <div class="segrow"><i class="seg f"></i><i class="seg f"></i><i class="seg"></i><i class="seg"></i></div>
+    <p class="micro" style="letter-spacing:.1em">2 / 4 SESSIONS · ON PACE</p>
+  </div>
+  <div class="grid2">
+    <div class="cell"><p class="micro">STREAK</p><p class="bignum">6<span style="font-size:12px;color:#6A6A6A"> DAYS</span></p></div>
+    <div class="cell"><p class="micro">BENCH e1RM</p><p class="bignum">245<span style="font-size:12px;color:#6A6A6A"> LB</span></p></div>
+  </div>
+  <a class="cta">▸ Start Session</a>
+  <div class="rowcard"><b>MUSCLE STATUS</b><span class="volt">CHEST FRESH · BACK 3D</span></div>
+  <div class="rowcard"><b>COACH</b><span>"Rest 60s more on squats"</span></div>
+  <nav class="tabbar">
+    <div class="tab on">◈<br>HOME</div><div class="tab">▣<br>TRAIN</div><div class="plus">+</div><div class="tab">◭<br>DATA</div><div class="tab">◉<br>COACH</div>
+  </nav>
+</section>
+
+<!-- V2 DAYBREAK -->
+<section class="screen v2" id="v2">
+  <div class="pad">
+    <p class="micro">Friday, August 7</p>
+    <h1>Morning, Joshane ☀️</h1>
+  </div>
+  <div class="hero">
+    <div class="ring">
+      <svg width="96" height="96"><circle cx="48" cy="48" r="41" fill="none" stroke="#F1EBE1" stroke-width="10"/><circle cx="48" cy="48" r="41" fill="none" stroke="#FF5A36" stroke-width="10" stroke-linecap="round" stroke-dasharray="258" stroke-dashoffset="129"/></svg>
+      <div class="num">2/4<small>sessions</small></div>
+    </div>
+    <p class="hstat"><b>24,510 lb</b> lifted this week<br><b>6-day</b> streak — halfway to your best!</p>
+  </div>
+  <a class="cta">Start today's workout</a>
+  <div class="week">
+    <div class="day"><div class="dot f"></div>M</div><div class="day"><div class="dot f"></div>T</div>
+    <div class="day"><div class="dot"></div>W</div><div class="day"><div class="dot"></div>T</div>
+    <div class="day"><div class="dot"></div>F</div><div class="day"><div class="dot"></div>S</div>
+    <div class="day"><div class="dot"></div>S</div>
+  </div>
+  <div class="card"><h3>💪 Chest is recovered</h3><p>Rear delts haven't been trained in 9 days — today's push day fixes both.</p></div>
+  <div class="card"><h3>✨ Coach's note</h3><p>Your bench moves when your first heavy set is crisp. Keep the back-offs at RPE 8.</p></div>
+  <nav class="tabbar">
+    <div class="tab on">⌂<br>Home</div><div class="tab">🏋<br>Train</div><div class="plus">+</div><div class="tab">📈<br>Progress</div><div class="tab">✦<br>Coach</div>
+  </nav>
+</section>
+
+<!-- V3 HEAVYWEIGHT -->
+<section class="screen v3" id="v3">
+  <div class="pad">
+    <p class="micro">FRI AUG 07</p>
+    <h1>Time to<br>work<span class="volt">.</span></h1>
+  </div>
+  <div class="hero">
+    <p class="micro">THIS WEEK</p>
+    <p class="bignum">24,510 <span style="font-size:16px">LB</span></p>
+    <div class="bar"><i></i></div>
+    <p class="micro" style="margin-top:8px">2 OF 4 SESSIONS — <span class="volt">ON TRACK</span></p>
+  </div>
+  <a class="cta">START WORKOUT →</a>
+  <div class="week">
+    <div class="wd"><div class="wbar f"></div><span>M</span></div><div class="wd"><div class="wbar f"></div><span>T</span></div>
+    <div class="wd"><div class="wbar"></div><span>W</span></div><div class="wd"><div class="wbar"></div><span>T</span></div>
+    <div class="wd"><div class="wbar"></div><span>F</span></div><div class="wd"><div class="wbar"></div><span>S</span></div>
+    <div class="wd"><div class="wbar"></div><span>S</span></div>
+  </div>
+  <div class="card"><b>Streak</b><span style="font-family:'Archivo Black';font-size:20px;color:#111">6 DAYS</span></div>
+  <div class="card"><b>Coach says</b><span>"Bench first. Every time."</span></div>
+  <nav class="tabbar">
+    <div class="tab on">HOME</div><div class="tab">TRAIN</div><div class="plus">+</div><div class="tab">DATA</div><div class="tab">COACH</div>
+  </nav>
+</section>
+
+<!-- V4 MIDNIGHT VOLT -->
+<section class="screen v4" id="v4">
+  <div class="glow"></div>
+  <div class="pad">
+    <p class="micro">Friday · Aug 07</p>
+    <h1>Welcome back, Joshane</h1>
+    <p class="sub">Session 3 of 4 unlocks a new weekly PR pace.</p>
+  </div>
+  <div class="hero">
+    <div class="ring">
+      <svg width="92" height="92"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#57E6FF"/><stop offset="1" stop-color="#9D4DFF"/></linearGradient></defs><circle cx="46" cy="46" r="39" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="9"/><circle cx="46" cy="46" r="39" fill="none" stroke="url(#g)" stroke-width="9" stroke-linecap="round" stroke-dasharray="245" stroke-dashoffset="122"/></svg>
+      <div class="num">50%</div>
+    </div>
+    <p class="hs"><b>24,510 lb</b> weekly volume<br><b>6 days</b> streak · <b>245 lb</b> bench e1RM</p>
+  </div>
+  <a class="cta">Start Workout</a>
+  <div class="week">
+    <div class="day"><div class="pip f"></div>MON</div><div class="day"><div class="pip f"></div>TUE</div>
+    <div class="day"><div class="pip"></div>WED</div><div class="day"><div class="pip"></div>THU</div>
+    <div class="day"><div class="pip"></div>FRI</div><div class="day"><div class="pip"></div>SAT</div>
+    <div class="day"><div class="pip"></div>SUN</div>
+  </div>
+  <div class="card"><h3>Muscle status · <i>live</i></h3><p>Chest fresh · Back 3 days · Rear delts 9 days behind — push day recommended.</p></div>
+  <div class="card"><h3>Coach insight</h3><p>Your HR recovered to just 152 before squat set 4 — take 60 more seconds next time.</p></div>
+  <nav class="tabbar">
+    <div class="tab on">⌂<br>HOME</div><div class="tab">⚡<br>TRAIN</div><div class="plus">+</div><div class="tab">◮<br>PROGRESS</div><div class="tab">✦<br>COACH</div>
+  </nav>
+</section>
+
+
+<!-- V5 FORGED -->
+<section class="screen v5" id="v5">
+  <div class="pad">
+    <p class="micro">FRI AUG 07 · WEEK 32</p>
+    <h1>FORGE<em> DAY 6</em></h1>
+    <p class="sub">2 sessions in — the iron is warm.</p>
+  </div>
+  <div class="hero">
+    <p class="micro">WEEKLY TONNAGE</p>
+    <p class="bignum">24,510</p>
+    <div class="fbar"><i></i></div>
+    <p class="micro">2 / 4 SESSIONS · ON PACE</p>
+  </div>
+  <div class="duo">
+    <div><p class="micro">STREAK</p><p class="bignum">6</p></div>
+    <div><p class="micro">BENCH E1RM</p><p class="bignum">245</p></div>
+  </div>
+  <a class="cta">STRIKE — START SESSION</a>
+  <div class="card"><b>MUSCLE HEAT</b><span>Chest fresh · Rear delts cold 9d</span></div>
+  <div class="card"><b>COACH</b><span>"Bench first, back-offs at RPE 8"</span></div>
+  <nav class="tabbar"><div class="tab on">◆<br>HOME</div><div class="tab">▮<br>TRAIN</div><div class="plus">+</div><div class="tab">▲<br>DATA</div><div class="tab">●<br>COACH</div></nav>
+</section>
+
+<!-- V6 MONO -->
+<section class="screen v6" id="v6">
+  <div class="pad">
+    <p class="micro">Friday — August 7</p>
+    <h1>Joshane Fernando</h1>
+  </div>
+  <div class="hero pad">
+    <p class="micro" style="margin-bottom:6px">Weekly volume</p>
+    <p class="bignum">24,510<small> lb</small></p>
+  </div>
+  <div class="dotrow"><i class="d f"></i><i class="d f"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></div>
+  <div class="meta">
+    <div><b>2/4</b><span>Sessions</span></div>
+    <div><b>6</b><span>Day streak</span></div>
+    <div><b>245</b><span>Bench e1RM</span></div>
+  </div>
+  <a class="cta">Start workout</a>
+  <div class="line"><b>Muscle status</b><span>Chest fresh · rear delts 9 days</span></div>
+  <div class="line"><b>Coach</b><span>"Keep the first heavy set crisp."</span></div>
+  <nav class="tabbar"><div class="tab on">●<br>Home</div><div class="tab">○<br>Train</div><div class="plus">+</div><div class="tab">○<br>Data</div><div class="tab">○<br>Coach</div></nav>
+</section>
+
+<!-- V7 TERRA -->
+<section class="screen v7" id="v7">
+  <div class="pad">
+    <p class="micro">Friday · August 7</p>
+    <h1>Strong, <em>steadily.</em></h1>
+    <p class="sub">Two sessions rooted this week. Two to grow.</p>
+  </div>
+  <div class="hero">
+    <div class="ring">
+      <svg width="90" height="90"><circle cx="45" cy="45" r="38" fill="none" stroke="#24382C" stroke-width="8"/><circle cx="45" cy="45" r="38" fill="none" stroke="#D9A05B" stroke-width="8" stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="119"/></svg>
+      <div class="num">2/4</div>
+    </div>
+    <p class="hs"><b>24,510 lb</b> moved this week<br><b>6-day</b> streak · bench at <b>245 lb</b></p>
+  </div>
+  <a class="cta">Begin today's session</a>
+  <div class="week">
+    <div class="day"><div class="leaf f"></div>M</div><div class="day"><div class="leaf f"></div>T</div>
+    <div class="day"><div class="leaf"></div>W</div><div class="day"><div class="leaf"></div>T</div>
+    <div class="day"><div class="leaf"></div>F</div><div class="day"><div class="leaf"></div>S</div>
+    <div class="day"><div class="leaf"></div>S</div>
+  </div>
+  <div class="card"><h3>Recovery check</h3><p>Chest is rested and ready. Rear delts have waited nine days — today can change that.</p></div>
+  <div class="card"><h3>From your coach</h3><p>Your bench grows when the first heavy set is unhurried. Give it room.</p></div>
+  <nav class="tabbar"><div class="tab on">⌂<br>HOME</div><div class="tab">✦<br>TRAIN</div><div class="plus">+</div><div class="tab">◭<br>GROWTH</div><div class="tab">❋<br>COACH</div></nav>
+</section>
+
+<!-- V8 ARCADE -->
+<section class="screen v8" id="v8">
+  <div class="scan"></div>
+  <div class="pad">
+    <p class="micro">FRIDAY · AUG 07</p>
+    <h1>Joshane</h1>
+    <span class="lvl">LVL 12 LIFTER</span>
+  </div>
+  <div class="hero">
+    <div class="xp"><span>WEEKLY XP</span><b>24,510 / 40,000</b></div>
+    <div class="xpbar"><i></i></div>
+    <p class="quest"><b>ACTIVE QUEST:</b> Complete 2 more sessions to keep your 6-day streak alive and level up.</p>
+  </div>
+  <a class="cta">▶ CONTINUE RUN</a>
+  <div class="grid2">
+    <div><b>6</b><span>Streak</span></div>
+    <div><b>245</b><span>Bench e1RM</span></div>
+    <div><b>×2</b><span>PR combo</span></div>
+  </div>
+  <div class="card"><h3>Boss fight · <i>Rear delts</i></h3><p>Untouched for 9 days — clear this debuff on today's push run.</p></div>
+  <div class="card"><h3>Coach buff</h3><p>+5% bench progress if your first heavy set stays crisp. Back-offs at RPE 8.</p></div>
+  <nav class="tabbar"><div class="tab on">◈<br>BASE</div><div class="tab">⚔<br>TRAIN</div><div class="plus">+</div><div class="tab">▦<br>STATS</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+
+<!-- V9 CHROME -->
+<section class="screen v9" id="v9">
+  <div class="pad">
+    <p class="micro">FRI 08.07 — WK 32</p>
+    <h1>JOSHANE</h1>
+    <p class="sub">2 sessions · 24,510 lb · streak 6</p>
+  </div>
+  <div class="hero">
+    <p class="micro">WEEKLY LOAD</p>
+    <p class="bignum">24,510</p>
+    <div class="chrbar"><i></i></div>
+    <p class="micro">2 / 4 SESSIONS · ON PACE</p>
+  </div>
+  <div class="duo">
+    <div><p class="micro">STREAK</p><p class="bignum">06</p></div>
+    <div><p class="micro">BENCH E1RM</p><p class="bignum">245</p></div>
+  </div>
+  <a class="cta">Start Session</a>
+  <div class="card"><b>Muscle status</b><span>Chest fresh · rear delts 9d</span></div>
+  <div class="card"><b>Coach</b><span>"First heavy set stays crisp."</span></div>
+  <nav class="tabbar"><div class="tab on">◇<br>HOME</div><div class="tab">▢<br>TRAIN</div><div class="plus">+</div><div class="tab">△<br>DATA</div><div class="tab">○<br>COACH</div></nav>
+</section>
+
+<!-- V10 INK & PAPER -->
+<section class="screen v10" id="v10">
+  <div class="pad">
+    <p class="micro">八月七日 · FRIDAY</p>
+    <h1>Practice, daily.</h1>
+    <span class="stamp">六日 STREAK</span>
+  </div>
+  <div class="hero">
+    <p class="micro" style="margin-bottom:6px">THIS WEEK'S WORK</p>
+    <p class="bignum">24,510 <span style="font-size:15px;font-family:Inter;color:#A39B8B">lb</span></p>
+    <div class="brush"></div>
+    <p class="micro" style="letter-spacing:.18em">TWO OF FOUR SESSIONS</p>
+  </div>
+  <div class="duo">
+    <div><b>6</b><span>Day streak</span></div>
+    <div><b>245</b><span>Bench e1RM</span></div>
+    <div><b>2/4</b><span>Sessions</span></div>
+  </div>
+  <a class="cta">Begin practice</a>
+  <div class="line"><b>Body</b><span>Chest rested · rear delts 9 days quiet</span></div>
+  <div class="line"><b>Teacher</b><span>"Unhurried first set. Then build."</span></div>
+  <nav class="tabbar"><div class="tab on">道<br>HOME</div><div class="tab">力<br>TRAIN</div><div class="plus">+</div><div class="tab">図<br>CHARTS</div><div class="tab">師<br>COACH</div></nav>
+</section>
+
+<!-- V11 BLUEPRINT -->
+<section class="screen v11" id="v11">
+  <div class="pad">
+    <p class="micro">PROJECT: JOSHANE_F — REV 32</p>
+    <h1>BODY // UNDER CONSTRUCTION</h1>
+    <p class="sub">status: ON_SCHEDULE</p>
+  </div>
+  <div class="hero">
+    <p class="bignum">24,510 lb</p>
+    <div class="dim"><span>0</span><div class="ln"></div><span>TARGET 40k</span></div>
+    <p class="micro">SESSIONS 2/4 · STREAK 6d</p>
+  </div>
+  <div class="duo">
+    <div><b>245</b><span>Bench e1RM · lb</span></div>
+    <div><b>9d</b><span>Rear delts idle</span></div>
+  </div>
+  <a class="cta">Execute Session</a>
+  <div class="card"><b>SPEC NOTE</b><span>Bench first; back-offs @ RPE 8</span></div>
+  <div class="card"><b>NEXT MILESTONE</b><span>Session 3 → pace locked</span></div>
+  <nav class="tabbar"><div class="tab on">⌂<br>PLAN</div><div class="tab">⚒<br>BUILD</div><div class="plus">+</div><div class="tab">▤<br>SPECS</div><div class="tab">✎<br>COACH</div></nav>
+</section>
+
+<!-- V12 AURORA -->
+<section class="screen v12" id="v12">
+  <div class="aur"></div>
+  <div class="pad">
+    <p class="micro">Friday · August 7</p>
+    <h1>Evening, Joshane</h1>
+    <p class="sub">Two sessions in. Your week is glowing.</p>
+  </div>
+  <div class="hero">
+    <div class="ring">
+      <svg width="92" height="92"><defs><linearGradient id="ag" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7EE7C4"/><stop offset=".55" stop-color="#BA9CFF"/><stop offset="1" stop-color="#FFB89C"/></linearGradient></defs><circle cx="46" cy="46" r="39" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="9"/><circle cx="46" cy="46" r="39" fill="none" stroke="url(#ag)" stroke-width="9" stroke-linecap="round" stroke-dasharray="245" stroke-dashoffset="122"/></svg>
+      <div class="num">2/4</div>
+    </div>
+    <p class="hs"><b>24,510 lb</b> this week<br><b>6-day</b> streak · bench <b>245 lb</b></p>
+  </div>
+  <a class="cta">Start tonight's session</a>
+  <div class="week">
+    <div class="day"><div class="orb f"></div>MON</div><div class="day"><div class="orb f"></div>TUE</div>
+    <div class="day"><div class="orb"></div>WED</div><div class="day"><div class="orb"></div>THU</div>
+    <div class="day"><div class="orb"></div>FRI</div><div class="day"><div class="orb"></div>SAT</div>
+    <div class="day"><div class="orb"></div>SUN</div>
+  </div>
+  <div class="card"><h3>Muscle glow · <i>live</i></h3><p>Chest is bright. Rear delts have dimmed for 9 days — tonight can relight them.</p></div>
+  <div class="card"><h3>Coach whisper</h3><p>Bench rises when the first heavy set breathes. Give it sixty more seconds.</p></div>
+  <nav class="tabbar"><div class="tab on">⌂<br>HOME</div><div class="tab">✧<br>TRAIN</div><div class="plus">+</div><div class="tab">◠<br>PROGRESS</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+
+<!-- V13 ATLAS -->
+<section class="screen v13" id="v13">
+  <div class="pad top">
+    <div><p class="micro">FRI · AUG 07</p><h1>Joshane</h1></div>
+    <div class="streak"><p class="micro">STREAK</p><b>06</b></div>
+  </div>
+  <div class="stage">
+    <svg width="240" height="420" viewBox="0 0 240 420">
+      <defs>
+        <radialGradient id="glowc" cx="50%" cy="50%"><stop offset="0" stop-color="#FF7A45" stop-opacity=".95"/><stop offset="1" stop-color="#FF7A45" stop-opacity="0"/></radialGradient>
+        <radialGradient id="glowd" cx="50%" cy="50%"><stop offset="0" stop-color="#FFB03A" stop-opacity=".8"/><stop offset="1" stop-color="#FFB03A" stop-opacity="0"/></radialGradient>
+        <radialGradient id="cold" cx="50%" cy="50%"><stop offset="0" stop-color="#3E4854" stop-opacity=".9"/><stop offset="1" stop-color="#3E4854" stop-opacity="0"/></radialGradient>
+      </defs>
+      <!-- silhouette -->
+      <g stroke="#3A3B3F" stroke-width="1.5" fill="rgba(255,255,255,.025)">
+        <circle cx="120" cy="34" r="20"/>
+        <path d="M120 56 C90 58 76 74 72 96 L64 168 C63 180 68 186 74 188 L84 186 L92 132 L92 210 C92 224 96 236 98 248 L94 330 C93 346 97 356 100 368 L104 406 L116 406 L116 300 L124 300 L124 406 L136 406 L140 368 C143 356 147 346 146 330 L142 248 C144 236 148 224 148 210 L148 132 L156 186 L166 188 C172 186 177 180 176 168 L168 96 C164 74 150 58 120 56 Z"/>
+      </g>
+      <!-- muscle heat -->
+      <ellipse cx="103" cy="96" rx="17" ry="12" fill="url(#glowc)"/>
+      <ellipse cx="137" cy="96" rx="17" ry="12" fill="url(#glowc)"/>
+      <ellipse cx="84" cy="84" rx="10" ry="8" fill="url(#glowd)"/>
+      <ellipse cx="156" cy="84" rx="10" ry="8" fill="url(#glowd)"/>
+      <ellipse cx="120" cy="150" rx="16" ry="26" fill="url(#cold)" opacity=".5"/>
+      <ellipse cx="104" cy="270" rx="12" ry="30" fill="url(#glowd)" opacity=".55"/>
+      <ellipse cx="136" cy="270" rx="12" ry="30" fill="url(#glowd)" opacity=".55"/>
+    </svg>
+    <p class="tag l" style="right:196px;top:78px">CHEST<br><i>FRESH · READY</i></p>
+    <p class="tag r" style="left:196px;top:120px">REAR DELTS<br><i>9 DAYS COLD</i></p>
+    <p class="tag r" style="left:188px;top:258px">QUADS<br><i>WARM · 2D</i></p>
+    <p class="hint">TAP A MUSCLE TO BUILD AROUND IT</p>
+  </div>
+  <div class="sheet">
+    <div class="grab"></div>
+    <div class="row">
+      <div><b>Push Day recommended</b><br><span>Chest + rear delts · 6 exercises · ~48 min</span></div>
+      <a class="go">GO</a>
+    </div>
+  </div>
+  <nav class="tabbar"><div class="tab on">◉<br>BODY</div><div class="tab">▣<br>TRAIN</div><div class="plus">+</div><div class="tab">◭<br>DATA</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+<!-- V14 DIAL -->
+<section class="screen v14" id="v14">
+  <div class="head"><p class="micro">FRIDAY 08 · 07</p><h1>JOSHANE · WK 32</h1></div>
+  <div class="dial">
+    <svg viewBox="0 0 320 320">
+      <defs><linearGradient id="lume" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5AE0C8"/><stop offset="1" stop-color="#2E8F9E"/></linearGradient></defs>
+      <circle cx="160" cy="160" r="150" fill="none" stroke="#15181B" stroke-width="2"/>
+      <g stroke="#242A2E" stroke-width="2">
+        <line x1="160" y1="12" x2="160" y2="26"/><line x1="308" y1="160" x2="294" y2="160"/>
+        <line x1="160" y1="308" x2="160" y2="294"/><line x1="12" y1="160" x2="26" y2="160"/>
+      </g>
+      <g stroke="#1B2023" stroke-width="1.5">
+        <line x1="234" y1="32" x2="228" y2="44"/><line x1="288" y1="86" x2="276" y2="92"/>
+        <line x1="288" y1="234" x2="276" y2="228"/><line x1="234" y1="288" x2="228" y2="276"/>
+        <line x1="86" y1="288" x2="92" y2="276"/><line x1="32" y1="234" x2="44" y2="228"/>
+        <line x1="32" y1="86" x2="44" y2="92"/><line x1="86" y1="32" x2="92" y2="44"/>
+      </g>
+      <circle cx="160" cy="160" r="132" fill="none" stroke="#12181B" stroke-width="14"/>
+      <circle cx="160" cy="160" r="132" fill="none" stroke="url(#lume)" stroke-width="14" stroke-linecap="round" stroke-dasharray="829" stroke-dashoffset="415" transform="rotate(-90 160 160)"/>
+      <circle cx="160" cy="160" r="108" fill="none" stroke="#101416" stroke-width="5"/>
+      <circle cx="160" cy="160" r="108" fill="none" stroke="#C9A96A" stroke-width="5" stroke-linecap="round" stroke-dasharray="678" stroke-dashoffset="271" transform="rotate(-90 160 160)" opacity=".85"/>
+      <circle cx="160" cy="28" r="4" fill="#5AE0C8"/>
+    </svg>
+    <div class="core">
+      <p class="big">24.5k</p>
+      <p class="lbl">LB · WEEKLY LOAD</p>
+      <p class="sub2">SESSIONS 2/4 · VOLUME 61%</p>
+    </div>
+  </div>
+  <div class="comps">
+    <div class="comp"><b>06</b><span>Streak</span></div>
+    <div class="comp"><b>245</b><span>Bench</span></div>
+    <div class="comp"><b>9d</b><span>R·Delts</span></div>
+  </div>
+  <a class="cta">Start Session</a>
+  <nav class="tabbar"><div class="tab on">◎<br>DIAL</div><div class="tab">▣<br>TRAIN</div><div class="plus">+</div><div class="tab">◭<br>LOG</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+<!-- V15 HEADLINE -->
+<section class="screen v15" id="v15">
+  <div class="rail"></div>
+  <div class="meta">FRI 08.07<br>WK <b>32</b><br>STREAK <b>06</b><br>LOAD <b>24.5K</b><br>PACE <i>ON</i></div>
+  <div class="poster">
+    <p class="kicker">TODAY'S ISSUE — №148</p>
+    <h1>PUSH<br><span class="accent">DAY</span></h1>
+    <p class="under"><b>Chest is fresh.</b> Rear delts nine days cold. Six exercises. Forty-eight minutes. No filler.</p>
+  </div>
+  <div class="foot"><span>BENCH E1RM 245</span><span>2/4 SESSIONS</span></div>
+  <a class="cta">Start — 48 min</a>
+  <nav class="tabbar"><div class="tab on">■<br>TODAY</div><div class="tab">□<br>TRAIN</div><div class="plus">+</div><div class="tab">□<br>DATA</div><div class="tab">□<br>COACH</div></nav>
+</section>
+
+<!-- V16 CANYON -->
+<section class="screen v16" id="v16">
+  <div class="pad">
+    <p class="micro">YOUR TRAIL · WEEK 32</p>
+    <h1>Two camps behind you.</h1>
+    <p class="sub">The next one is tonight, Joshane.</p>
+  </div>
+  <div class="trail">
+    <div class="node done"><i class="pip"></i><div class="ncard"><div class="t"><b>Pull Day</b><span>MON · 8.2k lb</span></div><p>14 sets · back + biceps · felt strong</p></div></div>
+    <div class="node done"><i class="pip"></i><div class="ncard"><div class="t"><b>Leg Day</b><span>TUE · 16.3k lb</span></div><p>16 sets · squat PR pace building</p></div></div>
+    <div class="node now"><i class="pip"></i><div class="ncard"><div class="t"><b>Push Day — tonight</b><span>~48 MIN</span></div><p>Chest fresh · rear delts 9 days cold. This is the one.</p><a class="go">Start the climb →</a></div></div>
+    <div class="node ghost"><i class="pip"></i><div class="ncard"><div class="t"><b>Upper Body</b><span>SUN · PLANNED</span></div><p>Completes 4/4 — a perfect week.</p></div></div>
+  </div>
+  <nav class="tabbar"><div class="tab on">☗<br>TRAIL</div><div class="tab">⚑<br>TRAIN</div><div class="plus">+</div><div class="tab">◮<br>SUMMIT</div><div class="tab">✦<br>GUIDE</div></nav>
+</section>
+
+
+<!-- V17 TERMINAL -->
+<section class="screen v17" id="v17">
+  <div class="crt"></div>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i></div>
+    <p class="ln dim2">liftos v2.0 — session friday 08.07 · wk32</p>
+    <p class="ln"><span class="p">joshane@liftos</span> ~ % <b>status</b></p>
+    <p class="ln">weekly_load .... <b>24,510 lb</b></p>
+    <p class="ln">sessions ....... <b>2/4</b> <span class="bar2">[████████░░░░░░░░]</span> 50%</p>
+    <p class="ln">streak ......... <b>6 days</b></p>
+    <p class="ln">bench_e1rm ..... <b>245 lb</b></p>
+    <p class="ln warn">warn: rear_delts idle 9d — schedule push</p>
+    <p class="ln"><span class="p">joshane@liftos</span> ~ % <b>next</b></p>
+    <p class="ln">→ push_day: 6 exercises · est 48m</p>
+    <p class="ln">  chest[READY] delts[COLD] tri[OK]</p>
+    <p class="ln"><span class="p">joshane@liftos</span> ~ % <span class="cur"></span></p>
+  </div>
+  <a class="cta">$ run push_day --start</a>
+  <nav class="tabbar"><div class="tab on">~/<br>HOME</div><div class="tab">./<br>TRAIN</div><div class="plus">></div><div class="tab">./<br>LOGS</div><div class="tab">./<br>COACH</div></nav>
+</section>
+
+<!-- V18 GALLERY -->
+<section class="screen v18" id="v18">
+  <p class="no">№ 148</p>
+  <div class="art"><div class="frame">
+    <svg width="150" height="240" viewBox="0 0 240 420">
+      <g stroke="#B9B4A6" stroke-width="2" fill="none">
+        <circle cx="120" cy="34" r="20"/>
+        <path d="M120 56 C90 58 76 74 72 96 L64 168 C63 180 68 186 74 188 L84 186 L92 132 L92 210 C92 224 96 236 98 248 L94 330 C93 346 97 356 100 368 L104 406 L116 406 L116 300 L124 300 L124 406 L136 406 L140 368 C143 356 147 346 146 330 L142 248 C144 236 148 224 148 210 L148 132 L156 186 L166 188 C172 186 177 180 176 168 L168 96 C164 74 150 58 120 56 Z"/>
+      </g>
+      <ellipse cx="103" cy="96" rx="15" ry="10" fill="#C8442A" opacity=".85"/>
+      <ellipse cx="137" cy="96" rx="15" ry="10" fill="#C8442A" opacity=".85"/>
+      <ellipse cx="104" cy="270" rx="10" ry="26" fill="#D98E3B" opacity=".6"/>
+      <ellipse cx="136" cy="270" rx="10" ry="26" fill="#D98E3B" opacity=".6"/>
+    </svg>
+  </div></div>
+  <div class="plate">
+    <h1>Push Day, <em>unperformed</em></h1>
+    <p class="med">Joshane Fernando (b. 2003)<br>Barbell, iron plates, and intent · 48 minutes<br>Week 32, sixth consecutive day</p>
+  </div>
+  <p class="caption"><b>24,510 lb</b> moved this week across two sessions. The chest arrives rested; the rear deltoids, nine days untouched, await their first light.</p>
+  <a class="cta">BEGIN THE WORK</a>
+  <nav class="tabbar"><div class="tab on">I<br>TODAY</div><div class="tab">II<br>TRAIN</div><div class="plus">+</div><div class="tab">III<br>ARCHIVE</div><div class="tab">IV<br>CURATOR</div></nav>
+</section>
+
+<!-- V19 BROADCAST -->
+<section class="screen v19" id="v19">
+  <div class="crt2"></div>
+  <p class="stamp2">FRI 08.07.26 — 19:42:08</p>
+  <p class="rec"><i></i>LIVE</p>
+  <div class="big">
+    <span class="chy">Tonight's Card</span>
+    <h1>Push<br>Day</h1>
+    <p class="sub">JOSHANE F. · WEEK 32 · SESSION 3 OF 4</p>
+  </div>
+  <div class="score">
+    <div><b>24.5K</b><span>LB · Week</span></div>
+    <div><b>6</b><span>Streak</span></div>
+    <div><b>245</b><span>Bench</span></div>
+  </div>
+  <div class="lower">
+    <p class="l1">⚡ Scouting report</p>
+    <p class="l2">Chest READY · rear delts 9 days cold · 6 exercises, 48 min</p>
+  </div>
+  <a class="cta">Go Live →</a>
+  <nav class="tabbar"><div class="tab on">▣<br>DESK</div><div class="tab">◪<br>TRAIN</div><div class="plus">+</div><div class="tab">◭<br>STATS</div><div class="tab">🎙<br>COACH</div></nav>
+</section>
+
+<!-- V20 TOPO -->
+<section class="screen v20" id="v20">
+  <svg class="contours" width="100%" height="100%" viewBox="0 0 390 820" preserveAspectRatio="xMidYMid slice">
+    <g fill="none" stroke="#26332C" stroke-width="1">
+      <path d="M-20 190 C 90 120 210 240 410 150"/>
+      <path d="M-20 230 C 90 160 220 280 410 190"/>
+      <path d="M-20 275 C 100 205 230 320 410 235"/>
+      <path d="M-20 325 C 110 255 240 365 410 285"/>
+      <path d="M-20 560 C 130 500 260 620 410 545"/>
+      <path d="M-20 610 C 140 545 270 665 410 595"/>
+      <path d="M-20 665 C 150 595 280 715 410 650"/>
+    </g>
+    <g fill="none" stroke="#33443B" stroke-width="1.4">
+      <path d="M-20 145 C 80 80 200 200 410 110"/>
+      <path d="M-20 510 C 120 455 250 575 410 495"/>
+    </g>
+  </svg>
+  <div class="pad" style="position:relative">
+    <p class="micro">EXPEDITION · WEEK 32</p>
+    <h1>Camp II reached.</h1>
+    <p class="sub">Summit in two sessions, Joshane.</p>
+  </div>
+  <div class="summit">
+    <p class="micro">ELEVATION GAINED</p>
+    <p class="alt">24,510<small> lb</small></p>
+    <div class="elev"><i style="height:40%" class="f"></i><i style="height:78%" class="f"></i><i style="height:22%"></i><i style="height:52%"></i><i style="height:34%"></i><i style="height:60%"></i><i style="height:28%"></i></div>
+    <p class="micro" style="letter-spacing:.14em">MON — SUN · 2/4 CLIMBS LOGGED</p>
+  </div>
+  <div class="duo">
+    <div><b>6d</b><span>Streak</span></div>
+    <div><b>245</b><span>Bench e1RM</span></div>
+    <div><b>9d</b><span>R·Delts idle</span></div>
+  </div>
+  <a class="cta">Start tonight's climb</a>
+  <div class="card"><b>ROUTE NOTE</b><span>Push day — chest ready, delts cold</span></div>
+  <nav class="tabbar"><div class="tab on">▲<br>BASE</div><div class="tab">⚑<br>CLIMB</div><div class="plus">+</div><div class="tab">◮<br>ROUTES</div><div class="tab">✦<br>GUIDE</div></nav>
+</section>
+
+
+<!-- V21 LUMEN (dark fusion) -->
+<section class="screen v21" id="v21">
+  <svg class="topo" width="100%" height="100%" viewBox="0 0 390 820" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="#1C2A26" stroke-width="1"><path d="M-20 150 C 90 90 210 210 410 120"/><path d="M-20 195 C 95 130 220 250 410 165"/><path d="M-20 560 C 130 500 260 620 410 545"/><path d="M-20 615 C 140 550 270 670 410 600"/><path d="M-20 670 C 150 600 280 720 410 655"/></g></svg>
+  <div class="aur2"></div>
+  <div class="pad toprow" style="position:relative">
+    <div><p class="micro">Friday · August 7</p><h1>Evening, Joshane</h1><p class="sub">Two climbs in. Your week is glowing.</p></div>
+    <span class="streakpill">◆ 6d</span>
+  </div>
+  <div class="dial">
+    <svg viewBox="0 0 280 280">
+      <defs><linearGradient id="lg21" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5EE0C8"/><stop offset=".55" stop-color="#BA9CFF"/><stop offset="1" stop-color="#FFB89C"/></linearGradient></defs>
+      <g stroke="#233530" stroke-width="1.5">
+        <line x1="140" y1="10" x2="140" y2="22"/><line x1="270" y1="140" x2="258" y2="140"/>
+        <line x1="140" y1="270" x2="140" y2="258"/><line x1="10" y1="140" x2="22" y2="140"/>
+        <line x1="232" y1="48" x2="224" y2="56"/><line x1="232" y1="232" x2="224" y2="224"/>
+        <line x1="48" y1="232" x2="56" y2="224"/><line x1="48" y1="48" x2="56" y2="56"/>
+      </g>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="13"/>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="url(#lg21)" stroke-width="13" stroke-linecap="round" stroke-dasharray="729" stroke-dashoffset="365" transform="rotate(-90 140 140)"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="5"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="#E8FF57" stroke-width="5" stroke-linecap="round" stroke-dasharray="590" stroke-dashoffset="230" transform="rotate(-90 140 140)" opacity=".9"/>
+      <circle cx="140" cy="24" r="4" fill="#5EE0C8"/>
+    </svg>
+    <div class="core"><p class="big">24.5k</p><p class="lbl">LB · WEEKLY LOAD</p><p class="s2">SESSIONS 2/4 · VOLUME 61%</p></div>
+  </div>
+  <div class="comps">
+    <div class="comp c-volt"><b>06</b><span>Streak</span></div>
+    <div class="comp c-mint"><b>245</b><span>Bench e1RM</span></div>
+    <div class="comp c-peach"><b>9d</b><span>R·Delts</span></div>
+  </div>
+  <a class="cta">Start tonight's session</a>
+  <div class="week">
+    <div class="day"><div class="orb f"></div>MON</div><div class="day"><div class="orb f"></div>TUE</div>
+    <div class="day"><div class="orb"></div>WED</div><div class="day"><div class="orb"></div>THU</div>
+    <div class="day"><div class="orb"></div>FRI</div><div class="day"><div class="orb"></div>SAT</div>
+    <div class="day"><div class="orb"></div>SUN</div>
+  </div>
+  <div class="card"><h3>Muscle glow · <i>live</i></h3><p>Chest is bright. Rear delts dimmed 9 days — tonight relights them.</p></div>
+  <nav class="tabbar"><div class="tab on">◎<br>HOME</div><div class="tab">⚑<br>TRAIN</div><div class="plus">+</div><div class="tab">◮<br>PROGRESS</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+<!-- V22 LUMEN LIGHT (daybreak twin) -->
+<section class="screen v22" id="v22">
+  <svg class="topo" width="100%" height="100%" viewBox="0 0 390 820" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="#E8E0D0" stroke-width="1"><path d="M-20 150 C 90 90 210 210 410 120"/><path d="M-20 195 C 95 130 220 250 410 165"/><path d="M-20 560 C 130 500 260 620 410 545"/><path d="M-20 615 C 140 550 270 670 410 600"/><path d="M-20 670 C 150 600 280 720 410 655"/></g></svg>
+  <div class="pad toprow" style="position:relative">
+    <div><p class="micro">Friday · August 7</p><h1>Morning, Joshane</h1><p class="sub">Two climbs in. Two to the summit.</p></div>
+    <span class="streakpill">◆ 6d</span>
+  </div>
+  <div class="dial">
+    <svg viewBox="0 0 280 280">
+      <defs><linearGradient id="lg22" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2BC5A8"/><stop offset=".55" stop-color="#8F6FE8"/><stop offset="1" stop-color="#FF8E63"/></linearGradient></defs>
+      <g stroke="#DDD4C2" stroke-width="1.5">
+        <line x1="140" y1="10" x2="140" y2="22"/><line x1="270" y1="140" x2="258" y2="140"/>
+        <line x1="140" y1="270" x2="140" y2="258"/><line x1="10" y1="140" x2="22" y2="140"/>
+        <line x1="232" y1="48" x2="224" y2="56"/><line x1="232" y1="232" x2="224" y2="224"/>
+        <line x1="48" y1="232" x2="56" y2="224"/><line x1="48" y1="48" x2="56" y2="56"/>
+      </g>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="#EFE8DB" stroke-width="13"/>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="url(#lg22)" stroke-width="13" stroke-linecap="round" stroke-dasharray="729" stroke-dashoffset="365" transform="rotate(-90 140 140)"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="#F2ECDF" stroke-width="5"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="#B9D400" stroke-width="5" stroke-linecap="round" stroke-dasharray="590" stroke-dashoffset="230" transform="rotate(-90 140 140)" opacity=".9"/>
+      <circle cx="140" cy="24" r="4" fill="#17A08B"/>
+    </svg>
+    <div class="core"><p class="big">24.5k</p><p class="lbl">LB · WEEKLY LOAD</p><p class="s2">SESSIONS 2/4 · VOLUME 61%</p></div>
+  </div>
+  <div class="comps">
+    <div class="comp c-volt"><b>06</b><span>Streak</span></div>
+    <div class="comp c-mint"><b>245</b><span>Bench e1RM</span></div>
+    <div class="comp c-peach"><b>9d</b><span>R·Delts</span></div>
+  </div>
+  <a class="cta">Start today's session</a>
+  <div class="week">
+    <div class="day"><div class="orb f"></div>MON</div><div class="day"><div class="orb f"></div>TUE</div>
+    <div class="day"><div class="orb"></div>WED</div><div class="day"><div class="orb"></div>THU</div>
+    <div class="day"><div class="orb"></div>FRI</div><div class="day"><div class="orb"></div>SAT</div>
+    <div class="day"><div class="orb"></div>SUN</div>
+  </div>
+  <div class="card"><h3>Muscle glow · <i>live</i></h3><p>Chest is recovered. Rear delts waited 9 days — today's push fixes both.</p></div>
+  <nav class="tabbar"><div class="tab on">◎<br>HOME</div><div class="tab">⚑<br>TRAIN</div><div class="plus">+</div><div class="tab">◮<br>PROGRESS</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+
+<section class="screen v23" id="v23">
+  <svg class="topo" width="100%" height="100%" viewBox="0 0 390 820" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="#E7E0D0" stroke-width="1.2"><path d="M-20 150 C 90 90 210 210 410 120"/><path d="M-20 195 C 95 130 220 250 410 165"/><path d="M-20 560 C 130 500 260 620 410 545"/><path d="M-20 615 C 140 550 270 670 410 600"/><path d="M-20 670 C 150 600 280 720 410 655"/></g></svg>
+  <div class="pad toprow">
+    <div><p class="micro">Friday · August 7</p><h1>Evening, Joshane</h1><p class="sub">Two sessions in. Two to go.</p></div>
+    <span class="streakpill">◆ 6 DAY</span>
+  </div>
+  <div class="dial">
+    <svg viewBox="0 0 280 280">
+      <g stroke="#151310" stroke-width="1.5">
+        <line x1="140" y1="10" x2="140" y2="22"/><line x1="270" y1="140" x2="258" y2="140"/>
+        <line x1="140" y1="270" x2="140" y2="258"/><line x1="10" y1="140" x2="22" y2="140"/>
+        <line x1="232" y1="48" x2="224" y2="56"/><line x1="232" y1="232" x2="224" y2="224"/>
+        <line x1="48" y1="232" x2="56" y2="224"/><line x1="48" y1="48" x2="56" y2="56"/>
+      </g>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="#E5DECE" stroke-width="13"/>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="#151310" stroke-width="13" stroke-linecap="round" stroke-dasharray="729" stroke-dashoffset="365" transform="rotate(-90 140 140)"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="#EDE6D6" stroke-width="5"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="#151310" stroke-width="5" stroke-linecap="round" stroke-dasharray="590" stroke-dashoffset="230" transform="rotate(-90 140 140)"/>
+      <circle cx="140" cy="24" r="4.5" fill="#151310"/>
+    </svg>
+    <div class="core"><p class="big">24.5k</p><p class="lbl">LB · WEEKLY LOAD</p><p class="s2">SESSIONS 2/4 · VOLUME 61%</p></div>
+  </div>
+  <div class="comps">
+    <div class="comp inv"><b>06</b><span>Streak</span></div>
+    <div class="comp"><b>245</b><span>Bench e1RM</span></div>
+    <div class="comp"><b>9d</b><span>R·Delts</span></div>
+  </div>
+  <a class="cta">Start tonight's session</a>
+  <div class="week">
+    <div class="day"><div class="orb f"></div>MON</div><div class="day"><div class="orb f"></div>TUE</div>
+    <div class="day"><div class="orb"></div>WED</div><div class="day"><div class="orb"></div>THU</div>
+    <div class="day"><div class="orb today"></div>FRI</div><div class="day"><div class="orb"></div>SAT</div>
+    <div class="day"><div class="orb"></div>SUN</div>
+  </div>
+  <div class="card"><h3>Muscle status · live</h3><p>Chest is rested and ready. Rear delts waited 9 days — tonight's push day fixes both.</p></div>
+  <nav class="tabbar"><div class="tab on">◎<br>HOME</div><div class="tab">⚑<br>TRAIN</div><div class="plus">+</div><div class="tab">◮<br>PROGRESS</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+<section class="screen v24" id="v24">
+  <svg class="topo" width="100%" height="100%" viewBox="0 0 390 820" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="#E7E0D0" stroke-width="1.2"><path d="M-20 150 C 90 90 210 210 410 120"/><path d="M-20 195 C 95 130 220 250 410 165"/><path d="M-20 560 C 130 500 260 620 410 545"/><path d="M-20 615 C 140 550 270 670 410 600"/><path d="M-20 670 C 150 600 280 720 410 655"/></g></svg>
+  <div class="pad toprow">
+    <div><p class="micro">Friday · August 7</p><h1>Evening, Joshane</h1><p class="sub">Two sessions in. Two to go.</p></div>
+    <span class="streakpill">◆ 6 DAY</span>
+  </div>
+  <div class="dial">
+    <svg viewBox="0 0 280 280">
+      <g stroke="#151310" stroke-width="1.5">
+        <line x1="140" y1="10" x2="140" y2="22"/><line x1="270" y1="140" x2="258" y2="140"/>
+        <line x1="140" y1="270" x2="140" y2="258"/><line x1="10" y1="140" x2="22" y2="140"/>
+        <line x1="232" y1="48" x2="224" y2="56"/><line x1="232" y1="232" x2="224" y2="224"/>
+        <line x1="48" y1="232" x2="56" y2="224"/><line x1="48" y1="48" x2="56" y2="56"/>
+      </g>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="#E5DECE" stroke-width="13"/>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="#151310" stroke-width="13" stroke-linecap="round" stroke-dasharray="729" stroke-dashoffset="365" transform="rotate(-90 140 140)"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="#EDE6D6" stroke-width="5"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="#D8401F" stroke-width="5" stroke-linecap="round" stroke-dasharray="590" stroke-dashoffset="230" transform="rotate(-90 140 140)"/>
+      <circle cx="140" cy="24" r="4.5" fill="#151310"/>
+    </svg>
+    <div class="core"><p class="big">24.5k</p><p class="lbl">LB · WEEKLY LOAD</p><p class="s2">SESSIONS 2/4 · VOLUME 61%</p></div>
+  </div>
+  <div class="comps">
+    <div class="comp inv"><b>06</b><span>Streak</span></div>
+    <div class="comp"><b>245</b><span>Bench e1RM</span></div>
+    <div class="comp"><b>9d</b><span>R·Delts</span></div>
+  </div>
+  <a class="cta">Start tonight's session</a>
+  <div class="week">
+    <div class="day"><div class="orb f"></div>MON</div><div class="day"><div class="orb f"></div>TUE</div>
+    <div class="day"><div class="orb"></div>WED</div><div class="day"><div class="orb"></div>THU</div>
+    <div class="day"><div class="orb today"></div>FRI</div><div class="day"><div class="orb"></div>SAT</div>
+    <div class="day"><div class="orb"></div>SUN</div>
+  </div>
+  <div class="card"><h3>Muscle status · <i>live</i></h3><p>Chest is rested and ready. Rear delts waited 9 days — tonight's push day fixes both.</p></div>
+  <nav class="tabbar"><div class="tab on">◎<br>HOME</div><div class="tab">⚑<br>TRAIN</div><div class="plus">+</div><div class="tab">◮<br>PROGRESS</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+<section class="screen v25" id="v25">
+  <svg class="topo" width="100%" height="100%" viewBox="0 0 390 820" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="#1C1913" stroke-width="1.2"><path d="M-20 150 C 90 90 210 210 410 120"/><path d="M-20 195 C 95 130 220 250 410 165"/><path d="M-20 560 C 130 500 260 620 410 545"/><path d="M-20 615 C 140 550 270 670 410 600"/><path d="M-20 670 C 150 600 280 720 410 655"/></g></svg>
+  <div class="pad toprow">
+    <div><p class="micro">Friday · August 7</p><h1>Evening, Joshane</h1><p class="sub">Two sessions in. Two to go.</p></div>
+    <span class="streakpill">◆ 6 DAY</span>
+  </div>
+  <div class="dial">
+    <svg viewBox="0 0 280 280">
+      <defs><linearGradient id="g25" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7EE7C4"/><stop offset=".55" stop-color="#BA9CFF"/><stop offset="1" stop-color="#FFB89C"/></linearGradient></defs>
+      <g stroke="#E7D9B7" stroke-width="1.5" opacity=".55">
+        <line x1="140" y1="10" x2="140" y2="22"/><line x1="270" y1="140" x2="258" y2="140"/>
+        <line x1="140" y1="270" x2="140" y2="258"/><line x1="10" y1="140" x2="22" y2="140"/>
+        <line x1="232" y1="48" x2="224" y2="56"/><line x1="232" y1="232" x2="224" y2="224"/>
+        <line x1="48" y1="232" x2="56" y2="224"/><line x1="48" y1="48" x2="56" y2="56"/>
+      </g>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="rgba(231,217,183,.1)" stroke-width="13"/>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="#E7D9B7" stroke-width="13" stroke-linecap="round" stroke-dasharray="729" stroke-dashoffset="365" transform="rotate(-90 140 140)"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="rgba(231,217,183,.08)" stroke-width="5"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="url(#g25)" stroke-width="5" stroke-linecap="round" stroke-dasharray="590" stroke-dashoffset="230"/>
+      <circle cx="140" cy="24" r="4.5" fill="#7EE7C4"/>
+    </svg>
+    <div class="core"><p class="big">24.5k</p><p class="lbl">LB · WEEKLY LOAD</p><p class="s2">SESSIONS 2/4 · VOLUME 61%</p></div>
+  </div>
+  <div class="comps">
+    <div class="comp inv"><b>06</b><span>Streak</span></div>
+    <div class="comp"><b>245</b><span>Bench e1RM</span></div>
+    <div class="comp hot"><b>9d</b><span>R·Delts</span></div>
+  </div>
+  <a class="cta">Start tonight's session</a>
+  <div class="week">
+    <div class="day"><div class="orb f"></div>MON</div><div class="day"><div class="orb f"></div>TUE</div>
+    <div class="day"><div class="orb"></div>WED</div><div class="day"><div class="orb"></div>THU</div>
+    <div class="day"><div class="orb today"></div>FRI</div><div class="day"><div class="orb"></div>SAT</div>
+    <div class="day"><div class="orb"></div>SUN</div>
+  </div>
+  <div class="card"><h3>Muscle status · <i>live</i></h3><p>Chest is rested and ready. Rear delts waited 9 days — tonight's push day fixes both.</p></div>
+  <nav class="tabbar"><div class="tab on">◎<br>HOME</div><div class="tab">⚑<br>TRAIN</div><div class="plus">+</div><div class="tab">◮<br>PROGRESS</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+<section class="screen v26" id="v26">
+  <svg class="topo" width="100%" height="100%" viewBox="0 0 390 820" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="#1C1913" stroke-width="1.2"><path d="M-20 150 C 90 90 210 210 410 120"/><path d="M-20 195 C 95 130 220 250 410 165"/><path d="M-20 560 C 130 500 260 620 410 545"/><path d="M-20 615 C 140 550 270 670 410 600"/><path d="M-20 670 C 150 600 280 720 410 655"/></g></svg>
+  <div class="pad toprow">
+    <div><p class="micro">Friday · August 7</p><h1>Evening, Joshane</h1><p class="sub">Two sessions in. Two to go.</p></div>
+    <span class="streakpill">◆ 6 DAY</span>
+  </div>
+  <div class="dial">
+    <svg viewBox="0 0 280 280">
+      <defs><linearGradient id="g26" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E8FF57"/><stop offset=".6" stop-color="#FF5A3C"/><stop offset="1" stop-color="#FF9E2C"/></linearGradient></defs>
+      <g stroke="#E7D9B7" stroke-width="1.5" opacity=".55">
+        <line x1="140" y1="10" x2="140" y2="22"/><line x1="270" y1="140" x2="258" y2="140"/>
+        <line x1="140" y1="270" x2="140" y2="258"/><line x1="10" y1="140" x2="22" y2="140"/>
+        <line x1="232" y1="48" x2="224" y2="56"/><line x1="232" y1="232" x2="224" y2="224"/>
+        <line x1="48" y1="232" x2="56" y2="224"/><line x1="48" y1="48" x2="56" y2="56"/>
+      </g>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="rgba(231,217,183,.1)" stroke-width="13"/>
+      <circle cx="140" cy="140" r="116" fill="none" stroke="#E7D9B7" stroke-width="13" stroke-linecap="round" stroke-dasharray="729" stroke-dashoffset="365" transform="rotate(-90 140 140)"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="rgba(231,217,183,.08)" stroke-width="5"/>
+      <circle cx="140" cy="140" r="94" fill="none" stroke="url(#g26)" stroke-width="5" stroke-linecap="round" stroke-dasharray="590" stroke-dashoffset="230"/>
+      <circle cx="140" cy="24" r="4.5" fill="#E8FF57"/>
+    </svg>
+    <div class="core"><p class="big">24.5k</p><p class="lbl">LB · WEEKLY LOAD</p><p class="s2">SESSIONS 2/4 · VOLUME 61%</p></div>
+  </div>
+  <div class="comps">
+    <div class="comp inv"><b>06</b><span>Streak</span></div>
+    <div class="comp"><b>245</b><span>Bench e1RM</span></div>
+    <div class="comp hot"><b>9d</b><span>R·Delts</span></div>
+  </div>
+  <a class="cta">Start tonight's session</a>
+  <div class="week">
+    <div class="day"><div class="orb f"></div>MON</div><div class="day"><div class="orb f"></div>TUE</div>
+    <div class="day"><div class="orb"></div>WED</div><div class="day"><div class="orb"></div>THU</div>
+    <div class="day"><div class="orb today"></div>FRI</div><div class="day"><div class="orb"></div>SAT</div>
+    <div class="day"><div class="orb"></div>SUN</div>
+  </div>
+  <div class="card"><h3>Muscle status · <i>live</i></h3><p>Chest is rested and ready. Rear delts waited 9 days — tonight's push day fixes both.</p></div>
+  <nav class="tabbar"><div class="tab on">◎<br>HOME</div><div class="tab">⚑<br>TRAIN</div><div class="plus">+</div><div class="tab">◮<br>PROGRESS</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+<!-- V21 LUME -->
+<section class="screen v21" id="v21">
+  <div class="aur2"></div>
+  <div class="head"><p class="micro">FRIDAY 08 · 07</p><h1>JOSHANE · WK 32</h1></div>
+  <div class="dial">
+    <svg viewBox="0 0 300 300">
+      <defs><linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7EE7C4"/><stop offset=".6" stop-color="#BA9CFF"/><stop offset="1" stop-color="#FFB89C"/></linearGradient></defs>
+      <circle cx="150" cy="150" r="140" fill="none" stroke="#171A22" stroke-width="2"/>
+      <g stroke="#20242F" stroke-width="2">
+        <line x1="150" y1="14" x2="150" y2="26"/><line x1="286" y1="150" x2="274" y2="150"/>
+        <line x1="150" y1="286" x2="150" y2="274"/><line x1="14" y1="150" x2="26" y2="150"/>
+      </g>
+      <circle cx="150" cy="150" r="122" fill="none" stroke="#141721" stroke-width="14"/>
+      <circle cx="150" cy="150" r="122" fill="none" stroke="url(#lg1)" stroke-width="14" stroke-linecap="round" stroke-dasharray="766" stroke-dashoffset="383" transform="rotate(-90 150 150)"/>
+      <circle cx="150" cy="150" r="100" fill="none" stroke="#12151E" stroke-width="5"/>
+      <circle cx="150" cy="150" r="100" fill="none" stroke="#7EE7C4" stroke-width="5" stroke-linecap="round" stroke-dasharray="628" stroke-dashoffset="251" transform="rotate(-90 150 150)" opacity=".7"/>
+      <circle cx="150" cy="28" r="4" fill="#BA9CFF"/>
+    </svg>
+    <div class="core">
+      <p class="big">24.5k</p>
+      <p class="lbl">LB · WEEKLY LOAD</p>
+      <p class="sub2">SESSIONS 2/4 · VOLUME 61%</p>
+    </div>
+  </div>
+  <div class="comps">
+    <div class="comp"><b>06</b><span>Streak</span></div>
+    <div class="comp"><b>245</b><span>Bench</span></div>
+    <div class="comp"><b>9d</b><span>R·Delts</span></div>
+  </div>
+  <a class="cta">Start Session</a>
+  <div class="card"><b>Muscle glow</b><span>Chest bright · rear delts dim 9d</span></div>
+  <nav class="tabbar"><div class="tab on">◎<br>DIAL</div><div class="tab">✧<br>TRAIN</div><div class="plus">+</div><div class="tab">◭<br>LOG</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+<!-- V22 BASECAMP -->
+<section class="screen v22" id="v22">
+  <div class="pad">
+    <p class="micro">EXPEDITION · WEEK 32</p>
+    <h1>Camp II reached ☀️</h1>
+    <p class="sub">Summit in two sessions, Joshane.</p>
+  </div>
+  <div class="summit">
+    <p class="micro">ELEVATION GAINED</p>
+    <p class="alt">24,510<small> lb</small></p>
+    <div class="elev"><i style="height:42%" class="f"></i><i style="height:82%" class="f"></i><i style="height:100%" class="now"></i><i style="height:34%"></i><i style="height:56%"></i><i style="height:30%"></i><i style="height:64%"></i></div>
+    <p class="micro" style="letter-spacing:.14em">MON — SUN · TODAY'S CLIMB GLOWS</p>
+  </div>
+  <div class="duo">
+    <div><b>6d</b><span>Streak</span></div>
+    <div><b>245</b><span>Bench e1RM</span></div>
+    <div><b>2/4</b><span>Climbs</span></div>
+  </div>
+  <a class="cta">Start tonight's climb</a>
+  <div class="card"><h3>Route note · <i>chest ready</i></h3><p>Rear delts nine days idle — tonight's push day relights them.</p></div>
+  <nav class="tabbar"><div class="tab on">▲<br>Base</div><div class="tab">⚑<br>Climb</div><div class="plus">+</div><div class="tab">◮<br>Routes</div><div class="tab">✦<br>Guide</div></nav>
+</section>
+
+<!-- V23 PULSE -->
+<section class="screen v23" id="v23">
+  <svg class="cont2" width="100%" height="100%" viewBox="0 0 390 820" preserveAspectRatio="xMidYMid slice">
+    <g fill="none" stroke="#1E2822" stroke-width="1.2">
+      <path d="M-20 130 C 90 70 210 190 410 100"/>
+      <path d="M-20 175 C 95 110 220 235 410 145"/>
+      <path d="M-20 600 C 130 540 260 660 410 585"/>
+      <path d="M-20 650 C 140 585 270 705 410 635"/>
+    </g>
+  </svg>
+  <div class="head"><p class="micro">FRI 08 · 07 — EXPEDITION 32</p><h1>JOSHANE</h1></div>
+  <div class="dial">
+    <svg viewBox="0 0 290 290">
+      <circle cx="145" cy="145" r="135" fill="none" stroke="#1C2620" stroke-width="2"/>
+      <g stroke="#26332B" stroke-width="2">
+        <line x1="145" y1="12" x2="145" y2="24"/><line x1="278" y1="145" x2="266" y2="145"/>
+        <line x1="145" y1="278" x2="145" y2="266"/><line x1="12" y1="145" x2="24" y2="145"/>
+      </g>
+      <circle cx="145" cy="145" r="118" fill="none" stroke="#182119" stroke-width="13"/>
+      <circle cx="145" cy="145" r="118" fill="none" stroke="#E8FF57" stroke-width="13" stroke-linecap="round" stroke-dasharray="741" stroke-dashoffset="370" transform="rotate(-90 145 145)"/>
+      <circle cx="145" cy="27" r="4" fill="#E8FF57"/>
+    </svg>
+    <div class="core">
+      <p class="big">24.5k</p>
+      <p class="lbl">LB · ELEVATION</p>
+      <p class="sub2">CAMP 2 OF 4 · ON ROUTE</p>
+    </div>
+  </div>
+  <div class="elevrow"><i style="height:45%" class="f"></i><i style="height:80%" class="f"></i><i style="height:25%"></i><i style="height:55%"></i><i style="height:35%"></i><i style="height:60%"></i><i style="height:30%"></i></div>
+  <div class="comps">
+    <div class="comp"><b>06</b><span>Streak</span></div>
+    <div class="comp"><b>245</b><span>Bench</span></div>
+    <div class="comp"><b>9d</b><span>R·Delts</span></div>
+  </div>
+  <a class="cta">Start Climb</a>
+  <div class="card"><b>ROUTE NOTE</b><span>Push day · chest ready · delts cold</span></div>
+  <nav class="tabbar"><div class="tab on">◎<br>BASE</div><div class="tab">⚑<br>CLIMB</div><div class="plus">+</div><div class="tab">◭<br>ROUTES</div><div class="tab">✦<br>GUIDE</div></nav>
+</section>
+
+<!-- V24 SOFTLIGHT -->
+<section class="screen v24" id="v24">
+  <div class="aur3"></div>
+  <div class="pad" style="position:relative">
+    <p class="micro">Friday · August 7</p>
+    <h1>Morning, Joshane</h1>
+    <p class="sub">Two sessions in — your week is glowing.</p>
+  </div>
+  <div class="hero">
+    <div class="ring">
+      <svg width="96" height="96"><defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5BD6AC"/><stop offset=".55" stop-color="#9C7BFF"/><stop offset="1" stop-color="#FF9D7E"/></linearGradient></defs><circle cx="48" cy="48" r="41" fill="none" stroke="#F0EDE5" stroke-width="10"/><circle cx="48" cy="48" r="41" fill="none" stroke="url(#sg)" stroke-width="10" stroke-linecap="round" stroke-dasharray="258" stroke-dashoffset="129"/></svg>
+      <div class="num">2/4<small>SESSIONS</small></div>
+    </div>
+    <p class="hs"><b>24,510 lb</b> lifted this week<br><b>6-day</b> streak · bench <b>245 lb</b></p>
+  </div>
+  <a class="cta">Start today's session</a>
+  <div class="week">
+    <div class="day"><div class="orb2 f"></div>M</div><div class="day"><div class="orb2 f"></div>T</div>
+    <div class="day"><div class="orb2"></div>W</div><div class="day"><div class="orb2"></div>T</div>
+    <div class="day"><div class="orb2"></div>F</div><div class="day"><div class="orb2"></div>S</div>
+    <div class="day"><div class="orb2"></div>S</div>
+  </div>
+  <div class="card"><h3>Muscle glow · <i>live</i></h3><p>Chest is bright. Rear delts have dimmed for nine days — today can relight them.</p></div>
+  <div class="card"><h3>Coach's note</h3><p>Your bench moves when the first heavy set is unhurried. Give it room today.</p></div>
+  <nav class="tabbar"><div class="tab on">⌂<br>Home</div><div class="tab">✧<br>Train</div><div class="plus">+</div><div class="tab">◠<br>Progress</div><div class="tab">✦<br>Coach</div></nav>
+</section>
+
+
+<!-- V25 GLASSCORE -->
+<section class="screen v25" id="v25">
+  <div class="lights"><i class="l1"></i><i class="l2"></i><i class="l3"></i></div>
+  <div class="pad2">
+    <p class="micro">Friday · Aug 07 · Week 32</p>
+    <h1>Welcome back, Joshane</h1>
+    <div class="bento">
+      <div class="tile big">
+        <div class="ring">
+          <svg width="104" height="104"><defs><linearGradient id="gc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#815AFF"/></linearGradient></defs><circle cx="52" cy="52" r="44" fill="none" stroke="rgba(255,255,255,.09)" stroke-width="11"/><circle cx="52" cy="52" r="44" fill="none" stroke="url(#gc)" stroke-width="11" stroke-linecap="round" stroke-dasharray="276" stroke-dashoffset="138"/></svg>
+          <div class="num"><b>2/4</b><span>SESSIONS</span></div>
+        </div>
+        <p class="hs"><b>24,510 LB</b> this week<br><b>6-DAY</b> streak · bench <b>245 LB</b><br>On pace — 2 to go.</p>
+      </div>
+      <div class="tile"><p class="k">6</p><p class="lab">Day streak</p></div>
+      <div class="tile"><p class="k">245</p><p class="lab">Bench e1RM</p></div>
+      <div class="tile wide">
+        <p><b>Muscle glow:</b> chest bright · rear delts dim 9 days — tonight relights them.</p>
+        <div class="pulse"></div>
+      </div>
+    </div>
+  </div>
+  <a class="cta">Start tonight's session</a>
+  <nav class="tabbar"><div class="tab on">⌂<br>HOME</div><div class="tab">✧<br>TRAIN</div><div class="plus">+</div><div class="tab">◭<br>PROGRESS</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+<!-- V26 AMOLED ATHLETE -->
+<section class="screen v26" id="v26">
+  <div class="pad">
+    <p class="micro">FRIDAY 08.07 — WEEK 32</p>
+    <h1>Push day, <i>Joshane</i></h1>
+  </div>
+  <div class="hero2">
+    <svg width="280" height="280"><defs><linearGradient id="am" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF5C29"/><stop offset="1" stop-color="#FF2E63"/></linearGradient></defs>
+      <circle cx="140" cy="140" r="126" fill="none" stroke="#141414" stroke-width="16"/>
+      <circle cx="140" cy="140" r="126" fill="none" stroke="url(#am)" stroke-width="16" stroke-linecap="round" stroke-dasharray="792" stroke-dashoffset="396"/>
+    </svg>
+    <div class="core2">
+      <p class="big">24.5K</p>
+      <p class="un">LB · This Week</p>
+      <p class="st">2/4 SESSIONS · ON PACE</p>
+    </div>
+  </div>
+  <div class="duo">
+    <div class="hot"><b>6</b><span>Streak</span></div>
+    <div><b>245</b><span>Bench</span></div>
+    <div><b>48'</b><span>Tonight</span></div>
+  </div>
+  <a class="cta">Start Session</a>
+  <div class="strip"><span style="display:flex;align-items:center"><i class="dotp"></i><b>Rear delts</b></span><span>9 days cold — tonight fixes it</span></div>
+  <div class="strip"><b>Coach</b><span>"First heavy set stays crisp."</span></div>
+  <nav class="tabbar"><div class="tab on">▪<br>HOME</div><div class="tab">▪<br>TRAIN</div><div class="plus">+</div><div class="tab">▪<br>DATA</div><div class="tab">▪<br>COACH</div></nav>
+</section>
+
+<!-- V27 HALO -->
+<section class="screen v27" id="v27">
+  <div class="head"><p class="micro">FRIDAY 08 · 07</p><h1>Joshane · WK 32</h1></div>
+  <div class="well">
+    <svg width="240" height="240"><circle cx="120" cy="120" r="108" fill="none" stroke="#12151b" stroke-width="10"/><circle cx="120" cy="120" r="108" fill="none" stroke="#C6FF4D" stroke-width="10" stroke-linecap="round" stroke-dasharray="678" stroke-dashoffset="339" style="filter:drop-shadow(0 0 8px rgba(198,255,77,.5))"/></svg>
+    <div class="corein">
+      <p class="big">24.5k</p>
+      <p class="lbl">LB · WEEKLY LOAD</p>
+      <p class="sub2">2/4 · ON PACE</p>
+    </div>
+  </div>
+  <div class="pods">
+    <div class="pod"><b>06</b><span>Streak</span></div>
+    <div class="pod"><b>245</b><span>Bench</span></div>
+    <div class="pod"><b>9d</b><span>R·Delts</span></div>
+  </div>
+  <a class="cta">Start Session</a>
+  <div class="row2"><b>Muscle status</b><span>Chest ready · delts 9d cold</span></div>
+  <div class="row2"><b>Coach</b><span>"First heavy set stays crisp."</span></div>
+  <nav class="tabbar"><div class="tab on">◎<br>HOME</div><div class="tab">▣<br>TRAIN</div><div class="plus">+</div><div class="tab">◭<br>DATA</div><div class="tab">✦<br>COACH</div></nav>
+</section>
+
+
+<!-- v28 CREAM CORAL -->
+<section class="screen vcream a-coral" id="v28">
+  <div class="wrap">
+    <p class="micro">Friday — August 7 · Week 32</p>
+    <h1>Joshane Fernando</h1>
+    <div class="hero3">
+      <div>
+        <p class="num">24,<b>510</b></p>
+        <p class="unit">lb this week · <span class="acc" style="font-weight:600">on pace</span></p>
+      </div>
+      <div class="ring3">
+        <svg width="74" height="74"><circle cx="37" cy="37" r="32" fill="none" stroke="#E4DCC9" stroke-width="3"/><circle class="accst" cx="37" cy="37" r="32" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="100"/></svg>
+        <div class="rnum">2/4</div>
+      </div>
+    </div>
+    <div class="meta3">
+      <div><b>6</b><span>Day streak</span></div>
+      <div><b>245</b><span>Bench e1RM</span></div>
+      <div><b class="acc">9d</b><span>R. delts idle</span></div>
+    </div>
+    <div class="days3">
+      <span class="lab">This week</span>
+      <i class="d3 f acc"></i><i class="d3 f acc"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i>
+    </div>
+  </div>
+  <a class="cta3">Start today's session</a>
+  <div class="list3">
+    <div class="li3"><b>Muscle status</b><span>Chest rested · rear delts nine days quiet</span></div>
+    <div class="li3"><b>Coach</b><span>"Keep the first heavy set unhurried."</span></div>
+  </div>
+  <nav class="tabbar"><div class="tab on">Home</div><div class="tab">Train</div><div class="plus">+</div><div class="tab">Progress</div><div class="tab">Coach</div></nav>
+</section>
+
+<!-- v29 CREAM BRASS -->
+<section class="screen vcream a-brass" id="v29">
+  <div class="wrap">
+    <p class="micro">Friday — August 7 · Week 32</p>
+    <h1>Joshane Fernando</h1>
+    <div class="hero3">
+      <div>
+        <p class="num">24,<b>510</b></p>
+        <p class="unit">lb this week · <span class="acc" style="font-weight:600">on pace</span></p>
+      </div>
+      <div class="ring3">
+        <svg width="74" height="74"><circle cx="37" cy="37" r="32" fill="none" stroke="#E4DCC9" stroke-width="3"/><circle class="accst" cx="37" cy="37" r="32" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="100"/></svg>
+        <div class="rnum">2/4</div>
+      </div>
+    </div>
+    <div class="meta3">
+      <div><b>6</b><span>Day streak</span></div>
+      <div><b>245</b><span>Bench e1RM</span></div>
+      <div><b class="acc">9d</b><span>R. delts idle</span></div>
+    </div>
+    <div class="days3">
+      <span class="lab">This week</span>
+      <i class="d3 f acc"></i><i class="d3 f acc"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i>
+    </div>
+  </div>
+  <a class="cta3">Start today's session</a>
+  <div class="list3">
+    <div class="li3"><b>Muscle status</b><span>Chest rested · rear delts nine days quiet</span></div>
+    <div class="li3"><b>Coach</b><span>"Keep the first heavy set unhurried."</span></div>
+  </div>
+  <nav class="tabbar"><div class="tab on">Home</div><div class="tab">Train</div><div class="plus">+</div><div class="tab">Progress</div><div class="tab">Coach</div></nav>
+</section>
+
+<!-- v30 CREAM SAGE -->
+<section class="screen vcream a-sage" id="v30">
+  <div class="wrap">
+    <p class="micro">Friday — August 7 · Week 32</p>
+    <h1>Joshane Fernando</h1>
+    <div class="hero3">
+      <div>
+        <p class="num">24,<b>510</b></p>
+        <p class="unit">lb this week · <span class="acc" style="font-weight:600">on pace</span></p>
+      </div>
+      <div class="ring3">
+        <svg width="74" height="74"><circle cx="37" cy="37" r="32" fill="none" stroke="#E4DCC9" stroke-width="3"/><circle class="accst" cx="37" cy="37" r="32" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="100"/></svg>
+        <div class="rnum">2/4</div>
+      </div>
+    </div>
+    <div class="meta3">
+      <div><b>6</b><span>Day streak</span></div>
+      <div><b>245</b><span>Bench e1RM</span></div>
+      <div><b class="acc">9d</b><span>R. delts idle</span></div>
+    </div>
+    <div class="days3">
+      <span class="lab">This week</span>
+      <i class="d3 f acc"></i><i class="d3 f acc"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i>
+    </div>
+  </div>
+  <a class="cta3">Start today's session</a>
+  <div class="list3">
+    <div class="li3"><b>Muscle status</b><span>Chest rested · rear delts nine days quiet</span></div>
+    <div class="li3"><b>Coach</b><span>"Keep the first heavy set unhurried."</span></div>
+  </div>
+  <nav class="tabbar"><div class="tab on">Home</div><div class="tab">Train</div><div class="plus">+</div><div class="tab">Progress</div><div class="tab">Coach</div></nav>
+</section>
+
+
+<!-- v31 BEIGE CORAL -->
+<section class="screen vbeige b-coral" id="v31">
+  <div class="wrap">
+    <p class="micro">Friday — August 7 · Week 32</p>
+    <h1>Joshane Fernando</h1>
+    <div class="hero3">
+      <div>
+        <p class="num">24,<b>510</b></p>
+        <p class="unit">lb this week · <span class="acc" style="font-weight:600">on pace</span></p>
+      </div>
+      <div class="ring3">
+        <svg width="74" height="74"><circle cx="37" cy="37" r="32" fill="none" stroke="#CDBFA0" stroke-width="3"/><circle class="accst" cx="37" cy="37" r="32" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="100"/></svg>
+        <div class="rnum">2/4</div>
+      </div>
+    </div>
+    <div class="meta3">
+      <div><b>6</b><span>Day streak</span></div>
+      <div><b>245</b><span>Bench e1RM</span></div>
+      <div><b class="acc">9d</b><span>R. delts idle</span></div>
+    </div>
+    <div class="days3">
+      <span class="lab">This week</span>
+      <i class="d3 f acc"></i><i class="d3 f acc"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i>
+    </div>
+  </div>
+  <a class="cta3">Start today's session</a>
+  <div class="list3">
+    <div class="li3"><b>Muscle status</b><span>Chest rested · rear delts nine days quiet</span></div>
+    <div class="li3"><b>Coach</b><span>"Keep the first heavy set unhurried."</span></div>
+  </div>
+  <nav class="tabbar"><div class="tab on">Home</div><div class="tab">Train</div><div class="plus">+</div><div class="tab">Progress</div><div class="tab">Coach</div></nav>
+</section>
+
+<!-- v32 BEIGE ESPRESSO -->
+<section class="screen vbeige b-espresso" id="v32">
+  <div class="wrap">
+    <p class="micro">Friday — August 7 · Week 32</p>
+    <h1>Joshane Fernando</h1>
+    <div class="hero3">
+      <div>
+        <p class="num">24,<b>510</b></p>
+        <p class="unit">lb this week · <span class="acc" style="font-weight:600">on pace</span></p>
+      </div>
+      <div class="ring3">
+        <svg width="74" height="74"><circle cx="37" cy="37" r="32" fill="none" stroke="#CDBFA0" stroke-width="3"/><circle class="accst" cx="37" cy="37" r="32" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="100"/></svg>
+        <div class="rnum">2/4</div>
+      </div>
+    </div>
+    <div class="meta3">
+      <div><b>6</b><span>Day streak</span></div>
+      <div><b>245</b><span>Bench e1RM</span></div>
+      <div><b class="acc">9d</b><span>R. delts idle</span></div>
+    </div>
+    <div class="days3">
+      <span class="lab">This week</span>
+      <i class="d3 f acc"></i><i class="d3 f acc"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i>
+    </div>
+  </div>
+  <a class="cta3">Start today's session</a>
+  <div class="list3">
+    <div class="li3"><b>Muscle status</b><span>Chest rested · rear delts nine days quiet</span></div>
+    <div class="li3"><b>Coach</b><span>"Keep the first heavy set unhurried."</span></div>
+  </div>
+  <nav class="tabbar"><div class="tab on">Home</div><div class="tab">Train</div><div class="plus">+</div><div class="tab">Progress</div><div class="tab">Coach</div></nav>
+</section>
+
+<!-- v33 BEIGE OLIVE -->
+<section class="screen vbeige b-olive" id="v33">
+  <div class="wrap">
+    <p class="micro">Friday — August 7 · Week 32</p>
+    <h1>Joshane Fernando</h1>
+    <div class="hero3">
+      <div>
+        <p class="num">24,<b>510</b></p>
+        <p class="unit">lb this week · <span class="acc" style="font-weight:600">on pace</span></p>
+      </div>
+      <div class="ring3">
+        <svg width="74" height="74"><circle cx="37" cy="37" r="32" fill="none" stroke="#CDBFA0" stroke-width="3"/><circle class="accst" cx="37" cy="37" r="32" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="100"/></svg>
+        <div class="rnum">2/4</div>
+      </div>
+    </div>
+    <div class="meta3">
+      <div><b>6</b><span>Day streak</span></div>
+      <div><b>245</b><span>Bench e1RM</span></div>
+      <div><b class="acc">9d</b><span>R. delts idle</span></div>
+    </div>
+    <div class="days3">
+      <span class="lab">This week</span>
+      <i class="d3 f acc"></i><i class="d3 f acc"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i>
+    </div>
+  </div>
+  <a class="cta3">Start today's session</a>
+  <div class="list3">
+    <div class="li3"><b>Muscle status</b><span>Chest rested · rear delts nine days quiet</span></div>
+    <div class="li3"><b>Coach</b><span>"Keep the first heavy set unhurried."</span></div>
+  </div>
+  <nav class="tabbar"><div class="tab on">Home</div><div class="tab">Train</div><div class="plus">+</div><div class="tab">Progress</div><div class="tab">Coach</div></nav>
+</section>
+
+
+<!-- v34 FINAL LIGHT -->
+<section class="screen vfin vfl" id="v34">
+  <div class="wrap">
+    <p class="micro">Friday — August 7 · Week 32</p>
+    <h1>Morning, Joshane</h1>
+    <div class="hero3">
+      <div>
+        <p class="num">24,<b>510</b></p>
+        <p class="unit">lb this week · <span class="acc" style="font-weight:600">on pace</span></p>
+      </div>
+      <div class="ring3">
+        <svg width="74" height="74"><circle class="ringtrack" cx="37" cy="37" r="32" fill="none" stroke-width="3"/><circle class="accst" cx="37" cy="37" r="32" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="100"/></svg>
+        <div class="rnum">2/4</div>
+      </div>
+    </div>
+    <div class="meta3">
+      <div><b>6</b><span>Day streak</span></div>
+      <div><b>245</b><span>Bench e1RM</span></div>
+      <div><b class="acc">9d</b><span>R. delts idle</span></div>
+    </div>
+    <div class="days3">
+      <span class="lab">This week</span>
+      <i class="d3 f"></i><i class="d3 f"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i>
+    </div>
+  </div>
+  <a class="cta3">Start today's session</a>
+  <div class="list3">
+    <div class="li3"><b>Muscle status</b><span>Chest rested · rear delts nine days quiet</span></div>
+    <div class="li3"><b>Coach</b><span>"Keep the first heavy set unhurried."</span></div>
+  </div>
+  <nav class="tabbar"><div class="tab on">Home</div><div class="tab">Train</div><div class="plus">+</div><div class="tab">Progress</div><div class="tab">Coach</div></nav>
+</section>
+
+<!-- v35 FINAL DARK -->
+<section class="screen vfin vfd" id="v35">
+  <div class="wrap">
+    <p class="micro">Friday — August 7 · Week 32</p>
+    <h1>Evening, Joshane</h1>
+    <div class="hero3">
+      <div>
+        <p class="num">24,<b>510</b></p>
+        <p class="unit">lb this week · <span class="acc" style="font-weight:600">on pace</span></p>
+      </div>
+      <div class="ring3">
+        <svg width="74" height="74"><circle class="ringtrack" cx="37" cy="37" r="32" fill="none" stroke-width="3"/><circle class="accst" cx="37" cy="37" r="32" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="100"/></svg>
+        <div class="rnum">2/4</div>
+      </div>
+    </div>
+    <div class="meta3">
+      <div><b>6</b><span>Day streak</span></div>
+      <div><b>245</b><span>Bench e1RM</span></div>
+      <div><b class="acc">9d</b><span>R. delts idle</span></div>
+    </div>
+    <div class="days3">
+      <span class="lab">This week</span>
+      <i class="d3 f"></i><i class="d3 f"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i><i class="d3"></i>
+    </div>
+  </div>
+  <a class="cta3">Start today's session</a>
+  <div class="list3">
+    <div class="li3"><b>Muscle status</b><span>Chest rested · rear delts nine days quiet</span></div>
+    <div class="li3"><b>Coach</b><span>"Keep the first heavy set unhurried."</span></div>
+  </div>
+  <nav class="tabbar"><div class="tab on">Home</div><div class="tab">Train</div><div class="plus">+</div><div class="tab">Progress</div><div class="tab">Coach</div></nav>
+</section>
+
+<script>
+const v = new URLSearchParams(location.search).get('v') || '1';
+document.getElementById('v' + v).classList.add('on');
+</script>
+</body></html>

@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
+import { useUser } from "@/context/UserContext";
 import type { WorkoutExercise } from "@/data/liftosMock";
-import { useCallback, useEffect, useState } from "react";
+import { createContext, createElement, useCallback, useContext, useEffect, useState } from "react";
 
 export type SupabaseTemplate = {
   id: string;
@@ -9,7 +10,17 @@ export type SupabaseTemplate = {
   created_at: string;
 };
 
-export const useWorkoutTemplates = () => {
+type WorkoutTemplatesContextValue = {
+  templates: SupabaseTemplate[];
+  loading: boolean;
+  save: (template: { id: string | null; name: string; exercises: WorkoutExercise[] }) => Promise<void>;
+  remove: (id: string) => Promise<void>;
+};
+
+const WorkoutTemplatesContext = createContext<WorkoutTemplatesContextValue | null>(null);
+
+export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useUser();
   const [templates, setTemplates] = useState<SupabaseTemplate[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -23,12 +34,18 @@ export const useWorkoutTemplates = () => {
   }, []);
 
   useEffect(() => {
+    if (!user) {
+      setTemplates([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     load();
-  }, [load]);
+  }, [user, load]);
 
   const save = async (template: { id: string | null; name: string; exercises: WorkoutExercise[] }) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) return;
     if (template.id) {
       const { error } = await supabase
         .from("workout_templates")
@@ -38,7 +55,7 @@ export const useWorkoutTemplates = () => {
     } else {
       const { error } = await supabase
         .from("workout_templates")
-        .insert({ name: template.name, exercises: template.exercises, user_id: user.id });
+        .insert({ name: template.name, exercises: template.exercises, user_id: authUser.id });
       if (error) throw error;
     }
     await load();
@@ -49,5 +66,15 @@ export const useWorkoutTemplates = () => {
     setTemplates((prev) => prev.filter((t) => t.id !== id));
   };
 
-  return { templates, loading, save, remove };
+  return createElement(
+    WorkoutTemplatesContext.Provider,
+    { value: { templates, loading, save, remove } },
+    children,
+  );
+};
+
+export const useWorkoutTemplates = () => {
+  const ctx = useContext(WorkoutTemplatesContext);
+  if (!ctx) throw new Error("useWorkoutTemplates must be used within WorkoutTemplatesProvider");
+  return ctx;
 };

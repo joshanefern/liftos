@@ -1,5 +1,5 @@
 import AuthLayout from "@/pages/auth/AuthLayout";
-import { GoldButton } from "@/components/GoldButton";
+import { CTAButton } from "@/components/GoldButton";
 import { register } from "@/lib/auth";
 import { toast } from "@/components/ui/use-toast";
 import { AlertCircle, UserPlus } from "lucide-react";
@@ -9,9 +9,9 @@ import { Link, useNavigate } from "react-router-dom";
 type FieldErrors = { name?: string; email?: string; password?: string; form?: string };
 
 const FieldError = ({ message }: { message: string }) => (
-  <div className="flex items-start gap-2 rounded-[0.75rem] border border-red-500/20 bg-red-500/[0.07] px-3 py-2.5">
-    <AlertCircle size={13} className="mt-px shrink-0 text-red-400" />
-    <p className="text-xs text-red-300/90">{message}</p>
+  <div className="flex items-start gap-2 rounded-[0.75rem] border border-destructive/30 bg-destructive/[0.08] px-3 py-2.5">
+    <AlertCircle size={13} className="mt-px shrink-0 text-destructive" />
+    <p className="text-xs text-destructive">{message}</p>
   </div>
 );
 
@@ -35,8 +35,8 @@ const CreateAccount = () => {
 
   return (
     <AuthLayout eyebrow="Create Account" title="Set up a serious training workspace in minutes.">
-      <p className="label-xs mb-2">Create account</p>
-      <h2 className="heading-md mb-6">Join LiftOS</h2>
+      <p className="label-xs mb-1.5">Create account</p>
+      <h2 className="heading-md mb-5">Join LiftOS</h2>
       <form
         noValidate
         className="space-y-4"
@@ -67,11 +67,11 @@ const CreateAccount = () => {
       >
         <div className="space-y-1.5">
           <label className="block">
-            <span className="mb-2 block text-xs text-foreground/30">Name</span>
+            <span className="mb-2 block text-xs text-fg-muted">Name</span>
             <input
               value={name}
               onChange={(e) => { setName(e.target.value); setErrors((prev) => ({ ...prev, name: undefined })); }}
-              className={`h-12 w-full rounded-[1rem] border bg-white/[0.04] px-3 text-sm outline-none transition-colors ${errors.name ? "border-red-500/40 focus:border-red-500/60" : "border-white/8 focus:border-gold/50"}`}
+              className={`h-12 w-full rounded-[14px] border bg-background px-3 text-sm text-fg placeholder:text-fg-faint outline-none transition-colors ${errors.name ? "border-destructive/50 focus:border-destructive" : "border-border focus:border-primary"}`}
               placeholder="Josh"
             />
           </label>
@@ -80,12 +80,12 @@ const CreateAccount = () => {
 
         <div className="space-y-1.5">
           <label className="block">
-            <span className="mb-2 block text-xs text-foreground/30">Email</span>
+            <span className="mb-2 block text-xs text-fg-muted">Email</span>
             <input
               type="email"
               value={email}
               onChange={(e) => { setEmail(e.target.value); setErrors((prev) => ({ ...prev, email: undefined })); }}
-              className={`h-12 w-full rounded-[1rem] border bg-white/[0.04] px-3 text-sm outline-none transition-colors ${errors.email ? "border-red-500/40 focus:border-red-500/60" : "border-white/8 focus:border-gold/50"}`}
+              className={`h-12 w-full rounded-[14px] border bg-background px-3 text-sm text-fg placeholder:text-fg-faint outline-none transition-colors ${errors.email ? "border-destructive/50 focus:border-destructive" : "border-border focus:border-primary"}`}
               placeholder="you@example.com"
             />
           </label>
@@ -94,12 +94,12 @@ const CreateAccount = () => {
 
         <div className="space-y-1.5">
           <label className="block">
-            <span className="mb-2 block text-xs text-foreground/30">Password</span>
+            <span className="mb-2 block text-xs text-fg-muted">Password</span>
             <input
               type="password"
               value={password}
               onChange={(e) => { setPassword(e.target.value); setErrors((prev) => ({ ...prev, password: undefined })); }}
-              className={`h-12 w-full rounded-[1rem] border bg-white/[0.04] px-3 text-sm outline-none transition-colors ${errors.password ? "border-red-500/40 focus:border-red-500/60" : "border-white/8 focus:border-gold/50"}`}
+              className={`h-12 w-full rounded-[14px] border bg-background px-3 text-sm text-fg placeholder:text-fg-faint outline-none transition-colors ${errors.password ? "border-destructive/50 focus:border-destructive" : "border-border focus:border-primary"}`}
               placeholder="Create a password (8+ characters)"
             />
           </label>
@@ -108,12 +108,19 @@ const CreateAccount = () => {
 
         {errors.form && <FieldError message={errors.form} />}
 
-        <GoldButton type="submit" fullWidth disabled={isSubmitting}>
+        <CTAButton type="submit" fullWidth disabled={isSubmitting}>
           <UserPlus size={16} />
           {isSubmitting ? "Creating account..." : "Continue"}
-        </GoldButton>
+        </CTAButton>
+
+        <p className="text-center text-xs leading-5 text-fg-muted">
+          By creating an account you agree to the{" "}
+          <Link to="/terms" className="text-fg-soft transition-colors duration-200 hover:text-gold">Terms of Service</Link>{" "}
+          and{" "}
+          <Link to="/privacy" className="text-fg-soft transition-colors duration-200 hover:text-gold">Privacy Policy</Link>.
+        </p>
       </form>
-      <p className="mt-6 text-center text-sm text-foreground/50">
+      <p className="mt-5 text-center text-sm text-fg-muted">
         Already have an account?{" "}
         <Link to="/sign-in" className="text-gold hover:underline">Sign in</Link>
       </p>

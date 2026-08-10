@@ -1,36 +1,43 @@
 import { cn } from "@/lib/utils";
-import { Bot, User } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 type CoachMessageProps = {
   role: "assistant" | "user";
   content: string;
+  /** Renders a terracotta caret at the end of the text while tokens stream in. */
+  streaming?: boolean;
 };
 
-const CoachMessage = ({ role, content }: CoachMessageProps) => {
-  const isUser = role === "user";
+const CoachMessage = ({ role, content, streaming = false }: CoachMessageProps) => {
+  if (role === "user") {
+    return (
+      <div className="flex justify-end animate-fade-in">
+        <div className="max-w-[85%] rounded-[14px] rounded-br-[0.3rem] bg-secondary px-4 py-2.5 text-sm leading-6 text-fg md:max-w-[75%]">
+          {content}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={cn("flex gap-3", isUser && "justify-end")}>
-      {!isUser && (
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] border border-sky-300/20 bg-sky-300/10">
-          <Bot size={17} className="text-sky-300" />
-        </div>
-      )}
-      <div
+    <div className="w-full rule-hairline pt-4 animate-fade-in md:pt-5">
+      <div className="mb-2 flex items-center gap-2.5">
+        <Sparkles size={12} className="shrink-0 text-gold" />
+        <span className="eyebrow !text-[10px]">
+          LiftOS Coach
+        </span>
+      </div>
+      <p
         className={cn(
-          "max-w-[82%] rounded-[1rem] border px-4 py-3 text-sm leading-relaxed",
-          isUser
-            ? "border-sky-300/20 bg-sky-300/[0.08] text-foreground"
-            : "border-white/8 bg-white/[0.03] text-foreground/50",
+          "whitespace-pre-wrap text-sm leading-6 text-fg",
+          streaming && content.length === 0 && "min-h-[1.5rem]",
         )}
       >
         {content}
-      </div>
-      {isUser && (
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] border border-sky-300/20 bg-sky-300/10 text-sky-300">
-          <User size={17} />
-        </div>
-      )}
+        {streaming && (
+          <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-[3px] animate-pulse rounded-full bg-primary" />
+        )}
+      </p>
     </div>
   );
 };

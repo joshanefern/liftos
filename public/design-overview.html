@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>LiftOS — Pick a direction</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;box-sizing:border-box}
+body{background:#101014;font-family:Inter,sans-serif;color:#fff;padding:28px 20px 40px}
+h1{font-size:20px;font-weight:800;text-align:center;margin-bottom:4px}
+p.sub{text-align:center;color:#9a9aa5;font-size:13px;margin-bottom:26px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:26px;max-width:1180px;margin:0 auto}
+.opt{text-align:center}
+.opt h2{font-size:14px;font-weight:800;letter-spacing:.06em;margin-bottom:2px}
+.opt p{font-size:11.5px;color:#8a8a95;margin-bottom:12px}
+.frame{width:100%;aspect-ratio:390/780;border-radius:22px;overflow:hidden;border:1px solid #2a2a33;background:#000}
+.frame iframe{width:390px;height:780px;border:0;transform-origin:top left}
+</style></head>
+<body>
+<h1>Pick LiftOS's new look</h1>
+<p class="sub">Same dashboard, four directions — tell Claude which number wins (or what to mix).</p>
+<div class="grid">
+  <div class="opt"><h2>1 · PERFORMANCE LAB</h2><p>Volt on black · clinical · data-dense</p><div class="frame"><iframe src="/design-directions.html?v=1"></iframe></div></div>
+  <div class="opt"><h2>2 · DAYBREAK</h2><p>Warm light · coral · friendly energy</p><div class="frame"><iframe src="/design-directions.html?v=2"></iframe></div></div>
+  <div class="opt"><h2>3 · HEAVYWEIGHT</h2><p>Brutalist · bold borders · gym-poster loud</p><div class="frame"><iframe src="/design-directions.html?v=3"></iframe></div></div>
+  <div class="opt"><h2>4 · MIDNIGHT VOLT</h2><p>Electric blue-violet · glow · Nike-cyber</p><div class="frame"><iframe src="/design-directions.html?v=4"></iframe></div></div>
+</div>
+<script>
+// Scale each 390px iframe to its container width
+const fit = () => document.querySelectorAll('.frame').forEach(f => {
+  const s = f.clientWidth / 390;
+  f.querySelector('iframe').style.transform = `scale(${s})`;
+});
+addEventListener('resize', fit); fit();
+</script>
+</body></html>

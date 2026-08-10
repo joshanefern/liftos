@@ -1,23 +1,20 @@
-import {
-  BarChart3,
-  Brain,
-  CalendarCheck,
-  Dumbbell,
-  LineChart,
-  Target,
-} from "lucide-react";
+export type ExerciseKind = "weighted" | "bodyweight" | "cardio";
 
 export type WorkoutSet = {
   id: string;
-  reps: number;
-  weight: number;
+  reps?: number;
+  weight?: number;
+  duration_seconds?: number;
+  distance_m?: number;
   completed?: boolean;
   previous?: string;
+  isWarmup?: boolean;
 };
 
 export type WorkoutExercise = {
   id: string;
   name: string;
+  kind?: ExerciseKind;
   category: string;
   target: string;
   notes?: string;
@@ -246,43 +243,6 @@ export const consistencyData = [
   { day: "Sun", trained: 0, label: "Plan" },
 ];
 
-export const coachContextCards = [
-  { icon: Dumbbell, label: "Current split", value: "PPL + Upper/Lower" },
-  { icon: Target, label: "Primary goal", value: "Hypertrophy with strength" },
-  { icon: BarChart3, label: "This week", value: "5 workouts, 87 sets" },
-  { icon: LineChart, label: "Trend", value: "Bench is moving again" },
-];
-
-export const coachCapabilities = [
-  { icon: Brain, title: "Plan the next block", body: "Convert your split, equipment, and weekly time into a realistic microcycle." },
-  { icon: CalendarCheck, title: "Choose tomorrow's session", body: "Use recent workouts and muscle-group volume to suggest the next best training day." },
-  { icon: BarChart3, title: "Debug plateaus", body: "Compare lift trends, set counts, rep targets, and exercise selection." },
-];
-
-export const initialCoachMessages = [
-  {
-    role: "assistant" as const,
-    content:
-      "I reviewed your last 8 weeks. Your pressing volume is productive, but bench progress depends on keeping the first heavy set crisp and not turning every back-off set into a grinder.",
-  },
-  {
-    role: "user" as const,
-    content: "Why is my bench stalling?",
-  },
-  {
-    role: "assistant" as const,
-    content:
-      "Likely fatigue management. You hit 18 chest sets this week, which is enough for growth, but your top sets are happening after high-rep incline work twice per week. Move bench first on Push Strength, cap back-off sets at RPE 8, and keep triceps isolation after pressing. Try 3 weeks of 1 heavy top set plus 3 back-off sets before adding volume.",
-  },
-];
-
-export const coachPromptResponses: Record<string, string> = {
-  "build me a 4-day hypertrophy split":
-    "Run Upper / Lower / Rest / Push / Pull / Rest / Rest. Keep chest and back at 14-18 hard sets weekly, quads at 10-14, hamstrings at 8-12. Start each day with one measurable lift, then use stable machines or dumbbells for high-quality volume.",
-  "what should I train tomorrow?":
-    "Train Pull tomorrow. Your chest and triceps were hit today, legs were trained two days ago, and back volume is slightly under target. Start with weighted pull-ups, then rows, pulldowns, rear delts, and curls.",
-  "why is my bench stalling?":
-    "Your bench trend is positive but noisy. The likely limiter is accumulating too much fatigue before heavy work. Bench first, reduce one accessory chest set for two weeks, and track bar speed or reps in reserve on your top set.",
-  "how much weekly volume should I do for chest?":
-    "Based on your intermediate status and current response, 14-18 hard chest sets per week is the sweet spot. Add volume only when performance and soreness are both stable for two straight weeks.",
-};
+// The mock coach dictionary, canned messages, and context cards that lived here
+// are gone — the Coach page now streams real replies from the coach Edge
+// Function, grounded in live training data (src/lib/coach.ts).

@@ -1,6 +1,9 @@
 import { supabase } from "@/lib/supabase";
+import { useUser } from "@/context/UserContext";
 import type { WorkoutExercise } from "@/data/liftosMock";
-import { useCallback, useEffect, useState } from "react";
+import { createContext, createElement, useCallback, useContext, useEffect, useState } from "react";
+
+export type WorkoutLogSource = "manual" | "review";
 
 export type WorkoutLog = {
   id: string;
@@ -14,12 +17,24 @@ export type WorkoutLog = {
   total_sets: number;
   completed_sets: number;
   total_volume: number;
+  source: WorkoutLogSource;
+  captured_session_id: string | null;
   created_at: string;
 };
 
 export type NewWorkoutLog = Omit<WorkoutLog, "id" | "created_at">;
 
-export const useWorkoutLogs = () => {
+type WorkoutLogsContextValue = {
+  logs: WorkoutLog[];
+  loading: boolean;
+  save: (log: NewWorkoutLog) => Promise<WorkoutLog | null>;
+  reload: () => Promise<void>;
+};
+
+const WorkoutLogsContext = createContext<WorkoutLogsContextValue | null>(null);
+
+export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useUser();
   const [logs, setLogs] = useState<WorkoutLog[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -34,15 +49,21 @@ export const useWorkoutLogs = () => {
   }, []);
 
   useEffect(() => {
+    if (!user) {
+      setLogs([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     load();
-  }, [load]);
+  }, [user, load]);
 
   const save = async (log: NewWorkoutLog) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) return null;
     const { data, error } = await supabase
       .from("workout_logs")
-      .insert({ ...log, user_id: user.id })
+      .insert({ ...log, user_id: authUser.id })
       .select()
       .single();
     if (error) throw error;
@@ -50,5 +71,15 @@ export const useWorkoutLogs = () => {
     return data as WorkoutLog;
   };
 
-  return { logs, loading, save, reload: load };
+  return createElement(
+    WorkoutLogsContext.Provider,
+    { value: { logs, loading, save, reload: load } },
+    children,
+  );
+};
+
+export const useWorkoutLogs = () => {
+  const ctx = useContext(WorkoutLogsContext);
+  if (!ctx) throw new Error("useWorkoutLogs must be used within WorkoutLogsProvider");
+  return ctx;
 };
