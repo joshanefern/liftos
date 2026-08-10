@@ -94,7 +94,7 @@
     --secondary-foreground: 220 15% 75%;
 
     --muted: 220 37% 12%;
-    --muted-foreground: 220 12% 54%; /* #7D8698 */
+    --muted-foreground: 220 14% 66%; /* #9AA3B5 — ≥4.5:1 on slate cards */
 
     --accent: 345 100% 68%;
     --accent-foreground: 342 62% 10%;
@@ -107,7 +107,7 @@
     --ring: 345 100% 68%;
 
     --sidebar-background: 220 41% 7%;
-    --sidebar-foreground: 220 12% 54%;
+    --sidebar-foreground: 220 14% 66%;
     --sidebar-primary: 345 100% 68%;
     --sidebar-primary-foreground: 342 62% 10%;
     --sidebar-accent: 219 30% 13%;
@@ -122,8 +122,8 @@
     --surface-2: 219 29% 16%;
     --surface-3: 219 27% 19%;
     --text-primary: 220 33% 93%;
-    --text-secondary: 220 14% 63%;
-    --text-tertiary: 220 12% 54%;
+    --text-secondary: 220 16% 74%;
+    --text-tertiary: 220 14% 66%;
     --chart-line: 345 100% 68%;
     --success: 142 45% 55%;
     --warning: 38 90% 55%;

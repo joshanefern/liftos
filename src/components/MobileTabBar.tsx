@@ -24,7 +24,9 @@ const MobileTabBar = () => {
             <NavLink
               key={tab.url}
               to={tab.url}
-              className="flex flex-col items-center justify-center"
+              // flex-1 like its siblings — without it the circle owns no
+              // column and crowds Workouts/Progress.
+              className="flex flex-1 flex-col items-center justify-center"
               activeClassName=""
             >
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-foreground text-background shadow-[0_2px_10px_hsl(var(--foreground)/0.2)] active:scale-95 transition-transform duration-150">
