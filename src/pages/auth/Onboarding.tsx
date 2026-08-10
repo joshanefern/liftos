@@ -2,6 +2,7 @@ import AuthLayout from "@/pages/auth/AuthLayout";
 import { ConnectStravaButton } from "@/components/ConnectStravaButton";
 import { CTAButton } from "@/components/GoldButton";
 import { connectHealthKit, healthKitSupported } from "@/lib/healthkit";
+import { useUser } from "@/context/UserContext";
 import { supabase } from "@/lib/supabase";
 import { Check, ChevronRight, Heart } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -44,6 +45,7 @@ const steps = [
 
 const Onboarding = () => {
   const navigate = useNavigate();
+  const { refreshProfile } = useUser();
   const [index, setIndex] = useState(0);
   const [hkConnecting, setHkConnecting] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({
@@ -149,6 +151,9 @@ const Onboarding = () => {
                 setHkConnecting(true);
                 try {
                   const result = await connectHealthKit();
+                  // Pull the fresh healthkit_connected flag so the observer
+                  // (useHealthKitAutoSync) starts this session, not next boot.
+                  await refreshProfile();
                   toast({
                     title:
                       result.inserted > 0

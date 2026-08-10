@@ -292,20 +292,22 @@ const Dashboard = () => {
     }
   };
 
-  // QA gesture: 5 taps on the row inside 6s seeds a fake workout into the
-  // local Health store (native method exists only in debug builds — a release
-  // user can't trigger anything but a harmless failed-sync toast).
+  // QA gesture: 5 taps on the row inside 6s seeds a fake workout. The
+  // NATIVE side is the gate (compiled only into simulator debug builds; the
+  // stub rejects everywhere else) — the JS can't use import.meta.env.DEV
+  // because the sim runs production-built JS. Release users who trip the
+  // gesture get silence, never a scary toast. Taps while busy don't count.
   const hkTapTimes = useRef<number[]>([]);
   const handleHealthKitRow = (): void => {
+    if (hkBusy) return;
     const now = Date.now();
     hkTapTimes.current = [...hkTapTimes.current.filter((t) => now - t < 6000), now];
     if (hkTapTimes.current.length >= 5) {
       hkTapTimes.current = [];
       debugSeedHealthKitWorkout()
         .then(() => toast({ title: "Seeded a test workout" }))
-        .catch((err: unknown) => {
-          const message = err instanceof Error ? err.message : "Seed unavailable";
-          toast({ title: "Seed failed", description: message, variant: "destructive" });
+        .catch(() => {
+          // Seed unavailable outside simulator debug builds — stay quiet.
         });
       return;
     }

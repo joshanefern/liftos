@@ -13,10 +13,12 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startObserving", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "debugSeedWorkout", returnType: CAPPluginReturnPromise),
     ]
 
     private let store = HKHealthStore()
+    private var observerQuery: HKObserverQuery?
 
     private static let iso: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -74,9 +76,12 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
             withStart: since, end: nil, options: .strictStartDate)
         let newestFirst = NSSortDescriptor(
             key: HKSampleSortIdentifierStartDate, ascending: false)
+        // No limit — the predicate already bounds the window, and a cap
+        // would silently drop the OLDEST in-window workouts forever for
+        // multi-source Health stores (Watch + Strava + Peloton all write).
         let query = HKSampleQuery(
             sampleType: .workoutType(), predicate: predicate,
-            limit: 100, sortDescriptors: [newestFirst]
+            limit: HKObjectQueryNoLimit, sortDescriptors: [newestFirst]
         ) { [weak self] _, samples, error in
             guard let self = self else { return }
             if let error = error {
@@ -91,6 +96,44 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
         store.execute(query)
+    }
+
+    /// Registers an HKObserverQuery on workouts and enables background
+    /// delivery. Fires a "workoutsChanged" event to JS whenever the Health
+    /// store gains a workout — the JS side syncs and refreshes the pending
+    /// queue. Idempotent: a second call is a no-op.
+    @objc public func startObserving(_ call: CAPPluginCall) {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            call.reject("Health data is not available on this device")
+            return
+        }
+        if observerQuery != nil {
+            call.resolve()
+            return
+        }
+        let workoutType = HKObjectType.workoutType()
+        let query = HKObserverQuery(
+            sampleType: workoutType, predicate: nil
+        ) { [weak self] _, completionHandler, error in
+            if error == nil {
+                // Hop off HealthKit's anonymous queue — Capacitor's listener
+                // array is not synchronized against add/remove.
+                DispatchQueue.main.async {
+                    self?.notifyListeners("workoutsChanged", data: [:])
+                }
+            }
+            // Always call — skipping it makes HealthKit throttle deliveries.
+            completionHandler()
+        }
+        store.execute(query)
+        observerQuery = query
+        // Deliberately NO enableBackgroundDelivery: this observer only exists
+        // after the webview boots, so background launches (no UIScene, no JS)
+        // could never handle a wake — HealthKit would just throttle us for
+        // dropped deliveries. Capture is foreground-observed + caught up by
+        // the JS sync-on-mount. A true background path needs a native
+        // observer in didFinishLaunching + native upload (future work).
+        call.resolve()
     }
 
     /// Serially attaches HR samples to each workout (30-day window keeps the
@@ -130,11 +173,19 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
             sampleType: hrType, predicate: predicate,
             limit: HKObjectQueryNoLimit, sortDescriptors: [oldestFirst]
         ) { _, samples, _ in
-            let out = ((samples as? [HKQuantitySample]) ?? []).map { sample in
-                [
-                    "t": sample.startDate.timeIntervalSince(workout.startDate),
+            // Downsample to ≥4s spacing — outdoor runs record ~1/s, which
+            // balloons a 3h session to ~500KB of JSONB; set detection was
+            // designed around the Watch's ~5s gym cadence anyway.
+            var out: [[String: Any]] = []
+            var lastT = -Double.greatestFiniteMagnitude
+            for sample in ((samples as? [HKQuantitySample]) ?? []) {
+                let t = sample.startDate.timeIntervalSince(workout.startDate)
+                if t - lastT < 4 { continue }
+                lastT = t
+                out.append([
+                    "t": t,
                     "bpm": sample.quantity.doubleValue(for: Self.bpmUnit),
-                ] as [String: Any]
+                ])
             }
             completion(out)
         }
@@ -162,10 +213,11 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
         ]
     }
 
-    #if DEBUG
-    /// Debug-only: writes a synthetic strength workout (with a set-shaped HR
-    /// trace) into the local Health store so the simulator can exercise the
-    /// full capture → pending review → confirm pipeline.
+    #if DEBUG && targetEnvironment(simulator)
+    /// Simulator debug builds only — never on a real device, where it would
+    /// pollute the user's actual Health store. Writes a synthetic strength
+    /// workout (set-shaped HR trace) so the sim can exercise the full
+    /// capture → pending review → confirm pipeline.
     @objc public func debugSeedWorkout(_ call: CAPPluginCall) {
         let minutes = call.getInt("minutes") ?? 40
         guard let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
@@ -201,8 +253,26 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
                     HKQuantitySample(type: hrType, quantity: quantity, start: t, end: t))
                 t += 5
             }
-            builder.add(samples) { _, _ in
-                builder.endCollection(withEnd: end) { _, _ in
+            builder.add(samples) { added, addError in
+                guard added else {
+                    // Typically HR write permission denied — surface it, a
+                    // silent success here would poison the QA pipeline.
+                    DispatchQueue.main.async {
+                        call.reject(
+                            "Seed failed adding HR: \(addError?.localizedDescription ?? "denied")")
+                    }
+                    builder.discardWorkout()
+                    return
+                }
+                builder.endCollection(withEnd: end) { ended, endError in
+                    guard ended else {
+                        DispatchQueue.main.async {
+                            call.reject(
+                                "Seed failed ending: \(endError?.localizedDescription ?? "end")")
+                        }
+                        builder.discardWorkout()
+                        return
+                    }
                     builder.finishWorkout { workout, error in
                         DispatchQueue.main.async {
                             if let workout = workout {

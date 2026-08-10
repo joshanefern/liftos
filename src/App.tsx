@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createContext, lazy, Suspense, useContext, useState } from "react";
 import { UserProvider } from "@/context/UserContext";
+import { HealthKitAutoSync } from "@/hooks/useHealthKitAutoSync";
 import { ThemeProvider } from "@/context/ThemeContext";
 import {
   CapturedSessionsProvider,
@@ -107,6 +108,8 @@ const App = () => {
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        {/* Mount-once: HealthKit observer + catch-up sync (iOS native only). */}
+        <HealthKitAutoSync />
         <SidebarContext.Provider value={{ collapsed, setCollapsed }}>
           <BrowserRouter>
             <Suspense fallback={<BootSplash />}>

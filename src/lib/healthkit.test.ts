@@ -3,6 +3,7 @@ import { inferReviewMode } from "@/context/CapturedSessionsProvider";
 import {
   activityTypeFromHK,
   healthKitWorkoutToRow,
+  isSettled,
   type HealthKitWorkout,
 } from "./healthkit";
 
@@ -40,6 +41,18 @@ describe("activityTypeFromHK", () => {
   it("unknown types fall back to the generic Workout bucket", () => {
     expect(activityTypeFromHK(6)).toBe("Workout"); // basketball
     expect(activityTypeFromHK(3000)).toBe("Workout"); // other
+  });
+});
+
+describe("isSettled", () => {
+  const endedAt = new Date("2026-08-09T17:00:00Z").getTime();
+
+  it("holds back workouts that ended under two minutes ago (HR still syncing from the Watch)", () => {
+    expect(isSettled(workout(), endedAt + 60_000)).toBe(false);
+  });
+
+  it("admits workouts once the settle window has passed", () => {
+    expect(isSettled(workout(), endedAt + 3 * 60_000)).toBe(true);
   });
 });
 

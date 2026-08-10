@@ -221,7 +221,7 @@ serve(async (req) => {
           },
           review_status: "pending",
         },
-        { onConflict: "provider,external_id" },
+        { onConflict: "user_id,provider,external_id" },
       );
     if (!upsertErr) inserted++;
   }

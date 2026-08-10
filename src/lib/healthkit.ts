@@ -1,4 +1,8 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import {
+  Capacitor,
+  registerPlugin,
+  type PluginListenerHandle,
+} from "@capacitor/core";
 import type { HRSample, SessionAggregates } from "@/lib/capture/types";
 import { supabase } from "@/lib/supabase";
 
@@ -33,6 +37,12 @@ type HealthKitPluginIface = {
       queries come back empty. */
   requestAuthorization(): Promise<void>;
   queryWorkouts(options: { sinceISO: string }): Promise<{ workouts: HealthKitWorkout[] }>;
+  /** Registers the HKObserverQuery + background delivery; idempotent. */
+  startObserving(): Promise<void>;
+  addListener(
+    eventName: "workoutsChanged",
+    listener: () => void,
+  ): Promise<PluginListenerHandle>;
   /** Debug builds only — writes a synthetic strength workout to the local
       Health store; rejects in release builds. */
   debugSeedWorkout(options: { minutes?: number }): Promise<{ uuid: string }>;
@@ -128,10 +138,24 @@ export const healthKitWorkoutToRow = (
   };
 };
 
-/* Always look back 30 days and let the (provider, external_id) unique key
-   dedupe — a watermark would silently miss workouts that reach the iPhone's
-   Health store late (Watch syncs can lag by hours). ~60 rows max, trivial. */
+/* Always look back 30 days and let the (user_id, provider, external_id)
+   unique key dedupe — a watermark would silently miss workouts that reach
+   the iPhone's Health store late (Watch syncs can lag by hours). The native
+   query is unbounded within the window (multi-source Health stores can
+   exceed 100 rows), so nothing is silently truncated. */
 const LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+
+/* A workout's heart-rate series routinely lands seconds-to-minutes AFTER
+   the workout sample itself (separate HKQuantitySamples syncing from the
+   Watch). Importing instantly would freeze a partial (or empty) HR trace
+   into the row forever — so freshly-ended workouts wait one settle window
+   and import on the next observer fire / sync-on-mount instead. */
+const SETTLE_MS = 2 * 60 * 1000;
+
+/** Pure, for tests: a workout is importable once its end is comfortably in
+    the past. */
+export const isSettled = (workout: HealthKitWorkout, nowMs: number): boolean =>
+  nowMs - new Date(workout.endDate).getTime() >= SETTLE_MS;
 
 /** Pull recent HealthKit workouts into captured_sessions. Mirrors
     fetchStravaActivities' return shape so the Dashboard toast code is shared. */
@@ -144,18 +168,66 @@ export const fetchHealthKitWorkouts = async (): Promise<{
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Sign in to sync Apple Health");
 
-  const sinceISO = new Date(Date.now() - LOOKBACK_MS).toISOString();
+  const now = Date.now();
+  const sinceISO = new Date(now - LOOKBACK_MS).toISOString();
   const { workouts } = await HealthKit.queryWorkouts({ sinceISO });
-  if (workouts.length === 0) return { inserted: 0, total_seen: 0 };
+  const settled = workouts.filter((w) => isSettled(w, now));
+  if (settled.length === 0) return { inserted: 0, total_seen: workouts.length };
 
-  const rows = workouts.map((w) => healthKitWorkoutToRow(w, user.id));
+  const rows = settled.map((w) => healthKitWorkoutToRow(w, user.id));
   // DO NOTHING on conflict → the returned rows are exactly the new ones.
   const { data, error } = await supabase
     .from("captured_sessions")
-    .upsert(rows, { onConflict: "provider,external_id", ignoreDuplicates: true })
+    .upsert(rows, { onConflict: "user_id,provider,external_id", ignoreDuplicates: true })
     .select("id");
   if (error) throw error;
+
+  await repairMissingHeartRate(settled);
+
   return { inserted: data?.length ?? 0, total_seen: workouts.length };
+};
+
+/* The settle window covers the common case, but a row can still have been
+   imported before its HR series finished syncing (long Watch lag, or a sync
+   that ran mid-transfer). Insert-once means it would stay wrong forever —
+   so every sync also repairs its own pending HealthKit rows that lack HR
+   whenever the fresh query now carries samples for them. */
+const repairMissingHeartRate = async (workouts: HealthKitWorkout[]): Promise<void> => {
+  const withHR = new Map(
+    workouts.filter((w) => w.hr_samples.length > 0).map((w) => [w.uuid, w]),
+  );
+  if (withHR.size === 0) return;
+
+  const { data: stale } = await supabase
+    .from("captured_sessions")
+    .select("id, external_id")
+    .eq("provider", "healthkit")
+    .eq("review_status", "pending")
+    .is("hr_samples", null)
+    .in("external_id", [...withHR.keys()]);
+  if (!stale || stale.length === 0) return;
+
+  for (const row of stale) {
+    const workout = withHR.get(row.external_id);
+    if (!workout) continue;
+    const fresh = healthKitWorkoutToRow(workout, "");
+    await supabase
+      .from("captured_sessions")
+      .update({ hr_samples: fresh.hr_samples, aggregates: fresh.aggregates })
+      .eq("id", row.id);
+  }
+};
+
+/** Subscribe to Health-store workout changes and start the native observer.
+    Returns the listener handle (remove() to stop listening; the native
+    observer itself stays registered — it's idempotent and harmless). */
+export const startHealthKitObserver = async (
+  onWorkoutsChanged: () => void,
+): Promise<PluginListenerHandle | null> => {
+  if (!healthKitSupported()) return null;
+  const handle = await HealthKit.addListener("workoutsChanged", onWorkoutsChanged);
+  await HealthKit.startObserving();
+  return handle;
 };
 
 /** QA hook (5-tap gesture on the Dashboard row): seed the local Health store
@@ -180,11 +252,13 @@ export const connectHealthKit = async (): Promise<{
     data: { user },
   } = await supabase.auth.getUser();
   if (user) {
-    // Client-side own-row update — same RLS path Onboarding's profile upsert uses.
-    await supabase
+    // Upsert, not update: a user who abandoned onboarding has no profiles
+    // row yet, and an UPDATE would match zero rows "successfully" — leaving
+    // auto-sync permanently unarmed. Throw so the connect toast is honest.
+    const { error } = await supabase
       .from("profiles")
-      .update({ healthkit_connected: true })
-      .eq("id", user.id);
+      .upsert({ id: user.id, healthkit_connected: true });
+    if (error) throw new Error(`Could not save the connection: ${error.message}`);
   }
 
   return fetchHealthKitWorkouts();
