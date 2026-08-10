@@ -22,7 +22,7 @@ export const DotMatrixMeter = ({ value, target, label, unit }: Props) => {
       aria-label={`${label}: ${Math.round(value).toLocaleString()} of ${Math.round(
         target,
       ).toLocaleString()} ${unit}`}
-      className="rounded-[14px] bg-card px-4 py-3 shadow-[0_4px_12px_rgba(60,36,18,0.10)] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]"
+      className="rounded-[14px] bg-card px-4 py-3 shadow-[0_4px_12px_rgba(16,22,35,0.08)] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]"
     >
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-muted">

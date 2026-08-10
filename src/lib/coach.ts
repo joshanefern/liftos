@@ -145,12 +145,15 @@ const summarizeHRSession = (row: CapturedSessionRow): HRSessionSummary => {
 
 /**
  * Assemble the grounded stats object the coach sees. Pure function — pass in
- * the live data from useWorkoutLogs / useUser / useCapturedSessions.
+ * the live data from useWorkoutLogs / useUser / useCapturedSessions. The
+ * captured-sessions list is summary-only (no samples), so callers pass the
+ * provider's `hrDetailSessions` — the full rows for the newest ≤3 HR-bearing
+ * sessions — as `hrDetailSessions` here.
  */
 export const buildCoachContext = (
   logs: WorkoutLog[],
   profile: UserProfile | null,
-  capturedSessions: CapturedSessionRow[] = [],
+  hrDetailSessions: CapturedSessionRow[] = [],
   todaySuggestion: TodaySuggestion | null = null,
 ): CoachContext => {
   const weekStats = getWeekStats(logs);
@@ -158,7 +161,9 @@ export const buildCoachContext = (
   const activation = getMuscleActivation(logs, 7);
   const daysSince = getDaysSincePerMuscle(logs);
 
-  const hrSessions = capturedSessions
+  // Defensive re-narrow: the provider already selects newest ≤3 HR-bearing
+  // rows, but this keeps the function honest for any caller.
+  const hrSessions = hrDetailSessions
     .filter((s) => s.hr_samples && s.hr_samples.length > 0)
     .slice(0, 3)
     .map(summarizeHRSession);

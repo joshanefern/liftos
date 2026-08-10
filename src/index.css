@@ -5,71 +5,72 @@
 @tailwind utilities;
 
 /* ════════════════════════════════════════════════════════════════
- * LIFTOS theme — champagne & espresso
+ * LIFTOS theme — porcelain & slate, raspberry accent
  *
- * Light: Josh's champagne swatch (#FAE7D3) as the canvas, ink
- * typography (#241C14), hairline structure (#E3CBAD), terracotta
- * accent (#C8502E) doing the quiet talking.
- * Dark: the espresso sibling (#191410) — same warmth inverted, the
- * champagne becomes the text (#F6E7D5), terracotta glows one notch
- * brighter (#E06A40). No cold blues, no pure black.
+ * Light (Porcelain Editorial): cool porcelain canvas (#F4F5F7),
+ * white cards, ink typography (#17191E), hairlines (#E2E4E9),
+ * raspberry accent (#D9295C) doing the quiet talking.
+ * Dark (Slate): deep blue-slate (#0E1420), lifted slate cards
+ * (#18202E), porcelain text (#F2F4F8) — which also inverts into the
+ * hero panel — and raspberry a notch brighter (#FF5B85).
+ * The old champagne/espresso warmth is fully retired (2026-08-10).
  * ════════════════════════════════════════════════════════════════ */
 
 @layer base {
   :root {
     color-scheme: light;
 
-    --background: 31 80% 90%;        /* #FAE7D3 champagne */
-    --foreground: 30 29% 11%;        /* #241C14 ink */
+    --background: 220 16% 96%;       /* #F4F5F7 porcelain */
+    --foreground: 223 13% 10%;       /* #17191E ink */
 
-    --card: 33 82% 94%;              /* barely-lifted champagne */
-    --card-foreground: 30 29% 11%;
+    --card: 0 0% 100%;               /* white card on porcelain */
+    --card-foreground: 223 13% 10%;
 
-    --popover: 33 82% 94%;
-    --popover-foreground: 30 29% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 223 13% 10%;
 
-    --primary: 13 63% 48%;           /* #C8502E terracotta */
-    --primary-foreground: 31 80% 95%;
+    --primary: 343 70% 51%;          /* #D9295C raspberry */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 33 60% 84%;         /* soft champagne-deep chip */
-    --secondary-foreground: 33 25% 32%;
+    --secondary: 220 19% 92%;        /* soft porcelain-deep chip */
+    --secondary-foreground: 223 10% 35%;
 
-    --muted: 33 60% 84%;
-    --muted-foreground: 32 24% 55%;  /* #A98F72 */
+    --muted: 220 19% 92%;
+    --muted-foreground: 222 6% 55%;  /* #878B94 */
 
-    --accent: 13 63% 48%;
-    --accent-foreground: 31 80% 95%;
+    --accent: 343 70% 51%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 33 49% 78%;            /* #E3CBAD hairline */
-    --input: 33 49% 78%;
-    --ring: 13 63% 48%;
+    --border: 223 14% 90%;           /* #E2E4E9 hairline */
+    --input: 223 14% 90%;
+    --ring: 343 70% 51%;
 
     --radius: 0.875rem;
 
-    --sidebar-background: 33 75% 92%;
-    --sidebar-foreground: 32 24% 55%;
-    --sidebar-primary: 13 63% 48%;
-    --sidebar-primary-foreground: 31 80% 95%;
-    --sidebar-accent: 33 60% 86%;
-    --sidebar-accent-foreground: 30 29% 11%;
-    --sidebar-border: 33 49% 78%;
-    --sidebar-ring: 13 63% 48%;
+    --sidebar-background: 220 18% 94%;
+    --sidebar-foreground: 222 6% 55%;
+    --sidebar-primary: 343 70% 51%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 17% 90%;
+    --sidebar-accent-foreground: 223 13% 10%;
+    --sidebar-border: 223 14% 88%;
+    --sidebar-ring: 343 70% 51%;
 
     /* Semantic tokens — --gold kept as an alias for the accent so
-       legacy call sites read terracotta, never the old casino gold */
-    --gold: 13 63% 48%;
-    --gold-dim: 13 40% 38%;
-    --gold-glow: 13 63% 48%;
-    --surface-1: 33 78% 94%;
-    --surface-2: 33 70% 87%;
-    --surface-3: 33 55% 82%;
-    --text-primary: 30 29% 11%;
-    --text-secondary: 33 20% 47%;    /* #8F7A60 */
-    --text-tertiary: 32 24% 55%;     /* #A98F72 */
-    --chart-line: 13 63% 48%;
+       legacy call sites read raspberry, never the old casino gold */
+    --gold: 343 70% 51%;
+    --gold-dim: 343 45% 40%;
+    --gold-glow: 343 70% 51%;
+    --surface-1: 0 0% 100%;
+    --surface-2: 220 19% 94%;
+    --surface-3: 220 17% 90%;
+    --text-primary: 223 13% 10%;
+    --text-secondary: 222 8% 40%;
+    --text-tertiary: 222 6% 55%;
+    --chart-line: 343 70% 51%;
     --success: 142 45% 32%;
     --warning: 30 90% 40%;
   }
@@ -77,53 +78,53 @@
   .dark {
     color-scheme: dark;
 
-    --background: 27 22% 8%;         /* #191410 espresso */
-    --foreground: 33 65% 90%;        /* #F6E7D5 champagne text */
+    --background: 220 39% 9%;        /* #0E1420 slate */
+    --foreground: 220 30% 96%;       /* #F2F4F8 porcelain text (and hero) */
 
-    --card: 27 20% 11%;
-    --card-foreground: 33 65% 90%;
+    --card: 218 31% 14%;             /* #18202E lifted slate */
+    --card-foreground: 220 33% 93%;
 
-    --popover: 27 20% 11%;
-    --popover-foreground: 33 65% 90%;
+    --popover: 218 31% 14%;
+    --popover-foreground: 220 33% 93%;
 
-    --primary: 16 72% 56%;           /* #E06A40 terracotta, brighter */
-    --primary-foreground: 27 22% 8%;
+    --primary: 345 100% 68%;         /* #FF5B85 raspberry, brighter */
+    --primary-foreground: 342 62% 10%;
 
-    --secondary: 28 25% 14%;
-    --secondary-foreground: 33 30% 75%;
+    --secondary: 220 37% 12%;
+    --secondary-foreground: 220 15% 75%;
 
-    --muted: 28 25% 14%;
-    --muted-foreground: 31 18% 46%;  /* #8A7660 */
+    --muted: 220 37% 12%;
+    --muted-foreground: 220 12% 54%; /* #7D8698 */
 
-    --accent: 16 72% 56%;
-    --accent-foreground: 27 22% 8%;
+    --accent: 345 100% 68%;
+    --accent-foreground: 342 62% 10%;
 
     --destructive: 0 62% 52%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 29 28% 16%;            /* #35291E hairline */
-    --input: 29 28% 16%;
-    --ring: 16 72% 56%;
+    --border: 219 27% 19%;           /* #232C3D hairline */
+    --input: 219 27% 19%;
+    --ring: 345 100% 68%;
 
-    --sidebar-background: 27 25% 6%;
-    --sidebar-foreground: 31 18% 46%;
-    --sidebar-primary: 16 72% 56%;
-    --sidebar-primary-foreground: 27 22% 8%;
-    --sidebar-accent: 28 22% 13%;
-    --sidebar-accent-foreground: 33 65% 90%;
-    --sidebar-border: 29 28% 14%;
-    --sidebar-ring: 16 72% 56%;
+    --sidebar-background: 220 41% 7%;
+    --sidebar-foreground: 220 12% 54%;
+    --sidebar-primary: 345 100% 68%;
+    --sidebar-primary-foreground: 342 62% 10%;
+    --sidebar-accent: 219 30% 13%;
+    --sidebar-accent-foreground: 220 33% 93%;
+    --sidebar-border: 219 27% 16%;
+    --sidebar-ring: 345 100% 68%;
 
-    --gold: 16 72% 56%;
-    --gold-dim: 16 45% 40%;
-    --gold-glow: 16 72% 56%;
-    --surface-1: 27 20% 11%;
-    --surface-2: 28 22% 13%;
-    --surface-3: 29 24% 16%;
-    --text-primary: 33 65% 90%;
-    --text-secondary: 33 20% 53%;    /* #A08A70 */
-    --text-tertiary: 31 18% 46%;     /* #8A7660 */
-    --chart-line: 16 72% 56%;
+    --gold: 345 100% 68%;
+    --gold-dim: 345 55% 48%;
+    --gold-glow: 345 100% 68%;
+    --surface-1: 218 31% 14%;
+    --surface-2: 219 29% 16%;
+    --surface-3: 219 27% 19%;
+    --text-primary: 220 33% 93%;
+    --text-secondary: 220 14% 63%;
+    --text-tertiary: 220 12% 54%;
+    --chart-line: 345 100% 68%;
     --success: 142 45% 55%;
     --warning: 38 90% 55%;
   }
@@ -181,7 +182,7 @@
 }
 
 @layer utilities {
-  /* Accent — .text-gold et al. kept as aliases; they now read terracotta */
+  /* Accent — .text-gold et al. kept as aliases; they now read raspberry */
   .text-gold, .text-accent-warm {
     color: hsl(var(--gold));
   }
@@ -352,7 +353,7 @@
     );
   }
 
-  /* Legacy name — now the flat terracotta fill */
+  /* Legacy name — now the flat raspberry fill */
   .gradient-gold {
     background: hsl(var(--primary));
   }

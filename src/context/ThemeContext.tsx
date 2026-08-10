@@ -31,7 +31,7 @@ const readStoredPreference = (): ThemePreference => {
 };
 
 /* iOS status bar text must flip with the canvas: dark glyphs over
-   champagne, light glyphs over espresso. */
+   porcelain, light glyphs over slate. */
 const syncStatusBar = async (isDark: boolean) => {
   if (!Capacitor.isNativePlatform()) return;
   try {

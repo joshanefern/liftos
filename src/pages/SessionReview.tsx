@@ -41,6 +41,7 @@ import {
 } from "@/lib/review/draftStore";
 import { getMuscleActivation } from "@/lib/muscleMap";
 import { detectSessionPRs } from "@/lib/prs";
+import { supabase } from "@/lib/supabase";
 import { Activity, Dumbbell, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -85,10 +86,53 @@ const SessionReview = () => {
     useCapturedSessions();
   const { logs, loading: logsLoading, save: saveLog } = useWorkoutLogs();
 
-  const captured = useMemo<CapturedSessionRow | null>(
+  // The provider list carries light summaries only (no hr_samples /
+  // motion_samples / raw_payload) — the review screen needs the samples to run
+  // set detection, so it fetches the full row by id itself.
+  const capturedSummary = useMemo(
     () => sessions.find((s) => s.id === id) ?? null,
     [sessions, id],
   );
+  const [captured, setCaptured] = useState<CapturedSessionRow | null>(null);
+  const [capturedLoading, setCapturedLoading] = useState(true);
+
+  useEffect(() => {
+    if (!id) {
+      setCaptured(null);
+      setCapturedLoading(false);
+      return;
+    }
+    // Mock provider rows are full rows already — use them directly (there is
+    // no Supabase row behind them to fetch).
+    if (capturedSummary && "hr_samples" in capturedSummary) {
+      setCaptured(capturedSummary as CapturedSessionRow);
+      setCapturedLoading(false);
+      return;
+    }
+    // Until the list settles we can't tell a captured id from a log id.
+    if (sessionsLoading) return;
+    if (!capturedSummary) {
+      setCaptured(null);
+      setCapturedLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCapturedLoading(true);
+    supabase
+      .from("captured_sessions")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setCaptured((data as CapturedSessionRow | null) ?? null);
+        setCapturedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, capturedSummary, sessionsLoading]);
+
   const existingLog = useMemo<WorkoutLog | null>(
     () => logs.find((l) => l.id === id) ?? null,
     [logs, id],
@@ -309,7 +353,7 @@ const SessionReview = () => {
   };
 
   // ── render branches ────────────────────────────────────────
-  const loading = sessionsLoading || logsLoading;
+  const loading = sessionsLoading || logsLoading || capturedLoading;
 
   if (loading && !captured && !existingLog) {
     return <ReviewShell><ReviewSkeleton /></ReviewShell>;

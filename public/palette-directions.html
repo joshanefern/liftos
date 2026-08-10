@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LiftOS — palette directions</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "SF Pro Text", Inter, system-ui, sans-serif;
+    background: #0b0c0e; color: #e8e9eb; padding: 32px 28px 60px;
+  }
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+  p.sub { font-size: 12px; color: #9a9da3; margin: 4px 0 8px; }
+
+  .direction { margin-top: 44px; }
+  .direction > h2 { font-size: 17px; font-weight: 700; }
+  .direction > p { font-size: 12px; color: #8b8e95; margin: 3px 0 14px; max-width: 640px; }
+  .screens { display: flex; gap: 18px; flex-wrap: wrap; }
+  .shot h3 { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: #6f7379; margin-bottom: 6px; }
+
+  /* Every mock reads ONLY these tokens — exactly how the real app works. */
+  .phone {
+    width: 250px; min-height: 470px; border-radius: 22px; padding: 20px 15px;
+    background: var(--bg); color: var(--fg); position: relative; overflow: hidden;
+  }
+  .phone.short { min-height: 0; height: 210px; }
+
+  .eyebrow { font-size: 8.5px; font-weight: 600; letter-spacing: .17em; text-transform: uppercase; color: var(--fg-muted); }
+  .panel { background: var(--panel-bg); color: var(--panel-fg); border-radius: 15px; padding: 14px; margin-top: 12px; border: 1px solid var(--panel-border, transparent); box-shadow: var(--panel-shadow, none); }
+  .panel .label { font-size: 8.5px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; color: var(--accent); }
+  .badges { display: flex; gap: 6px; margin: 10px 0; }
+  .badge { width: 23px; height: 23px; border-radius: 50%; font-size: 9px; display: flex; align-items: center; justify-content: center; background: var(--panel-inset); color: var(--panel-fg-muted); }
+  .badge.hot { background: var(--accent); color: var(--accent-fg); }
+  .trio { display: flex; border-radius: 10px; padding: 9px 0; margin-bottom: 10px; background: var(--panel-inset); }
+  .trio div { flex: 1; text-align: center; }
+  .trio .n { font-size: 17px; font-weight: 200; }
+  .trio .u { font-size: 7px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; opacity: .55; }
+  .sentence { font-size: 10.5px; line-height: 1.45; margin-bottom: 12px; color: var(--panel-fg-soft); }
+  .cta { display: inline-block; border-radius: 999px; padding: 9px 16px; font-size: 11px; font-weight: 600; background: var(--cta-bg); color: var(--cta-fg); }
+  .row { border-radius: 11px; padding: 12px 13px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 600; background: var(--card); border: 1px solid var(--card-border, transparent); box-shadow: var(--card-shadow, none); }
+  .row .end { font-weight: 400; font-size: 10px; color: var(--fg-muted); }
+  .row .arrow { color: var(--accent); }
+
+  /* Logger screen */
+  .clock { font-size: 44px; font-weight: 150; letter-spacing: -0.02em; margin-top: 10px; }
+  .clock-sub { font-size: 9px; color: var(--fg-muted); margin: 2px 0 12px; }
+  .ex-card { background: var(--card); border: 1px solid var(--card-border, transparent); box-shadow: var(--card-shadow, none); border-radius: 13px; padding: 12px; margin-top: 10px; }
+  .ex-kicker { font-size: 8px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .ex-name { font-size: 14px; font-weight: 700; margin: 2px 0 1px; }
+  .ex-hint { font-size: 9.5px; color: var(--fg-muted); margin-bottom: 9px; }
+  .set { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
+  .set .num { font-size: 9px; color: var(--accent); width: 10px; }
+  .set .pill { flex: 1; background: var(--inset); border-radius: 8px; padding: 7px 10px; font-size: 11px; text-align: center; }
+  .set .check { width: 24px; height: 24px; border-radius: 50%; background: var(--inset); display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--fg-muted); }
+  .set.done .check { background: var(--accent); color: var(--accent-fg); }
+  .rest { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--card-border, transparent); box-shadow: var(--card-shadow, none); border-radius: 12px; padding: 10px 12px; margin-top: 12px; }
+  .ring { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--accent); display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; }
+  .rest .t { font-size: 8px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .rest .d { font-size: 9.5px; color: var(--fg-muted); }
+
+  /* Workouts list screen */
+  .big-cta { display: block; text-align: center; border-radius: 999px; padding: 12px; font-size: 12px; font-weight: 600; background: var(--cta-bg); color: var(--cta-fg); margin: 14px 0 6px; }
+  .list-h { font-size: 8.5px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; color: var(--fg-muted); margin: 14px 0 4px; }
+  .w-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 2px; border-bottom: 1px solid var(--hairline); }
+  .w-row .n { font-size: 12px; font-weight: 700; }
+  .w-row .m { font-size: 9.5px; color: var(--fg-muted); margin-top: 1px; }
+  .start { font-size: 10px; font-weight: 600; border: 1px solid var(--hairline); border-radius: 999px; padding: 6px 13px; color: var(--fg); }
+
+  .siblings { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .sib { width: 108px; border-radius: 10px; padding: 9px; font-size: 8px; }
+  .sib b { display: block; font-size: 9px; margin-bottom: 4px; }
+  .sib .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 3px; vertical-align: middle; }
+  .sib-note { font-size: 10px; color: #8b8e95; max-width: 200px; }
+
+  /* ── A · Slate & Ember ── */
+  .ta { --bg:#0e1420; --fg:#e7ebf3; --fg-muted:#7d8698; --card:#18202e; --card-shadow:0 4px 14px rgba(0,0,0,.35);
+        --inset:#101623; --hairline:#232c3d;
+        --panel-bg:#f2f4f8; --panel-fg:#101623; --panel-fg-soft:#3c4455; --panel-fg-muted:#6a7385;
+        --panel-inset:rgba(16,22,35,.07); --panel-shadow:0 8px 24px rgba(0,0,0,.45);
+        --accent:#ff6a3d; --accent-fg:#ffffff; --cta-bg:#101623; --cta-fg:#f2f4f8; }
+  /* ── B · Graphite & Volt ── */
+  .tb { --bg:#0c0d0f; --fg:#eceef0; --fg-muted:#7e8288; --card:#151719; --card-border:#232629;
+        --inset:#0c0d0f; --hairline:#232629;
+        --panel-bg:#151719; --panel-fg:#eceef0; --panel-fg-soft:#9ba0a7; --panel-fg-muted:#85898f;
+        --panel-inset:#0c0d0f; --panel-border:#232629;
+        --accent:#c6f135; --accent-fg:#131503; --cta-bg:#c6f135; --cta-fg:#131503; }
+  /* ── C · Porcelain Editorial ── */
+  .tc { --bg:#f4f5f7; --fg:#17191e; --fg-muted:#878b94; --card:#ffffff; --card-shadow:0 3px 10px rgba(23,25,30,.07);
+        --inset:#eceef2; --hairline:#e2e4e9;
+        --panel-bg:#17191e; --panel-fg:#f4f5f7; --panel-fg-soft:rgba(244,245,247,.65); --panel-fg-muted:#8d919a;
+        --panel-inset:rgba(244,245,247,.09); --panel-shadow:0 8px 24px rgba(23,25,30,.18);
+        --accent:#e8442e; --accent-fg:#ffffff; --cta-bg:#f4f5f7; --cta-fg:#17191e; }
+  .tc .cta { background:#17191e; color:#f4f5f7; }        /* on light bg, CTA is ink */
+  .tc .panel .cta { background:#f4f5f7; color:#17191e; } /* inside ink panel, CTA is porcelain */
+  .tc .big-cta { background:#17191e; color:#f4f5f7; }
+  /* ── D · Deep Forest ── */
+  .td { --bg:#0b120e; --fg:#eaede6; --fg-muted:#7c8a7e; --card:#131c16; --card-border:#1f2b22;
+        --inset:#0b120e; --hairline:#1f2b22;
+        --panel-bg:#131c16; --panel-fg:#eaede6; --panel-fg-soft:#a3ad9e; --panel-fg-muted:#85937f;
+        --panel-inset:#0b120e; --panel-border:#1f2b22;
+        --accent:#9fcb5b; --accent-fg:#10180a; --cta-bg:#eaede6; --cta-fg:#131c16; }
+</style>
+</head>
+<body>
+  <h1>LiftOS — palette directions, full previews</h1>
+  <p class="sub">Each direction: Dashboard · Live logger · Workouts, plus its light/dark sibling. Layout identical — only tokens change.</p>
+
+  <!-- template repeated per direction via identical markup -->
+  <div class="direction ta" id="A">
+    <h2>A · Slate &amp; Ember</h2>
+    <p>Cold blue-slate body, porcelain inverted hero, ember accent. Keeps the terracotta lineage and the hero-inversion signature — the closest evolution of today's language.</p>
+    <div class="screens">
+      <div class="shot"><h3>Dashboard</h3>
+        <div class="phone">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Live logger</h3>
+        <div class="phone">
+          <div class="eyebrow" style="color:var(--accent)">● Active session · Pull</div>
+          <div class="clock">12:57</div>
+          <div class="clock-sub">3 of 12 sets done</div>
+          <div class="ex-card">
+            <div class="ex-kicker">Pull</div>
+            <div class="ex-name">Barbell Row</div>
+            <div class="ex-hint">3 × 8 at 135 lb — add a rep before adding weight.</div>
+            <div class="set done"><span class="num">1</span><span class="pill">8 reps</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+            <div class="set done"><span class="num">2</span><span class="pill">8 reps</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+            <div class="set"><span class="num">3</span><span class="pill">8</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+          </div>
+          <div class="rest"><div class="ring">1:42</div><div><div class="t">Rest</div><div class="d">Next set when the ring closes.</div></div></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Workouts</h3>
+        <div class="phone">
+          <div class="eyebrow">Workouts</div>
+          <span class="big-cta">+ New workout</span>
+          <div class="list-h">Your workouts</div>
+          <div class="w-row"><div><div class="n">Push</div><div class="m">2 exercises · 6 sets</div></div><span class="start">Start</span></div>
+          <div class="w-row"><div><div class="n">Legs</div><div class="m">3 exercises · 6 sets</div></div><span class="start">Start</span></div>
+          <div class="list-h">Starter programs</div>
+          <div class="w-row"><div><div class="n">Bodyweight Foundations</div><div class="m">Full body · 30 min</div></div><span class="start">Start</span></div>
+          <div class="w-row"><div><div class="n">Pull Day</div><div class="m">PPL · 45 min</div></div><span class="start">Start</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="siblings">
+      <div class="sib" style="background:#f2f4f8;color:#101623"><b>Light sibling</b><span class="dot" style="background:#ffffff;border:1px solid #dfe3ea"></span><span class="dot" style="background:#101623"></span><span class="dot" style="background:#ff6a3d"></span> porcelain / ink / ember</div>
+      <div class="sib" style="background:#0e1420;color:#e7ebf3"><b>Dark (shown)</b><span class="dot" style="background:#18202e"></span><span class="dot" style="background:#f2f4f8"></span><span class="dot" style="background:#ff6a3d"></span> slate / porcelain / ember</div>
+      <div class="sib-note">Light mode = the hero panel's porcelain becomes the page, slate becomes the panel.</div>
+    </div>
+  </div>
+
+  <div class="direction tb" id="B">
+    <h2>B · Graphite &amp; Volt</h2>
+    <p>Carbon dark-first with hairline borders and a volt accent. Performance-tech: the CTA itself is volt, glow-adjacent without gradients.</p>
+    <div class="screens">
+      <div class="shot"><h3>Dashboard</h3>
+        <div class="phone">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Live logger</h3>
+        <div class="phone">
+          <div class="eyebrow" style="color:var(--accent)">● Active session · Pull</div>
+          <div class="clock">12:57</div>
+          <div class="clock-sub">3 of 12 sets done</div>
+          <div class="ex-card">
+            <div class="ex-kicker">Pull</div>
+            <div class="ex-name">Barbell Row</div>
+            <div class="ex-hint">3 × 8 at 135 lb — add a rep before adding weight.</div>
+            <div class="set done"><span class="num">1</span><span class="pill">8 reps</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+            <div class="set done"><span class="num">2</span><span class="pill">8 reps</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+            <div class="set"><span class="num">3</span><span class="pill">8</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+          </div>
+          <div class="rest"><div class="ring">1:42</div><div><div class="t">Rest</div><div class="d">Next set when the ring closes.</div></div></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Workouts</h3>
+        <div class="phone">
+          <div class="eyebrow">Workouts</div>
+          <span class="big-cta">+ New workout</span>
+          <div class="list-h">Your workouts</div>
+          <div class="w-row"><div><div class="n">Push</div><div class="m">2 exercises · 6 sets</div></div><span class="start">Start</span></div>
+          <div class="w-row"><div><div class="n">Legs</div><div class="m">3 exercises · 6 sets</div></div><span class="start">Start</span></div>
+          <div class="list-h">Starter programs</div>
+          <div class="w-row"><div><div class="n">Bodyweight Foundations</div><div class="m">Full body · 30 min</div></div><span class="start">Start</span></div>
+          <div class="w-row"><div><div class="n">Pull Day</div><div class="m">PPL · 45 min</div></div><span class="start">Start</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="siblings">
+      <div class="sib" style="background:#f5f6f7;color:#17191c"><b>Light sibling</b><span class="dot" style="background:#ffffff;border:1px solid #e0e2e5"></span><span class="dot" style="background:#17191c"></span><span class="dot" style="background:#98c412"></span> paper / carbon / volt-dim</div>
+      <div class="sib" style="background:#0c0d0f;color:#eceef0"><b>Dark (shown)</b><span class="dot" style="background:#151719"></span><span class="dot" style="background:#eceef0"></span><span class="dot" style="background:#c6f135"></span> carbon / white / volt</div>
+      <div class="sib-note">Volt dims one step in light mode so it keeps contrast on paper.</div>
+    </div>
+  </div>
+
+  <div class="direction tc" id="C">
+    <h2>C · Porcelain Editorial</h2>
+    <p>Cool light-first: white cards on porcelain, ink hero, one vermilion accent. The calm editorial read — dark sibling is straight graphite.</p>
+    <div class="screens">
+      <div class="shot"><h3>Dashboard</h3>
+        <div class="phone">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Live logger</h3>
+        <div class="phone">
+          <div class="eyebrow" style="color:var(--accent)">● Active session · Pull</div>
+          <div class="clock">12:57</div>
+          <div class="clock-sub">3 of 12 sets done</div>
+          <div class="ex-card">
+            <div class="ex-kicker">Pull</div>
+            <div class="ex-name">Barbell Row</div>
+            <div class="ex-hint">3 × 8 at 135 lb — add a rep before adding weight.</div>
+            <div class="set done"><span class="num">1</span><span class="pill">8 reps</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+            <div class="set done"><span class="num">2</span><span class="pill">8 reps</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+            <div class="set"><span class="num">3</span><span class="pill">8</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+          </div>
+          <div class="rest"><div class="ring">1:42</div><div><div class="t">Rest</div><div class="d">Next set when the ring closes.</div></div></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Workouts</h3>
+        <div class="phone">
+          <div class="eyebrow">Workouts</div>
+          <span class="big-cta">+ New workout</span>
+          <div class="list-h">Your workouts</div>
+          <div class="w-row"><div><div class="n">Push</div><div class="m">2 exercises · 6 sets</div></div><span class="start">Start</span></div>
+          <div class="w-row"><div><div class="n">Legs</div><div class="m">3 exercises · 6 sets</div></div><span class="start">Start</span></div>
+          <div class="list-h">Starter programs</div>
+          <div class="w-row"><div><div class="n">Bodyweight Foundations</div><div class="m">Full body · 30 min</div></div><span class="start">Start</span></div>
+          <div class="w-row"><div><div class="n">Pull Day</div><div class="m">PPL · 45 min</div></div><span class="start">Start</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="siblings">
+      <div class="sib" style="background:#f4f5f7;color:#17191e"><b>Light (shown)</b><span class="dot" style="background:#ffffff;border:1px solid #e2e4e9"></span><span class="dot" style="background:#17191e"></span><span class="dot" style="background:#e8442e"></span> porcelain / ink / vermilion</div>
+      <div class="sib" style="background:#101114;color:#eceef0"><b>Dark sibling</b><span class="dot" style="background:#1a1c20"></span><span class="dot" style="background:#f4f5f7"></span><span class="dot" style="background:#ff5a43"></span> graphite / porcelain / vermilion</div>
+      <div class="sib-note">The inversion flips exactly like today: ink hero on porcelain by day, porcelain hero on graphite by night.</div>
+    </div>
+  </div>
+
+  <div class="direction td" id="D">
+    <h2>D · Deep Forest</h2>
+    <p>Green-black base, bone text, sage accent. Premium-outdoors; the biggest departure and the most ownable look of the four.</p>
+    <div class="screens">
+      <div class="shot"><h3>Dashboard</h3>
+        <div class="phone">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Live logger</h3>
+        <div class="phone">
+          <div class="eyebrow" style="color:var(--accent)">● Active session · Pull</div>
+          <div class="clock">12:57</div>
+          <div class="clock-sub">3 of 12 sets done</div>
+          <div class="ex-card">
+            <div class="ex-kicker">Pull</div>
+            <div class="ex-name">Barbell Row</div>
+            <div class="ex-hint">3 × 8 at 135 lb — add a rep before adding weight.</div>
+            <div class="set done"><span class="num">1</span><span class="pill">8 reps</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+            <div class="set done"><span class="num">2</span><span class="pill">8 reps</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+            <div class="set"><span class="num">3</span><span class="pill">8</span><span class="pill">135 lb</span><span class="check">✓</span></div>
+          </div>
+          <div class="rest"><div class="ring">1:42</div><div><div class="t">Rest</div><div class="d">Next set when the ring closes.</div></div></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Workouts</h3>
+        <div class="phone">
+          <div class="eyebrow">Workouts</div>
+          <span class="big-cta">+ New workout</span>
+          <div class="list-h">Your workouts</div>
+          <div class="w-row"><div><div class="n">Push</div><div class="m">2 exercises · 6 sets</div></div><span class="start">Start</span></div>
+          <div class="w-row"><div><div class="n">Legs</div><div class="m">3 exercises · 6 sets</div></div><span class="start">Start</span></div>
+          <div class="list-h">Starter programs</div>
+          <div class="w-row"><div><div class="n">Bodyweight Foundations</div><div class="m">Full body · 30 min</div></div><span class="start">Start</span></div>
+          <div class="w-row"><div><div class="n">Pull Day</div><div class="m">PPL · 45 min</div></div><span class="start">Start</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="siblings">
+      <div class="sib" style="background:#f2f4ee;color:#16211a"><b>Light sibling</b><span class="dot" style="background:#ffffff;border:1px solid #dfe4d8"></span><span class="dot" style="background:#16211a"></span><span class="dot" style="background:#5f8f22"></span> bone / forest-ink / moss</div>
+      <div class="sib" style="background:#0b120e;color:#eaede6"><b>Dark (shown)</b><span class="dot" style="background:#131c16"></span><span class="dot" style="background:#eaede6"></span><span class="dot" style="background:#9fcb5b"></span> forest / bone / sage</div>
+      <div class="sib-note">Sage deepens to moss in light mode for contrast on bone.</div>
+    </div>
+  </div>
+</body>
+</html>

@@ -30,8 +30,8 @@ export type ParsedFigure = {
 const BG_FLOOD_TOLERANCE = 14;
 const EDGE_ALPHA_DIST = 80;
 
-const LIGHT_HOT: [number, number, number] = [200, 80, 46]; // #C8502E
-const DARK_HOT: [number, number, number] = [224, 106, 64]; // #E06A40
+const LIGHT_HOT: [number, number, number] = [217, 41, 92]; // #D9295C raspberry
+const DARK_HOT: [number, number, number] = [255, 91, 133]; // #FF5B85 raspberry
 const DARK_SHADOW: [number, number, number] = [40, 30, 21];
 const DARK_HIGH: [number, number, number] = [186, 148, 116];
 

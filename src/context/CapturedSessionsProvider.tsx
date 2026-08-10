@@ -23,27 +23,46 @@ import {
 export type ReviewStatus = "pending" | "reviewed" | "dismissed";
 
 /**
- * Shape of a row in the `captured_sessions` table. JSONB columns are typed as
- * the in-memory shapes they were serialized from (validation is trust-based,
- * matching the convention of the existing data providers).
+ * Light list-row shape for `captured_sessions` — every column EXCEPT the heavy
+ * JSONB payloads (`hr_samples` / `motion_samples` / `raw_payload`), which can
+ * run ~100KB per HealthKit row. The provider's list query selects exactly
+ * these columns; anything needing the samples must fetch the full row by id
+ * (SessionReview) or read the provider's `hrDetailSessions`.
  */
-export type CapturedSessionRow = {
+export type CapturedSessionSummary = {
   id: string;
   user_id: string;
   provider: CaptureProvider;
   external_id: string;
   started_at: string;
   ended_at: string;
-  raw_payload: unknown;
-  hr_samples: HRSample[] | null;
-  motion_samples: MotionSample[] | null;
   aggregates: SessionAggregates;
   review_status: ReviewStatus;
   created_at: string;
 };
 
+/**
+ * Full row in the `captured_sessions` table. JSONB columns are typed as the
+ * in-memory shapes they were serialized from (validation is trust-based,
+ * matching the convention of the existing data providers). Only exists where
+ * a `select('*')` actually ran — the single-row SessionReview fetch, the
+ * provider's `hrDetailSessions`, and mock fixtures.
+ */
+export type CapturedSessionRow = CapturedSessionSummary & {
+  raw_payload: unknown;
+  hr_samples: HRSample[] | null;
+  motion_samples: MotionSample[] | null;
+};
+
 type CapturedSessionsContextValue = {
-  sessions: CapturedSessionRow[];
+  sessions: CapturedSessionSummary[];
+  /**
+   * Full rows (samples included) for the newest ≤3 sessions whose aggregates
+   * report heart rate — exactly what buildCoachContext summarizes. Loaded
+   * after the light list so the coach keeps its HR grounding without the list
+   * query shipping megabytes.
+   */
+  hrDetailSessions: CapturedSessionRow[];
   loading: boolean;
   pendingCount: number;
   refresh: () => Promise<void>;
@@ -53,6 +72,24 @@ type CapturedSessionsContextValue = {
 
 const CapturedSessionsContext =
   createContext<CapturedSessionsContextValue | null>(null);
+
+/** Exactly the CapturedSessionSummary columns — never the heavy JSONB. */
+const SUMMARY_COLUMNS =
+  "id, user_id, provider, external_id, started_at, ended_at, aggregates, review_status, created_at";
+
+/** Newest-first ordering shared by the merge and the mock provider. */
+const byStartedAtDesc = (
+  a: CapturedSessionSummary,
+  b: CapturedSessionSummary,
+): number => new Date(b.started_at).getTime() - new Date(a.started_at).getTime();
+
+/**
+ * The newest ≤3 sessions whose aggregates report heart rate — the set the
+ * coach context summarizes. Input must already be sorted newest-first.
+ */
+const hrDetailCandidates = <T extends CapturedSessionSummary>(
+  sorted: T[],
+): T[] => sorted.filter((s) => (s.aggregates?.avg_hr ?? 0) > 0).slice(0, 3);
 
 /**
  * Live provider — reads from Supabase, follows the same auth-gated reload
@@ -64,22 +101,62 @@ export const CapturedSessionsProvider = ({
   children: React.ReactNode;
 }) => {
   const { user } = useUser();
-  const [sessions, setSessions] = useState<CapturedSessionRow[]>([]);
+  const [sessions, setSessions] = useState<CapturedSessionSummary[]>([]);
+  const [hrDetailSessions, setHrDetailSessions] = useState<
+    CapturedSessionRow[]
+  >([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const { data } = await supabase
+    // Two light queries: recent history (bounded) plus ALL pending rows, so a
+    // review queue longer than the history window can never silently drop
+    // sessions. Both select summary columns only — HealthKit rows carry
+    // ~100KB of hr_samples each, which the old select('*') shipped on every
+    // app open.
+    const [recentRes, pendingRes] = await Promise.all([
+      supabase
+        .from("captured_sessions")
+        .select(SUMMARY_COLUMNS)
+        .order("started_at", { ascending: false })
+        .limit(100),
+      supabase
+        .from("captured_sessions")
+        .select(SUMMARY_COLUMNS)
+        .eq("review_status", "pending")
+        .order("started_at", { ascending: false })
+        .limit(1000),
+    ]);
+
+    const byId = new Map<string, CapturedSessionSummary>();
+    for (const row of [
+      ...((recentRes.data as unknown as CapturedSessionSummary[]) ?? []),
+      ...((pendingRes.data as unknown as CapturedSessionSummary[]) ?? []),
+    ]) {
+      byId.set(row.id, row);
+    }
+    const merged = [...byId.values()].sort(byStartedAtDesc);
+    setSessions(merged);
+    setLoading(false);
+
+    // Second phase: full rows (samples included) for the coach's HR context.
+    // Arrives after the list renders; consumers just re-derive when it lands.
+    const candidateIds = hrDetailCandidates(merged).map((s) => s.id);
+    if (candidateIds.length === 0) {
+      setHrDetailSessions([]);
+      return;
+    }
+    const { data: detail } = await supabase
       .from("captured_sessions")
       .select("*")
-      .order("started_at", { ascending: false })
-      .limit(100);
-    setSessions((data as CapturedSessionRow[]) ?? []);
-    setLoading(false);
+      .in("id", candidateIds)
+      .order("started_at", { ascending: false });
+    setHrDetailSessions((detail as CapturedSessionRow[]) ?? []);
   }, []);
 
   useEffect(() => {
     if (!user) {
       setSessions([]);
+      setHrDetailSessions([]);
       setLoading(false);
       return;
     }
@@ -96,6 +173,9 @@ export const CapturedSessionsProvider = ({
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, review_status: status } : s)),
     );
+    setHrDetailSessions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, review_status: status } : s)),
+    );
   };
 
   const pendingCount = useMemo(
@@ -105,6 +185,7 @@ export const CapturedSessionsProvider = ({
 
   const value: CapturedSessionsContextValue = {
     sessions,
+    hrDetailSessions,
     loading,
     pendingCount,
     refresh: load,
@@ -147,8 +228,16 @@ export const MockCapturedSessionsProvider = ({
     [sessions],
   );
 
+  // Mock rows are full rows already, so the "detail fetch" is a pure filter
+  // mirroring the live provider's selection rule.
+  const hrDetailSessions = useMemo(
+    () => hrDetailCandidates([...sessions].sort(byStartedAtDesc)),
+    [sessions],
+  );
+
   const value: CapturedSessionsContextValue = {
     sessions,
+    hrDetailSessions,
     loading: false,
     pendingCount,
     refresh: () => Promise.resolve(),

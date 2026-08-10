@@ -1,4 +1,4 @@
-/* The champagne/espresso canvas carries the design on its own — the old
+/* The porcelain/slate canvas carries the design on its own — the old
    aurora orbs are gone. All that remains is a fine grain that gives the
    flat color a paper-like tooth in both modes. (No blur filters: they're
    battery-hungry and stall screenshot capture.) */

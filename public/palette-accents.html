@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LiftOS — accent options on Porcelain × Slate</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "SF Pro Text", Inter, system-ui, sans-serif; background: #0b0c0e; color: #e8e9eb; padding: 32px 28px 60px; }
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+  p.sub { font-size: 12px; color: #9a9da3; margin: 4px 0 10px; max-width: 660px; }
+  .option { margin-top: 40px; }
+  .option > h2 { font-size: 16px; font-weight: 700; }
+  .option > h2 .chip { display:inline-block; width: 13px; height: 13px; border-radius: 4px; margin-right: 7px; vertical-align: -1px; }
+  .option > p { font-size: 12px; color: #8b8e95; margin: 3px 0 12px; max-width: 640px; }
+  .pair { display: flex; gap: 16px; flex-wrap: wrap; }
+  .shot h3 { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: #6f7379; margin-bottom: 6px; }
+
+  .phone { width: 252px; border-radius: 22px; padding: 19px 15px 22px; background: var(--bg); color: var(--fg); }
+  .eyebrow { font-size: 8.5px; font-weight: 600; letter-spacing: .17em; text-transform: uppercase; color: var(--fg-muted); }
+  .panel { background: var(--panel-bg); color: var(--panel-fg); border-radius: 15px; padding: 14px; margin-top: 12px; box-shadow: var(--panel-shadow, none); }
+  .panel .label { font-size: 8.5px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; color: var(--accent-on-panel); }
+  .badges { display: flex; gap: 6px; margin: 10px 0; }
+  .badge { width: 23px; height: 23px; border-radius: 50%; font-size: 9px; display: flex; align-items: center; justify-content: center; background: var(--panel-inset); color: var(--panel-fg-muted); }
+  .badge.hot { background: var(--accent-fill); color: var(--accent-fill-fg); }
+  .trio { display: flex; border-radius: 10px; padding: 9px 0; margin-bottom: 10px; background: var(--panel-inset); }
+  .trio div { flex: 1; text-align: center; }
+  .trio .n { font-size: 17px; font-weight: 200; }
+  .trio .u { font-size: 7px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; opacity: .55; }
+  .sentence { font-size: 10.5px; line-height: 1.45; margin-bottom: 12px; color: var(--panel-fg-soft); }
+  .cta { display: inline-block; border-radius: 999px; padding: 9px 16px; font-size: 11px; font-weight: 600; background: var(--cta-bg); color: var(--cta-fg); }
+  .row { border-radius: 11px; padding: 12px 13px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 600; background: var(--card); box-shadow: var(--card-shadow, none); }
+  .row .end { font-weight: 400; font-size: 10px; color: var(--fg-muted); }
+  .row .arrow { color: var(--accent); }
+  .meter { border-radius: 11px; padding: 11px 13px; margin-top: 8px; background: var(--card); box-shadow: var(--card-shadow, none); }
+  .meter .h { display: flex; justify-content: space-between; font-size: 8.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-muted); }
+  .meter .h b { color: var(--fg); font-weight: 700; letter-spacing: 0; font-size: 10px; }
+  .dots { display: flex; gap: 4px; margin-top: 8px; }
+  .dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-fill); }
+  .dots span.off { background: var(--inset-strong); }
+
+  /* LIGHT — Porcelain Editorial body */
+  .light { --bg:#f4f5f7; --fg:#17191e; --fg-muted:#878b94; --card:#ffffff; --card-shadow:0 3px 10px rgba(23,25,30,.07);
+           --inset-strong:#e2e4e9;
+           --panel-bg:#17191e; --panel-fg:#f4f5f7; --panel-fg-soft:rgba(244,245,247,.65); --panel-fg-muted:#8d919a;
+           --panel-inset:rgba(244,245,247,.09); --panel-shadow:0 8px 24px rgba(23,25,30,.18);
+           --cta-bg:#f4f5f7; --cta-fg:#17191e; }
+  /* DARK — Slate & Ember body */
+  .dark { --bg:#0e1420; --fg:#e7ebf3; --fg-muted:#7d8698; --card:#18202e; --card-shadow:0 4px 14px rgba(0,0,0,.35);
+          --inset-strong:#232c3d;
+          --panel-bg:#f2f4f8; --panel-fg:#101623; --panel-fg-soft:#3c4455; --panel-fg-muted:#6a7385;
+          --panel-inset:rgba(16,22,35,.07); --panel-shadow:0 8px 24px rgba(0,0,0,.45);
+          --cta-bg:#101623; --cta-fg:#f2f4f8; }
+
+  /* Accent slots per option (light/dark tuned):
+     --accent          small text/icons on the page body
+     --accent-on-panel eyebrow label inside the hero panel
+     --accent-fill     filled elements (hot badge, meter dots)
+     --accent-fill-fg  text on the fill */
+
+  .ac-cream.light { --accent:#a97e3f; --accent-on-panel:#e3c491; --accent-fill:#c29a5b; --accent-fill-fg:#ffffff; }
+  .ac-cream.dark  { --accent:#e3c491; --accent-on-panel:#b98d4f; --accent-fill:#ead9ba; --accent-fill-fg:#101623; }
+
+  .ac-cobalt.light { --accent:#2e5bff; --accent-on-panel:#7c9aff; --accent-fill:#2e5bff; --accent-fill-fg:#ffffff; }
+  .ac-cobalt.dark  { --accent:#6f92ff; --accent-on-panel:#2e5bff; --accent-fill:#5b82ff; --accent-fill-fg:#ffffff; }
+
+  .ac-iris.light { --accent:#6d51e8; --accent-on-panel:#a394ff; --accent-fill:#6d51e8; --accent-fill-fg:#ffffff; }
+  .ac-iris.dark  { --accent:#9c8bff; --accent-on-panel:#6d51e8; --accent-fill:#8b78ff; --accent-fill-fg:#14102e; }
+
+  .ac-rasp.light { --accent:#d9295c; --accent-on-panel:#ff7099; --accent-fill:#d9295c; --accent-fill-fg:#ffffff; }
+  .ac-rasp.dark  { --accent:#ff5b85; --accent-on-panel:#d9295c; --accent-fill:#ff5b85; --accent-fill-fg:#2b0a14; }
+
+  .ac-sage.light { --accent:#5f8f22; --accent-on-panel:#a9cf6f; --accent-fill:#6d9e2e; --accent-fill-fg:#ffffff; }
+  .ac-sage.dark  { --accent:#a9cf6f; --accent-on-panel:#6d9e2e; --accent-fill:#a3c868; --accent-fill-fg:#182508; }
+</style>
+</head>
+<body>
+  <h1>LiftOS — accent options</h1>
+  <p class="sub">System locked: Porcelain Editorial (light) × Slate &amp; Ember (dark). Five accent candidates, each tuned per mode. Same dashboard, both modes, per option.</p>
+
+  <div class="option">
+    <h2><span class="chip" style="background:linear-gradient(90deg,#c29a5b,#ead9ba)"></span>1 · Cream &amp; Camel</h2>
+    <p>Your old champagne, reborn as the accent: camel on porcelain by day, true cream fills on slate by night. The most luxurious read — cream-on-navy is old-money tailoring.</p>
+    <div class="pair">
+      <div class="shot"><h3>Light</h3>
+        <div class="phone light ac-cream">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="meter"><div class="h"><span>Weekly volume</span><b>11,000<span style="opacity:.4">/5,000 lb</span></b></div><div class="dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span class="off"></span><span class="off"></span><span class="off"></span><span class="off"></span></div></div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Dark</h3>
+        <div class="phone dark ac-cream">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="meter"><div class="h"><span>Weekly volume</span><b>11,000<span style="opacity:.4">/5,000 lb</span></b></div><div class="dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span class="off"></span><span class="off"></span><span class="off"></span><span class="off"></span></div></div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option">
+    <h2><span class="chip" style="background:#2e5bff"></span>2 · Cobalt</h2>
+    <p>Electric blue on both modes — crisp, athletic, unmistakably digital. The strongest contrast against both porcelain and slate.</p>
+    <div class="pair">
+      <div class="shot"><h3>Light</h3>
+        <div class="phone light ac-cobalt">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="meter"><div class="h"><span>Weekly volume</span><b>11,000<span style="opacity:.4">/5,000 lb</span></b></div><div class="dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span class="off"></span><span class="off"></span><span class="off"></span><span class="off"></span></div></div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Dark</h3>
+        <div class="phone dark ac-cobalt">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="meter"><div class="h"><span>Weekly volume</span><b>11,000<span style="opacity:.4">/5,000 lb</span></b></div><div class="dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span class="off"></span><span class="off"></span><span class="off"></span><span class="off"></span></div></div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option">
+    <h2><span class="chip" style="background:#6d51e8"></span>3 · Iris</h2>
+    <p>Violet — modern, premium, and rare in fitness. Reads calm on porcelain, glows on slate.</p>
+    <div class="pair">
+      <div class="shot"><h3>Light</h3>
+        <div class="phone light ac-iris">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="meter"><div class="h"><span>Weekly volume</span><b>11,000<span style="opacity:.4">/5,000 lb</span></b></div><div class="dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span class="off"></span><span class="off"></span><span class="off"></span><span class="off"></span></div></div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Dark</h3>
+        <div class="phone dark ac-iris">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="meter"><div class="h"><span>Weekly volume</span><b>11,000<span style="opacity:.4">/5,000 lb</span></b></div><div class="dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span class="off"></span><span class="off"></span><span class="off"></span><span class="off"></span></div></div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option">
+    <h2><span class="chip" style="background:#d9295c"></span>4 · Raspberry</h2>
+    <p>Punchy red-pink — high energy without being orange. Strong PR-celebration color.</p>
+    <div class="pair">
+      <div class="shot"><h3>Light</h3>
+        <div class="phone light ac-rasp">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="meter"><div class="h"><span>Weekly volume</span><b>11,000<span style="opacity:.4">/5,000 lb</span></b></div><div class="dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span class="off"></span><span class="off"></span><span class="off"></span><span class="off"></span></div></div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Dark</h3>
+        <div class="phone dark ac-rasp">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="meter"><div class="h"><span>Weekly volume</span><b>11,000<span style="opacity:.4">/5,000 lb</span></b></div><div class="dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span class="off"></span><span class="off"></span><span class="off"></span><span class="off"></span></div></div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option">
+    <h2><span class="chip" style="background:#87b447"></span>5 · Sage</h2>
+    <p>The green from Deep Forest, transplanted — moss by day, sage by night. Growth-coded, easy on the eyes.</p>
+    <div class="pair">
+      <div class="shot"><h3>Light</h3>
+        <div class="phone light ac-sage">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="meter"><div class="h"><span>Weekly volume</span><b>11,000<span style="opacity:.4">/5,000 lb</span></b></div><div class="dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span class="off"></span><span class="off"></span><span class="off"></span><span class="off"></span></div></div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+      <div class="shot"><h3>Dark</h3>
+        <div class="phone dark ac-sage">
+          <div class="eyebrow">Sunday, Aug 10 · Joshane</div>
+          <div class="panel">
+            <div class="label">This week</div>
+            <div class="badges"><div class="badge">4</div><div class="badge">5</div><div class="badge">6</div><div class="badge">7</div><div class="badge">8</div><div class="badge hot">✓</div><div class="badge">10</div></div>
+            <div class="trio"><div><div class="n">1<span style="font-size:9px;opacity:.5">/3–4</span></div><div class="u">Sessions</div></div><div><div class="n">11.0k</div><div class="u">lb volume</div></div><div><div class="n">0:59</div><div class="u">Hours</div></div></div>
+            <div class="sentence">Pull is 5 days cold — today's pick is Pull Day, and your row is trending up.</div>
+            <span class="cta">Start Pull Day »</span>
+          </div>
+          <div class="meter"><div class="h"><span>Weekly volume</span><b>11,000<span style="opacity:.4">/5,000 lb</span></b></div><div class="dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span class="off"></span><span class="off"></span><span class="off"></span><span class="off"></span></div></div>
+          <div class="row"><span>Pending reviews</span><span class="end"><span style="color:var(--accent)">●</span> 1 <span class="arrow">→</span></span></div>
+          <div class="row"><span>Apple Health</span><span class="end">Connected ⟳</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

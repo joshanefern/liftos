@@ -1,5 +1,5 @@
 import { usePendingReviews } from "@/hooks/usePendingReviews";
-import { type CapturedSessionRow } from "@/context/CapturedSessionsProvider";
+import { type CapturedSessionSummary } from "@/context/CapturedSessionsProvider";
 import { cn } from "@/lib/utils";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -11,7 +11,7 @@ const formatDate = (iso: string): string =>
     day: "numeric",
   });
 
-const formatDuration = (row: CapturedSessionRow): string => {
+const formatDuration = (row: CapturedSessionSummary): string => {
   const seconds =
     row.aggregates?.duration_s ??
     Math.max(
@@ -26,8 +26,10 @@ const formatDuration = (row: CapturedSessionRow): string => {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 };
 
-const hasHeartRate = (row: CapturedSessionRow): boolean =>
-  (row.hr_samples?.length ?? 0) > 0 || (row.aggregates?.avg_hr ?? 0) > 0;
+// List rows are light summaries (no hr_samples), so HR presence is read from
+// the aggregates the sync layer computes alongside the samples.
+const hasHeartRate = (row: CapturedSessionSummary): boolean =>
+  (row.aggregates?.avg_hr ?? 0) > 0;
 
 /**
  * Dashboard row card surfacing captured sessions awaiting smart review.

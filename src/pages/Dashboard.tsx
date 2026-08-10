@@ -60,21 +60,21 @@ const sparkPoints = (values: number[], w = 100, h = 24, pad = 3): string => {
     .join(" ");
 };
 
-/* ── Warm-depth cards (Josh's pick): soft cream cards with a warm-brown
-   shadow in light that deepens to black over espresso. ── */
+/* ── Depth cards: white cards with a cool ink shadow in light that
+   deepens to black over slate in dark. ── */
 
 const ROW_CLASS =
   "group flex min-h-[52px] w-full items-center justify-between gap-4 rounded-[13px] " +
-  "bg-card px-4 py-3.5 text-left shadow-[0_4px_12px_rgba(60,36,18,0.10)] " +
+  "bg-card px-4 py-3.5 text-left shadow-[0_4px_12px_rgba(16,22,35,0.08)] " +
   "transition-[transform,box-shadow] duration-150 active:scale-[0.99] " +
   "dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)] " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
 
-/* Micro-tile: same warm-card recipe as ROW_CLASS, columnar for eyebrow +
+/* Micro-tile: same depth-card recipe as ROW_CLASS, columnar for eyebrow +
    value + tiny graphic. */
 const TILE_CLASS =
   "group flex min-h-[44px] flex-1 flex-col rounded-[14px] bg-card px-4 py-3 " +
-  "shadow-[0_4px_12px_rgba(60,36,18,0.10)] transition-[transform,box-shadow] " +
+  "shadow-[0_4px_12px_rgba(16,22,35,0.08)] transition-[transform,box-shadow] " +
   "duration-150 active:scale-[0.99] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)] " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
 
@@ -97,7 +97,7 @@ const RowEnd = ({ value, icon }: { value?: ReactNode; icon?: ReactNode }) => (
 );
 
 /* ── Hero ink panel + card index — the panel inverts with the theme
-   (espresso-on-champagne in light, champagne-on-espresso in dark); that
+   (ink-on-porcelain in light, porcelain-on-slate in dark); that
    flip is the signature, so every color inside it is a token. ── */
 
 const Dashboard = () => {
@@ -195,11 +195,13 @@ const Dashboard = () => {
     navigate("/workouts");
   };
 
-  const { sessions: capturedSessions, refresh: refreshCapturedSessions } = useCapturedSessions();
+  // hrDetailSessions: full rows (samples included) for the newest HR-bearing
+  // sessions — the list itself is summary-only and can't feed the coach.
+  const { hrDetailSessions, refresh: refreshCapturedSessions } = useCapturedSessions();
 
   const coachContext = useMemo(
-    () => buildCoachContext(logs, profile, capturedSessions, suggestion),
-    [logs, profile, capturedSessions, suggestion],
+    () => buildCoachContext(logs, profile, hrDetailSessions, suggestion),
+    [logs, profile, hrDetailSessions, suggestion],
   );
 
   const [insight, setInsight] = useState<string | null>(null);
@@ -346,7 +348,7 @@ const Dashboard = () => {
 
       {/* ── Hero ink panel ── */}
       <section className="mt-6 md:mt-8 animate-reveal-up">
-        <div className="relative overflow-hidden rounded-[18px] bg-foreground p-5 text-background shadow-[0_8px_24px_rgba(120,72,35,0.18)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
+        <div className="relative overflow-hidden rounded-[18px] bg-foreground p-5 text-background shadow-[0_8px_24px_rgba(16,22,35,0.16)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
           <div className="relative z-10">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
               This week

@@ -36,8 +36,8 @@ const M = 96;
 type Theme = { canvas: string; ink: string; accent: string };
 
 const THEMES: Record<"light" | "dark", Theme> = {
-  light: { canvas: "#FAE7D3", ink: "#241C14", accent: "#C8502E" },
-  dark: { canvas: "#191410", ink: "#F6E7D5", accent: "#E06A40" },
+  light: { canvas: "#F4F5F7", ink: "#17191E", accent: "#D9295C" },
+  dark: { canvas: "#0E1420", ink: "#F2F4F8", accent: "#FF5B85" },
 };
 
 const FONT_STACK = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";

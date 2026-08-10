@@ -91,7 +91,9 @@ const Coach = () => {
   const { profile } = useUser();
   const { logs } = useWorkoutLogs();
   const { templates } = useWorkoutTemplates();
-  const { sessions: capturedSessions } = useCapturedSessions();
+  // Full rows for the newest HR-bearing sessions — the provider's list is
+  // summary-only (no hr_samples), so the coach context reads these instead.
+  const { hrDetailSessions } = useCapturedSessions();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -113,8 +115,8 @@ const Coach = () => {
   );
 
   const context = useMemo(
-    () => buildCoachContext(logs, profile, capturedSessions, suggestion),
-    [logs, profile, capturedSessions, suggestion],
+    () => buildCoachContext(logs, profile, hrDetailSessions, suggestion),
+    [logs, profile, hrDetailSessions, suggestion],
   );
 
   const suggestions = useMemo(() => buildSuggestions(context), [context]);

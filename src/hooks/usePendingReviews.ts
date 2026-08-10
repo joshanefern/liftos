@@ -1,6 +1,6 @@
 import {
   useCapturedSessions,
-  type CapturedSessionRow,
+  type CapturedSessionSummary,
 } from "@/context/CapturedSessionsProvider";
 import { useEffect, useMemo } from "react";
 
@@ -19,7 +19,7 @@ let lastFocusRefreshAt = 0;
 
 export type UsePendingReviewsResult = {
   pendingCount: number;
-  pendingSessions: CapturedSessionRow[];
+  pendingSessions: CapturedSessionSummary[];
   loading: boolean;
   refresh: () => Promise<void>;
 };
