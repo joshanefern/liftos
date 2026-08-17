@@ -9,6 +9,7 @@ import {
 import { useUser } from "@/context/UserContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useWorkoutLogs, type WorkoutLog } from "@/hooks/useWorkoutLogs";
+import { formatHold } from "@/lib/exerciseTracking";
 import { getLogsByDay, getStreak } from "@/lib/workoutStats";
 import { ChevronLeft, ChevronRight, Dumbbell } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -497,10 +498,20 @@ const Calendar = () => {
                       </div>
                     )}
 
+                    {log.notes && (
+                      <p className="mt-3 rounded-[0.75rem] bg-secondary/60 px-3 py-2 text-xs leading-relaxed text-fg-soft">
+                        {log.notes}
+                      </p>
+                    )}
+
                     <div className="mt-3 divide-y divide-border border-t border-border">
                       {(log.exercises ?? []).map((exercise) => {
                         const done = (exercise.sets ?? []).filter((s) => s.completed);
                         const topW = done.reduce((m, s) => Math.max(m, s.weight ?? 0), 0);
+                        const topHold =
+                          exercise.kind === "cardio"
+                            ? 0
+                            : done.reduce((m, s) => Math.max(m, s.duration_seconds ?? 0), 0);
                         const topSet = done
                           .filter((s) => (s.weight ?? 0) === topW)
                           .sort((a, b) => (b.reps ?? 0) - (a.reps ?? 0))[0];
@@ -526,9 +537,13 @@ const Calendar = () => {
                             </div>
                             <div className="shrink-0 text-right">
                               <p className={`mono text-sm ${pr ? "text-primary" : "text-fg"}`}>
-                                {topW > 0
-                                  ? `${topW} ${units} × ${topSet?.reps ?? "–"}`
-                                  : `${done.length} set${done.length === 1 ? "" : "s"}`}
+                                {topHold > 0
+                                  ? topW > 0
+                                    ? `${formatHold(topHold)} @ ${topW} ${units}`
+                                    : `${formatHold(topHold)} hold`
+                                  : topW > 0
+                                    ? `${topW} ${units} × ${topSet?.reps ?? "–"}`
+                                    : `${done.length} set${done.length === 1 ? "" : "s"}`}
                               </p>
                               <p className="mono text-[10px] text-fg-faint">
                                 {done.length} of {(exercise.sets ?? []).length} sets

@@ -1,137 +1,137 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ════════════════════════════════════════════════════════════════
- * LIFTOS theme — porcelain & slate, raspberry accent
+ * LIFTOS theme — Sandstone Editorial × Split Shift (2026-08-12)
+ * Research round: 47 findings → 4 coded trials → 3-judge panel.
  *
- * Light (Porcelain Editorial): cool porcelain canvas (#F4F5F7),
- * white cards, ink typography (#17191E), hairlines (#E2E4E9),
- * raspberry accent (#D9295C) doing the quiet talking.
- * Dark (Slate): deep blue-slate (#0E1420), lifted slate cards
- * (#18202E), porcelain text (#F2F4F8) — which also inverts into the
- * hero panel — and raspberry a notch brighter (#FF5B85).
- * The old champagne/espresso warmth is fully retired (2026-08-10).
+ * Light (Sandstone Editorial): warm sandstone canvas (#F4EFE7),
+ * warm-white cards, warm ink (#1C1A17), sand hairlines (#E4DDD1),
+ * deep raspberry-bordeaux accent (#B01E52) — CTA/PR/progress only.
+ * Dark (Scoreboard): warm near-black (#0C0C11, never pure black),
+ * off-white text (#F0F1F4), hairline+luminance depth (no shadows),
+ * electric raspberry (#FF2D6E). The active-workout screen forces
+ * this dark scoreboard in ANY theme — planning is warm print,
+ * training is a black instrument (the Split Shift signature).
  * ════════════════════════════════════════════════════════════════ */
 
 @layer base {
   :root {
     color-scheme: light;
 
-    --background: 220 16% 96%;       /* #F4F5F7 porcelain */
-    --foreground: 223 13% 10%;       /* #17191E ink */
+    --background: 36 37% 93%;        /* #F4EFE7 sandstone */
+    --foreground: 36 10% 10%;        /* #1C1A17 warm ink */
 
-    --card: 0 0% 100%;               /* white card on porcelain */
-    --card-foreground: 223 13% 10%;
+    --card: 40 53% 97%;              /* #FBF8F2 warm card */
+    --card-foreground: 36 10% 10%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 223 13% 10%;
+    --popover: 40 53% 97%;
+    --popover-foreground: 36 10% 10%;
 
-    --primary: 343 70% 51%;          /* #D9295C raspberry */
+    --primary: 338 71% 40%;          /* #B01E52 deep raspberry */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 19% 92%;        /* soft porcelain-deep chip */
-    --secondary-foreground: 223 10% 35%;
+    --secondary: 36 35% 88%;         /* deep-sandstone chip */
+    --secondary-foreground: 37 9% 33%;
 
-    --muted: 220 19% 92%;
-    --muted-foreground: 222 8% 42%;  /* #626772 — ≥4.5:1 on porcelain+white */
+    --muted: 36 35% 88%;
+    --muted-foreground: 37 9% 39%;   /* #6E675C-class — ≥4.5:1 on sandstone */
 
-    --accent: 343 70% 51%;
+    --accent: 338 71% 40%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 223 14% 90%;           /* #E2E4E9 hairline */
-    --input: 223 14% 90%;
-    --ring: 343 70% 51%;
+    --border: 38 26% 86%;            /* #E4DDD1 sand hairline */
+    --input: 38 26% 86%;
+    --ring: 338 71% 40%;
 
     --radius: 0.875rem;
 
-    --sidebar-background: 220 18% 94%;
-    --sidebar-foreground: 222 8% 42%;
-    --sidebar-primary: 343 70% 51%;
+    --sidebar-background: 37 33% 91%;
+    --sidebar-foreground: 37 9% 39%;
+    --sidebar-primary: 338 71% 40%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 17% 90%;
-    --sidebar-accent-foreground: 223 13% 10%;
-    --sidebar-border: 223 14% 88%;
-    --sidebar-ring: 343 70% 51%;
+    --sidebar-accent: 37 30% 87%;
+    --sidebar-accent-foreground: 36 10% 10%;
+    --sidebar-border: 38 24% 84%;
+    --sidebar-ring: 338 71% 40%;
 
     /* Semantic tokens — --gold kept as an alias for the accent so
        legacy call sites read raspberry, never the old casino gold */
-    --gold: 343 70% 51%;
-    --gold-dim: 343 45% 40%;
-    --gold-glow: 343 70% 51%;
-    --surface-1: 0 0% 100%;
-    --surface-2: 220 19% 94%;
-    --surface-3: 220 17% 90%;
-    --text-primary: 223 13% 10%;
-    --text-secondary: 222 8% 40%;
-    --text-tertiary: 222 8% 42%;
-    --chart-line: 343 70% 51%;
+    --gold: 338 71% 40%;
+    --gold-dim: 338 50% 32%;
+    --gold-glow: 338 71% 40%;
+    --surface-1: 40 53% 97%;
+    --surface-2: 37 34% 90%;
+    --surface-3: 37 30% 86%;
+    --text-primary: 36 10% 10%;
+    --text-secondary: 37 9% 37%;
+    --text-tertiary: 37 9% 39%;
+    --chart-line: 338 71% 40%;
     /* On the inverted (ink) hero panel the light raspberry fails contrast —
        borrow the dark-mode raspberry there. */
-    --primary-on-inverse: 345 100% 68%;
-    --success: 142 45% 32%;
-    --warning: 30 90% 40%;
+    --primary-on-inverse: 341 100% 59%;
+    --success: 154 46% 30%;
+    --warning: 37 79% 38%;
   }
 
   .dark {
     color-scheme: dark;
 
-    --background: 220 39% 9%;        /* #0E1420 slate */
-    --foreground: 220 30% 96%;       /* #F2F4F8 porcelain text (and hero) */
+    --background: 240 17% 6%;        /* #0C0C11 warm near-black */
+    --foreground: 225 13% 95%;       /* #F0F1F4 off-white (and hero) */
 
-    --card: 218 31% 14%;             /* #18202E lifted slate */
-    --card-foreground: 220 33% 93%;
+    --card: 240 15% 9%;              /* #14141B raised — luminance, not shadow */
+    --card-foreground: 225 13% 93%;
 
-    --popover: 218 31% 14%;
-    --popover-foreground: 220 33% 93%;
+    --popover: 240 14% 11%;
+    --popover-foreground: 225 13% 93%;
 
-    --primary: 345 100% 68%;         /* #FF5B85 raspberry, brighter */
-    --primary-foreground: 342 62% 10%;
+    --primary: 341 100% 59%;         /* #FF2D6E electric raspberry */
+    --primary-foreground: 340 60% 8%;
 
-    --secondary: 220 37% 12%;
-    --secondary-foreground: 220 15% 75%;
+    --secondary: 240 13% 10%;
+    --secondary-foreground: 227 8% 76%;
 
-    --muted: 220 37% 12%;
-    --muted-foreground: 220 14% 66%; /* #9AA3B5 — ≥4.5:1 on slate cards */
+    --muted: 240 13% 10%;
+    --muted-foreground: 227 6% 62%;  /* ≥4.5:1 on near-black */
 
-    --accent: 345 100% 68%;
-    --accent-foreground: 342 62% 10%;
+    --accent: 341 100% 59%;
+    --accent-foreground: 340 60% 8%;
 
     --destructive: 0 62% 52%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 219 27% 19%;           /* #232C3D hairline */
-    --input: 219 27% 19%;
-    --ring: 345 100% 68%;
+    --border: 240 8% 15%;            /* white-at-8% hairline */
+    --input: 240 8% 15%;
+    --ring: 341 100% 59%;
 
-    --sidebar-background: 220 41% 7%;
-    --sidebar-foreground: 220 14% 66%;
-    --sidebar-primary: 345 100% 68%;
-    --sidebar-primary-foreground: 342 62% 10%;
-    --sidebar-accent: 219 30% 13%;
-    --sidebar-accent-foreground: 220 33% 93%;
-    --sidebar-border: 219 27% 16%;
-    --sidebar-ring: 345 100% 68%;
+    --sidebar-background: 240 18% 5%;
+    --sidebar-foreground: 227 6% 62%;
+    --sidebar-primary: 341 100% 59%;
+    --sidebar-primary-foreground: 340 60% 8%;
+    --sidebar-accent: 240 13% 10%;
+    --sidebar-accent-foreground: 225 13% 93%;
+    --sidebar-border: 240 8% 13%;
+    --sidebar-ring: 341 100% 59%;
 
-    --gold: 345 100% 68%;
-    --gold-dim: 345 55% 48%;
-    --gold-glow: 345 100% 68%;
-    --surface-1: 218 31% 14%;
-    --surface-2: 219 29% 16%;
-    --surface-3: 219 27% 19%;
-    --text-primary: 220 33% 93%;
-    --text-secondary: 220 16% 74%;
-    --text-tertiary: 220 14% 66%;
-    --chart-line: 345 100% 68%;
+    --gold: 341 100% 59%;
+    --gold-dim: 341 60% 45%;
+    --gold-glow: 341 100% 59%;
+    --surface-1: 240 15% 9%;
+    --surface-2: 240 14% 12%;
+    --surface-3: 240 13% 14%;
+    --text-primary: 225 13% 93%;
+    --text-secondary: 227 8% 72%;
+    --text-tertiary: 227 6% 62%;
+    --chart-line: 341 100% 59%;
     /* Inverted panel is porcelain in dark — borrow the light raspberry. */
-    --primary-on-inverse: 343 70% 51%;
-    --success: 142 45% 55%;
-    --warning: 38 90% 55%;
+    --primary-on-inverse: 338 71% 40%;
+    --success: 154 70% 55%;
+    --warning: 39 100% 56%;
   }
 }
 
@@ -308,10 +308,10 @@
     @apply eyebrow;
   }
 
-  /* Ultra-light hero numeral — 56px-class, weight 200, with <b> at 600
-     for the emphasized digits (mockup: .num / .num b) */
+  /* Hero numeral — medium weight with negative tracking (research: 400-600
+     is the award-tier register; ultralight is the dating tell) */
   .stat-hero {
-    @apply text-5xl md:text-6xl font-extralight tracking-[-0.04em] tabular-nums text-fg;
+    @apply text-5xl md:text-6xl font-medium tracking-[-0.03em] tabular-nums text-fg;
     line-height: 0.95;
     font-feature-settings: 'tnum';
   }
@@ -320,7 +320,7 @@
   }
 
   .stat-xl {
-    @apply text-3xl md:text-4xl font-light tracking-tight tabular-nums text-fg;
+    @apply text-3xl md:text-4xl font-medium tracking-tight tabular-nums text-fg;
     font-feature-settings: 'tnum';
   }
   .stat-xl b {
@@ -357,6 +357,25 @@
   .mono {
     font-family: 'JetBrains Mono', monospace;
     font-feature-settings: 'tnum';
+  }
+
+  /* Scoreboard numerals — workout mode only (Barlow Condensed, arm's-length
+     legible under gym fluorescents). Never appears on rest surfaces. */
+  .stat-scoreboard {
+    font-family: 'Barlow Condensed', 'Inter', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    font-feature-settings: 'tnum';
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The one serif moment: a single human sentence under a hero numeral
+     (Fraunces italic). One use per screen, maximum. */
+  .display-sentence {
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic;
+    font-weight: 500;
+    letter-spacing: 0.005em;
   }
 
   .gradient-surface {
@@ -466,4 +485,62 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground));
+}
+
+/* ── Motion signatures (research: exactly four moments) — all gated on
+   prefers-reduced-motion so the app stays calm for those who ask. ── */
+@media (prefers-reduced-motion: no-preference) {
+  /* Rolling odometer digits */
+  .roll-digit {
+    display: inline-block;
+    height: 1em;
+    overflow: hidden;
+    vertical-align: baseline;
+  }
+  .roll-strip {
+    display: inline-flex;
+    flex-direction: column;
+    transition: transform 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+  .roll-cell {
+    height: 1em;
+    line-height: 1;
+    display: block;
+  }
+
+  /* Set-check draw-on: stroke draws in ~200ms with a small pop */
+  .check-draw polyline,
+  .check-draw path {
+    stroke-dasharray: 26;
+    stroke-dashoffset: 26;
+    animation: liftos-check-draw 200ms ease-out forwards;
+  }
+  @keyframes liftos-check-draw {
+    to { stroke-dashoffset: 0; }
+  }
+  .check-pop {
+    animation: liftos-check-pop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  }
+  @keyframes liftos-check-pop {
+    0% { transform: scale(0.85); }
+    60% { transform: scale(1.08); }
+    100% { transform: scale(1); }
+  }
+
+  /* Scoreboard reveal: the flip into workout mode */
+  .scoreboard-reveal {
+    animation: liftos-scoreboard-reveal 380ms cubic-bezier(0.3, 0.7, 0.2, 1) both;
+  }
+  @keyframes liftos-scoreboard-reveal {
+    0% { opacity: 0; transform: scale(0.985); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+}
+
+/* Reduced motion: digits render statically (no strip offset needed beyond
+   the transform, which still applies instantly without transition). */
+@media (prefers-reduced-motion: reduce) {
+  .roll-digit { display: inline-block; height: 1em; overflow: hidden; }
+  .roll-strip { display: inline-flex; flex-direction: column; }
+  .roll-cell { height: 1em; line-height: 1; display: block; }
 }

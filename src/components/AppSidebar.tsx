@@ -1,4 +1,4 @@
-import { LayoutDashboard, Dumbbell, TrendingUp, Sparkles, ChevronLeft, PlayCircle, CalendarDays } from "lucide-react";
+import { LayoutDashboard, Dumbbell, TrendingUp, Sparkles, ChevronLeft, CirclePlus, CalendarDays } from "lucide-react";
 import { Link } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -8,7 +8,7 @@ import { usePendingReviews } from "@/hooks/usePendingReviews";
 const navItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Workouts", url: "/workouts", icon: Dumbbell },
-  { title: "Log", url: "/workouts/active", icon: PlayCircle },
+  { title: "New workout", url: "/workouts?new=1", icon: CirclePlus },
   { title: "Calendar", url: "/calendar", icon: CalendarDays },
   { title: "Progress", url: "/progress", icon: TrendingUp },
   { title: "Coach", url: "/coach", icon: Sparkles },

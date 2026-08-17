@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { WorkoutExercise, WorkoutSet } from "@/data/liftosMock";
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
-import { allTimePRs, bestWeight, detectSessionPRs, epley1RM, exercisePRs } from "./prs";
+import { allTimePRs, bestHold, bestWeight, detectSessionPRs, epley1RM, exercisePRs } from "./prs";
 
 let setSeq = 0;
 const set = (
@@ -88,13 +88,24 @@ describe("bestWeight", () => {
 describe("exercisePRs", () => {
   it("maxE1RM can come from a lighter, higher-rep set than maxWeight", () => {
     const history = [
-      log("2026-02-01T10:00:00Z", [ex("Squat", [set(185, 12)])]), // e1RM 259
+      log("2026-02-01T10:00:00Z", [ex("Squat", [set(185, 10)])]), // e1RM ~246.7
       log("2026-01-01T10:00:00Z", [ex("Squat", [set(205, 5)])]), // e1RM ~239.2
     ];
     const prs = exercisePRs(history, "Squat");
     expect(prs.maxWeight!.weight).toBe(205);
     expect(prs.maxE1RM!.weight).toBe(185);
-    expect(prs.maxE1RM!.e1rm).toBeCloseTo(259, 5);
+    expect(prs.maxE1RM!.e1rm).toBeCloseTo(246.667, 2);
+  });
+
+  it("sets above 10 reps never move the estimate (Epley drifts)", () => {
+    const history = [
+      log("2026-02-01T10:00:00Z", [ex("Squat", [set(185, 12)])]), // raw Epley 259 — excluded
+      log("2026-01-01T10:00:00Z", [ex("Squat", [set(205, 5)])]), // e1RM ~239.2
+    ];
+    const prs = exercisePRs(history, "Squat");
+    expect(prs.maxWeight!.weight).toBe(205);
+    expect(prs.maxE1RM!.weight).toBe(205); // the 12-rep set held the weight record path only
+    expect(prs.maxE1RM!.e1rm).toBeCloseTo(239.167, 2);
   });
 
   it("tracks best reps per weight tier, heaviest tier first", () => {
@@ -289,11 +300,18 @@ describe("detectSessionPRs — rep PRs", () => {
 
   it("a never-logged lighter weight is not a rep PR (but can be an e1RM PR)", () => {
     const history = [log("2026-01-01T10:00:00Z", [ex("Squat", [set(205, 5)])])];
-    const session = { name: "Legs", exercises: [ex("Squat", [set(185, 12)])] };
+    const session = { name: "Legs", exercises: [ex("Squat", [set(185, 10)])] };
     const events = detectSessionPRs(history, session);
     expect(events.find((e) => e.kind === "reps")).toBeUndefined();
     expect(events.find((e) => e.kind === "weight")).toBeUndefined();
-    expect(events.find((e) => e.kind === "e1rm")).toBeDefined(); // 259 > 239.2
+    expect(events.find((e) => e.kind === "e1rm")).toBeDefined(); // ~246.7 > 239.2
+  });
+
+  it("a >10-rep set cannot fire an e1RM PR", () => {
+    const history = [log("2026-01-01T10:00:00Z", [ex("Squat", [set(205, 5)])])];
+    const session = { name: "Legs", exercises: [ex("Squat", [set(185, 12)])] };
+    const events = detectSessionPRs(history, session);
+    expect(events.find((e) => e.kind === "e1rm")).toBeUndefined();
   });
 
   it("first weighted set on a previously bodyweight-only exercise is a weight PR with no previous", () => {
@@ -372,5 +390,83 @@ describe("allTimePRs", () => {
 
   it("empty history yields no rows", () => {
     expect(allTimePRs([])).toEqual([]);
+  });
+});
+
+// ── Timed exercises (planks, hangs, carries) ─────────────────────────────────
+
+describe("hold records", () => {
+  const hold = (duration: number, weight?: number): WorkoutSet =>
+    set(weight, undefined, { duration_seconds: duration });
+
+  it("tracks the longest hold per weight tier", () => {
+    const history = [
+      log("2026-02-01T10:00:00Z", [ex("Plank", [hold(90), hold(60, 25)])]),
+      log("2026-01-01T10:00:00Z", [ex("Plank", [hold(75), hold(45, 25)])]),
+    ];
+    const prs = exercisePRs(history, "Plank");
+    expect(prs.maxDurationAtWeight.map((r) => [r.weight, r.duration])).toEqual([
+      [25, 60],
+      [0, 90],
+    ]);
+    expect(bestHold(history, "Plank")!.duration).toBe(90);
+  });
+
+  it("ignores warm-up / incomplete / zero-duration sets", () => {
+    const history = [
+      log("2026-01-01T10:00:00Z", [
+        ex("Plank", [
+          hold(60),
+          set(undefined, undefined, { duration_seconds: 300, isWarmup: true }),
+          set(undefined, undefined, { duration_seconds: 300, completed: false }),
+          set(undefined, undefined, { duration_seconds: 0 }),
+        ]),
+      ]),
+    ];
+    expect(bestHold(history, "Plank")!.duration).toBe(60);
+  });
+
+  it("detectSessionPRs celebrates a longer hold at a known tier", () => {
+    const history = [log("2026-01-01T10:00:00Z", [ex("Plank", [hold(60)])])];
+    const events = detectSessionPRs(history, {
+      name: "Core",
+      exercises: [{ name: "Plank", sets: [hold(90)] }],
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ kind: "duration", value: 90, previousValue: 60, weight: 0 });
+  });
+
+  it("first-ever hold emits a single first-time duration event", () => {
+    const events = detectSessionPRs([], {
+      name: "Core",
+      exercises: [{ name: "Plank", sets: [hold(45), hold(60)] }],
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ kind: "duration", value: 60, isFirst: true });
+  });
+
+  it("a shorter hold at a new (weighted) tier is not a PR", () => {
+    const history = [log("2026-01-01T10:00:00Z", [ex("Plank", [hold(60)])])];
+    const events = detectSessionPRs(history, {
+      name: "Core",
+      exercises: [{ name: "Plank", sets: [hold(30, 25)] }],
+    });
+    expect(events).toEqual([]);
+  });
+
+  it("allTimePRs surfaces maxDuration and improvement dates for holds", () => {
+    const history = [
+      log("2026-02-01T10:00:00Z", [ex("Plank", [hold(90)])]),
+      log("2026-01-01T10:00:00Z", [ex("Plank", [hold(60)])]),
+    ];
+    const [row] = allTimePRs(history);
+    expect(row.maxDuration).toBe(90);
+    expect(row.maxE1RM).toBeNull();
+    expect(row.lastImproved).toBe("2026-02-01T10:00:00Z");
+  });
+
+  it("a rep-and-weight lift keeps maxDuration null", () => {
+    const history = [log("2026-01-01T10:00:00Z", [ex("Bench Press", [set(205, 5)])])];
+    expect(allTimePRs(history)[0].maxDuration).toBeNull();
   });
 });

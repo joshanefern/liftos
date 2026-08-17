@@ -11,14 +11,17 @@ import type { WorkoutExercise } from "@/data/liftosMock";
 import { starterPrograms, type StarterProgram } from "@/data/starterPrograms";
 import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
 import {
+  ACTIVE_WORKOUT_STORAGE_KEY,
   buildSessionFromStarter,
   buildSessionFromTemplate,
   persistActiveSession,
 } from "@/lib/startSession";
 import { toast } from "@/components/ui/use-toast";
-import { Check, ChevronDown, Dumbbell, Plus, Trash2 } from "lucide-react";
+import { useReadiness } from "@/hooks/useReadiness";
+import { trimSessionForRecovery } from "@/lib/recovery";
+import { Check, ChevronDown, ChevronsRight, Dumbbell, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 type ExerciseDraft = {
   id: string;
@@ -33,7 +36,9 @@ const createExerciseDraft = (overrides?: Partial<ExerciseDraft>): ExerciseDraft 
   id: `exercise-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   name: "",
   sets: "3",
-  reps: "10",
+  // Targets are opt-in: blank reps/weight = decide while training, so the
+  // fastest path is name → Save.
+  reps: "",
   weight: "",
   decideLater: false,
   ...overrides,
@@ -119,6 +124,7 @@ const StarterProgramRow = ({ program, saved, saving, saveDisabled, onSave, onSta
 const Workouts = () => {
   const navigate = useNavigate();
   const { templates, loading, save, remove } = useWorkoutTemplates();
+  const readiness = useReadiness();
   const [builderOpen, setBuilderOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
@@ -130,18 +136,6 @@ const Workouts = () => {
 
   const completedExercises = useMemo(
     () => exercises.filter((exercise) => exercise.name.trim()),
-    [exercises],
-  );
-  const plannedSets = useMemo(
-    () => exercises.reduce((sum, exercise) => sum + (exercise.decideLater ? 0 : toInteger(exercise.sets, 0)), 0),
-    [exercises],
-  );
-  const plannedVolume = useMemo(
-    () =>
-      exercises.reduce((sum, exercise) => {
-        if (exercise.decideLater) return sum;
-        return sum + toInteger(exercise.sets, 0) * toInteger(exercise.reps, 0) * toDecimal(exercise.weight);
-      }, 0),
     [exercises],
   );
   const canSave = workoutName.trim().length > 0 && completedExercises.length > 0;
@@ -156,9 +150,35 @@ const Workouts = () => {
   const openBuilder = () => {
     setEditingWorkoutId(null);
     setWorkoutName("");
-    setExercises([]);
+    // One empty row ready to type into — no "add your first exercise" detour.
+    setExercises([createExerciseDraft()]);
     setBuilderOpen(true);
   };
+
+  // The + tab (and sidebar "New workout") land here as /workouts?new=1 —
+  // open the builder and strip the param so back/refresh don't re-open it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("new") === "1") {
+      openBuilder();
+      setSearchParams({}, { replace: true });
+    }
+     
+  }, [searchParams, setSearchParams]);
+
+  // A session in progress — the way back in now that logging lives under
+  // Workouts. Read per render: navigation re-mounts this page, and finishing
+  // or discarding a session clears the key before returning here.
+  const activeSeed = useMemo(() => {
+    try {
+      const raw = window.localStorage.getItem(ACTIVE_WORKOUT_STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as { name?: string };
+    } catch {
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-check on every route entry
+  }, [searchParams]);
 
   const editWorkout = (template: { id: string; name: string; exercises: WorkoutExercise[] }) => {
     setEditingWorkoutId(template.id);
@@ -175,14 +195,23 @@ const Workouts = () => {
     }
   };
 
+  // The run-down trim applies on EVERY start path — the readiness sentence
+  // and the coach both promise it unconditionally, so a library start must
+  // behave exactly like the dashboard CTA.
+  const persistWithRecovery = (session: ReturnType<typeof buildSessionFromTemplate>) => {
+    persistActiveSession(
+      readiness?.state === "run_down" ? trimSessionForRecovery(session) : session,
+    );
+  };
+
   const startWorkout = (template: { id?: string; name: string; exercises: WorkoutExercise[] }) => {
-    persistActiveSession(buildSessionFromTemplate(template));
+    persistWithRecovery(buildSessionFromTemplate(template));
     navigate("/workouts/active");
   };
 
   // Starter programs start without a templateId — see buildSessionFromStarter.
   const startProgram = (program: StarterProgram) => {
-    persistActiveSession(buildSessionFromStarter(program));
+    persistWithRecovery(buildSessionFromStarter(program));
     navigate("/workouts/active");
   };
 
@@ -215,7 +244,9 @@ const Workouts = () => {
     setSaving(true);
 
     const exercisesToSave: WorkoutExercise[] = completedExercises.map((exercise) => {
-      const targetSets = toInteger(exercise.sets, 1);
+      // Blank targets = decide during the session. No toggle, no ceremony.
+      const decideLater = exercise.reps.trim() === "" && exercise.weight.trim() === "";
+      const targetSets = toInteger(exercise.sets, 3);
       const targetReps = toInteger(exercise.reps, 0);
       const targetWeight = toDecimal(exercise.weight);
 
@@ -223,13 +254,13 @@ const Workouts = () => {
         id: exercise.id,
         name: exercise.name.trim(),
         category: workoutName.trim(),
-        target: exercise.decideLater
-          ? "Decide sets, reps, and weight while logging"
-          : `${targetSets} sets × ${targetReps} reps at ${targetWeight || "bodyweight/TBD"} lb`,
-        sets: Array.from({ length: exercise.decideLater ? 1 : targetSets }, (_, index) => ({
+        target: decideLater
+          ? ""
+          : `${targetSets} × ${targetReps}${targetWeight > 0 ? ` @ ${targetWeight}` : ""}`,
+        sets: Array.from({ length: decideLater ? toInteger(exercise.sets, 1) : targetSets }, (_, index) => ({
           id: `${exercise.id}-set-${index + 1}`,
-          reps: exercise.decideLater ? 0 : targetReps,
-          weight: exercise.decideLater ? 0 : targetWeight,
+          reps: decideLater ? 0 : targetReps,
+          weight: decideLater ? 0 : targetWeight,
         })),
       };
     });
@@ -254,6 +285,20 @@ const Workouts = () => {
           <p className="mono text-xs tabular-nums text-fg-muted">{templates.length} saved</p>
         )}
       </header>
+
+      {/* A running session always has a visible way back in */}
+      {activeSeed && (
+        <Link
+          to="/workouts/active"
+          className="mb-6 flex min-h-[52px] items-center justify-between gap-4 rounded-[13px] border border-primary/40 bg-primary/10 px-4 py-3.5 animate-reveal-up transition-transform duration-150 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        >
+          <span className="flex items-center gap-2.5 text-sm font-semibold text-fg">
+            <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+            Resume session{activeSeed.name ? ` · ${activeSeed.name}` : ""}
+          </span>
+          <ChevronsRight size={16} className="shrink-0 text-primary" />
+        </Link>
+      )}
 
       {/* The tab badge counts pending reviews — they must live where the
           badge points. */}
@@ -390,201 +435,98 @@ const Workouts = () => {
         </section>
       )}
 
+      {/* ── Builder — a name, exercise rows, one button. Blank targets mean
+          "decide while training"; nothing here needs explaining. ── */}
       <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
-        <DialogContent className="grid h-[min(88dvh,780px)] max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[780px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[14px] border border-border bg-background p-0 sm:w-[calc(100vw-2rem)]">
-          <div className="border-b border-border px-5 pb-4 pt-6 md:px-6">
+        <DialogContent className="grid h-[min(85dvh,680px)] max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[560px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[18px] border border-border bg-background p-0 sm:w-[calc(100vw-2rem)]">
+          <div className="px-5 pb-1 pt-6 md:px-6">
             <DialogHeader className="pr-9">
-              <div className="flex items-start gap-3">
-                <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-border bg-card sm:flex">
-                  <Dumbbell className="h-[18px] w-[18px] translate-x-[0.5px] translate-y-[0.5px] text-primary" strokeWidth={1.9} />
-                </div>
-                <div className="min-w-0">
-                  <DialogTitle className="text-lg md:text-xl">{editingWorkoutId ? "Edit Workout" : "Create Workout"}</DialogTitle>
-                  <DialogDescription className="mt-1.5 max-w-xl text-sm leading-relaxed text-fg-soft max-sm:line-clamp-2">
-                    {editingWorkoutId
-                      ? "Update the workout details, revise exercises, or remove anything you no longer want in the template."
-                      : "Add the workout details and exercises you want to track. Leave targets flexible when you want to decide during the session."}
-                  </DialogDescription>
-                </div>
-              </div>
+              <DialogTitle className="text-lg">
+                {editingWorkoutId ? "Edit workout" : "New workout"}
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                Name the workout and list its exercises. Leave reps and weight
+                blank to decide while training.
+              </DialogDescription>
             </DialogHeader>
-            <div className="mt-4 grid grid-cols-3 gap-2 sm:max-w-md">
-              {[
-                ["Exercises", exercises.length],
-                ["Sets", plannedSets],
-                ["Volume", `${plannedVolume.toLocaleString()} lb`],
-              ].map(([label, value]) => (
-                <div key={label} className="min-w-0 rounded-lg border border-border px-2.5 py-2">
-                  <p className="truncate text-[10px] uppercase tracking-[0.12em] text-fg-muted">{label}</p>
-                  <p className="stat-md mt-1 truncate">{value}</p>
-                </div>
-              ))}
-            </div>
+            <input
+              autoFocus
+              value={workoutName}
+              onChange={(event) => setWorkoutName(event.target.value)}
+              placeholder="Workout name — Push Day, Legs…"
+              aria-label="Workout name"
+              className="mt-3 h-12 w-full rounded-lg border border-border bg-card px-3 text-[15px] font-medium text-fg outline-none transition placeholder:font-normal focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+            />
           </div>
 
-          <div className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-5 py-4 md:px-6">
-            <div className="space-y-5">
-              <section>
-                <div>
-                  <p className="eyebrow mb-1.5">Workout Info</p>
-                  <h3 className="text-sm font-semibold text-fg">Name your routine</h3>
-                </div>
-                <label className="mt-3 block min-w-0">
-                  <span className="mb-1.5 block text-xs text-fg-muted">Workout name</span>
-                  <input
-                    value={workoutName}
-                    onChange={(event) => setWorkoutName(event.target.value)}
-                    placeholder="Arm Day, Leg Day, Push A..."
-                    className="h-12 w-full rounded-lg border border-border bg-card px-3 text-sm text-fg outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/25"
-                  />
-                </label>
-              </section>
-
-              <section className="space-y-3 border-t border-border pt-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="eyebrow mb-1.5">Exercises</p>
-                    <h3 className="text-sm font-semibold text-fg">Build the workout</h3>
+          <div className="min-h-0 overflow-y-auto overscroll-contain px-5 py-4 md:px-6">
+            <div className="space-y-4">
+              {exercises.map((exercise, index) => (
+                <div key={exercise.id} className="rule-hairline pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={exercise.name}
+                      onChange={(event) => updateExercise(exercise.id, "name", event.target.value)}
+                      placeholder={index === 0 ? "Exercise — Bench Press, Squat…" : "Exercise"}
+                      aria-label={`Exercise ${index + 1} name`}
+                      className="h-11 w-full min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-sm font-medium text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                    />
+                    {exercises.length > 1 && (
+                      <button
+                        type="button"
+                        aria-label="Remove exercise"
+                        onClick={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] text-fg-muted transition hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
-                  <span className="rounded-full border border-border px-2.5 py-1 text-xs text-fg-muted">
-                    {exercises.length} added
-                  </span>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {(
+                      [
+                        ["sets", "Sets", "3", "numeric", integerInput],
+                        ["reps", "Reps", "—", "numeric", integerInput],
+                        ["weight", "Weight", "—", "decimal", decimalInput],
+                      ] as const
+                    ).map(([key, label, hint, mode, sanitize]) => (
+                      <label key={key} className="block min-w-0">
+                        <span className="mb-1 block text-[10px] uppercase tracking-widest text-fg-muted">
+                          {label}
+                        </span>
+                        <input
+                          type="text"
+                          inputMode={mode}
+                          value={exercise[key]}
+                          placeholder={hint}
+                          onChange={(event) => updateExercise(exercise.id, key, sanitize(event.target.value))}
+                          className="h-11 w-full rounded-lg border border-border bg-card px-3 text-center text-sm tabular-nums text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                        />
+                      </label>
+                    ))}
+                  </div>
                 </div>
+              ))}
 
-                <div className="space-y-3">
-                  {exercises.length === 0 ? (
-                    <div className="rounded-[14px] border border-dashed border-border p-6 text-center">
-                      <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[0.875rem] border border-border bg-card">
-                        <Dumbbell className="h-4 w-4 translate-x-[0.5px] translate-y-[0.5px] text-primary" strokeWidth={1.9} />
-                      </div>
-                      <p className="text-sm font-semibold text-fg">No exercises added yet.</p>
-                      <p className="body-md mx-auto mt-2 max-w-sm">
-                        Use the Add exercise button below to start building this workout.
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      {exercises.map((exercise, index) => (
-                        <article key={exercise.id} className="rounded-[14px] border border-border bg-card p-4">
-                          <div className="mb-3 flex items-start justify-between gap-3">
-                            <div className="flex min-w-0 items-start gap-3">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.75rem] border border-border text-xs font-semibold text-fg">
-                                {index + 1}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-fg">Exercise {index + 1}</p>
-                                <p className="mt-1 text-xs leading-relaxed text-fg-muted">
-                                  Leave targets blank or decide during the session.
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              aria-label="Remove exercise"
-                              onClick={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))}
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] text-fg-muted transition hover:bg-destructive/10 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-
-                          <div className="grid gap-3">
-                            <label className="block min-w-0">
-                              <span className="mb-1.5 block text-xs text-fg-muted">Exercise name</span>
-                              <input
-                                value={exercise.name}
-                                onChange={(event) => updateExercise(exercise.id, "name", event.target.value)}
-                                placeholder="Bench press, leg press, hammer curl..."
-                                className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/25"
-                              />
-                            </label>
-
-                            <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                              <label className="block min-w-0">
-                                <span className="mb-1.5 block text-xs text-fg-muted">Sets</span>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  value={exercise.sets}
-                                  disabled={exercise.decideLater}
-                                  onChange={(event) => updateExercise(exercise.id, "sets", integerInput(event.target.value))}
-                                  className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-40"
-                                />
-                              </label>
-                              <label className="block min-w-0">
-                                <span className="mb-1.5 block text-xs text-fg-muted">Reps</span>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  value={exercise.reps}
-                                  disabled={exercise.decideLater}
-                                  onChange={(event) => updateExercise(exercise.id, "reps", integerInput(event.target.value))}
-                                  className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-40"
-                                />
-                              </label>
-                              <label className="block min-w-0">
-                                <span className="mb-1.5 block text-xs text-fg-muted">Weight</span>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={exercise.weight}
-                                  disabled={exercise.decideLater}
-                                  onChange={(event) => updateExercise(exercise.id, "weight", decimalInput(event.target.value))}
-                                  className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-40"
-                                />
-                              </label>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => updateExercise(exercise.id, "decideLater", !exercise.decideLater)}
-                              className={`inline-flex min-h-11 w-full items-center justify-center rounded-full border px-4 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-ring/40 sm:w-fit ${
-                                exercise.decideLater
-                                  ? "border-primary bg-primary/10 text-primary"
-                                  : "border-border text-fg-muted hover:bg-secondary hover:text-fg"
-                              }`}
-                            >
-                              Decide later
-                            </button>
-                          </div>
-                        </article>
-                      ))}
-                    </>
-                  )}
-                </div>
-              </section>
+              <button
+                type="button"
+                onClick={addExercise}
+                className="flex min-h-11 w-full items-center gap-2 rule-hairline pt-3 text-sm font-medium text-fg-muted transition hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              >
+                <Plus size={15} />
+                Add exercise
+              </button>
+              <p className="caption !text-fg-faint">
+                Leave reps and weight blank to decide while training.
+              </p>
             </div>
           </div>
 
           <div className="border-t border-border px-5 py-4 md:px-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="button"
-                onClick={addExercise}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-border px-4 py-3 text-sm font-medium text-fg transition hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
-              >
-                <Plus size={16} />
-                Add exercise
-              </button>
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBuilderOpen(false);
-                    setEditingWorkoutId(null);
-                  }}
-                  className="inline-flex items-center justify-center rounded-full border border-border px-4 py-3 text-sm text-fg-muted transition hover:bg-secondary hover:text-fg focus:outline-none focus:ring-2 focus:ring-ring/40"
-                >
-                  Cancel
-                </button>
-                <CTAButton onClick={saveWorkout} disabled={!canSave || saving}>
-                  <Check size={15} />
-                  {saving ? "Saving…" : editingWorkoutId ? "Save changes" : "Done"}
-                </CTAButton>
-              </div>
-            </div>
+            <CTAButton onClick={saveWorkout} disabled={!canSave || saving} fullWidth>
+              <Check size={15} />
+              {saving ? "Saving…" : "Save workout"}
+            </CTAButton>
           </div>
         </DialogContent>
       </Dialog>

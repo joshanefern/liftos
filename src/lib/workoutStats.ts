@@ -36,6 +36,18 @@ export const getWeekStats = (logs: WorkoutLog[]): WeekStats => {
   };
 };
 
+/** Session count for last week (the full Mon–Sun before this one) — the
+    neutral comparison This-week uses instead of a quota grade. */
+export const getPrevWeekSessions = (logs: WorkoutLog[]): number => {
+  const weekStart = startOfCurrentWeek();
+  const prevStart = new Date(weekStart);
+  prevStart.setDate(prevStart.getDate() - 7);
+  return logs.filter((l) => {
+    const d = new Date(l.finished_at);
+    return d >= prevStart && d < weekStart;
+  }).length;
+};
+
 
 /** Weekly streak — consecutive weeks (Mon-start, local) with at least one
     logged session. The research-backed consistency metric: alive with one
@@ -130,29 +142,36 @@ export const getRecentSessions = (logs: WorkoutLog[], limit = 10): SessionPoint[
 export type VolumePoint = { week: string; volume: number };
 
 export const getVolumeTrend = (logs: WorkoutLog[]): VolumePoint[] => {
-  const weeks: Record<string, number> = {};
+  // Buckets key on the week-start timestamp — year-less "Aug 4" labels parse
+  // as year 2001 and mis-sort across a New Year boundary.
+  const weeks: Record<number, number> = {};
   for (const log of logs) {
     const d = new Date(log.finished_at);
     const ws = new Date(d);
     ws.setDate(d.getDate() - dayIndex(d));
     ws.setHours(0, 0, 0, 0);
-    const key = ws.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    weeks[key] = (weeks[key] ?? 0) + log.total_volume;
+    weeks[ws.getTime()] = (weeks[ws.getTime()] ?? 0) + log.total_volume;
   }
-  const sorted = Object.entries(weeks).sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime());
-  return sorted.slice(-8).map(([week, volume]) => ({ week, volume }));
+  return Object.entries(weeks)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .slice(-8)
+    .map(([ts, volume]) => ({
+      week: new Date(Number(ts)).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      volume,
+    }));
 };
 
 export type TopLift = { name: string; weight: number; reps: number };
 
-export const getTopLifts = (logs: WorkoutLog[]): TopLift[] => {
+export const getTopLifts = (logs: WorkoutLog[], limit = 5): TopLift[] => {
   const bests: Record<string, TopLift> = {};
   for (const log of logs) {
     for (const exercise of log.exercises) {
       for (const set of exercise.sets) {
         // Warmup sets never count toward bests (or any per-set stat here —
-        // volume/set counts come from precomputed log totals).
-        if (!set.completed || set.isWarmup || set.weight <= 0) continue;
+        // volume/set counts come from precomputed log totals). The inverted
+        // comparison also rejects undefined/NaN weights from review imports.
+        if (!set.completed || set.isWarmup || !(set.weight > 0)) continue;
         const existing = bests[exercise.name];
         if (!existing || set.weight > existing.weight) {
           bests[exercise.name] = { name: exercise.name, weight: set.weight, reps: set.reps };
@@ -160,7 +179,7 @@ export const getTopLifts = (logs: WorkoutLog[]): TopLift[] => {
       }
     }
   }
-  return Object.values(bests).sort((a, b) => b.weight - a.weight).slice(0, 5);
+  return Object.values(bests).sort((a, b) => b.weight - a.weight).slice(0, limit);
 };
 
 export const getMonthStats = (logs: WorkoutLog[]) => {

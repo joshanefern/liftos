@@ -8,21 +8,23 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="LiftOS" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F5F7" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0E1420" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4EFE7" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0C0C11" />
 
     <!-- Apply the stored theme before first paint so neither mode flashes
          the other. Must stay in sync with ThemeContext's storage key. -->
     <script>
       (function () {
         try {
-          var t = localStorage.getItem("liftos-theme");
+          var t = localStorage.getItem("liftos-theme-v2");
+          // No stored choice = dark (the identity); "system" follows the OS.
           var dark =
             t === "dark" ||
-            ((t === null || t === "system") &&
+            t === null ||
+            (t === "system" &&
               window.matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.classList.toggle("dark", dark);
-        } catch (e) { /* default to light */ }
+        } catch (e) { document.documentElement.classList.add("dark"); }
       })();
     </script>
 

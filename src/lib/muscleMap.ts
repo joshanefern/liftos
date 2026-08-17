@@ -173,11 +173,17 @@ const fuzzyRules: { match: (n: string) => boolean; mapping: MuscleMapping }[] = 
   { match: (n) => n.includes("pull") && (n.includes("up") || n.includes("-up")), mapping: { primary: ["upper-back"], secondary: ["biceps", "back-deltoids"] } },
   { match: (n) => n.includes("chin"), mapping: { primary: ["upper-back", "biceps"], secondary: [] } },
   { match: (n) => n.includes("pulldown") || n.includes("lat pull"), mapping: { primary: ["upper-back"], secondary: ["biceps"] } },
+  { match: (n) => n.includes("pullover") || (n.includes("pull") && n.includes("over")), mapping: { primary: ["chest", "upper-back"], secondary: ["triceps"] } },
+  { match: (n) => n.includes("upright") && n.includes("row"), mapping: { primary: ["trapezius", "back-deltoids"], secondary: ["biceps"] } },
   { match: (n) => n.includes("row"), mapping: { primary: ["upper-back"], secondary: ["biceps", "back-deltoids"] } },
+  { match: (n) => (n.includes("back") || n.includes("hyper")) && n.includes("extension"), mapping: { primary: ["lower-back"], secondary: ["gluteal", "hamstring"] } },
+  { match: (n) => n.includes("carry") || n.includes("farmer"), mapping: { primary: ["forearm", "trapezius"], secondary: ["abs"] } },
+  { match: (n) => n.includes("hang") && !n.includes("clean") && !n.includes("snatch"), mapping: { primary: ["forearm"], secondary: ["upper-back"] } },
 
-  // Biceps
+  // Biceps / forearms
   { match: (n) => n.includes("hammer") && n.includes("curl"), mapping: { primary: ["biceps", "forearm"], secondary: [] } },
   { match: (n) => n.includes("preacher"), mapping: { primary: ["biceps"], secondary: [] } },
+  { match: (n) => (n.includes("wrist") || n.includes("reverse")) && n.includes("curl"), mapping: { primary: ["forearm"], secondary: ["biceps"] } },
   { match: (n) => n.includes("curl") && !n.includes("leg"), mapping: { primary: ["biceps"], secondary: ["forearm"] } },
 
   // Legs
@@ -187,13 +193,37 @@ const fuzzyRules: { match: (n: string) => boolean; mapping: MuscleMapping }[] = 
   { match: (n) => n.includes("lunge") || n.includes("split squat") || n.includes("step-up") || n.includes("step up"), mapping: { primary: ["quadriceps", "gluteal"], secondary: ["hamstring"] } },
   { match: (n) => (n.includes("leg") && n.includes("curl")) || n.includes("hamstring curl") || n.includes("nordic"), mapping: { primary: ["hamstring"], secondary: [] } },
   { match: (n) => n.includes("hip thrust") || n.includes("glute bridge") || n.includes("kickback"), mapping: { primary: ["gluteal"], secondary: ["hamstring"] } },
-  { match: (n) => n.includes("calf"), mapping: { primary: ["calves"], secondary: [] } },
+  { match: (n) => n.includes("abduct"), mapping: { primary: ["abductors"], secondary: ["gluteal"] } },
+  { match: (n) => n.includes("adduct"), mapping: { primary: ["adductor"], secondary: [] } },
+  { match: (n) => n.includes("calf") || n.includes("calves"), mapping: { primary: ["calves"], secondary: [] } },
 
   // Core
   { match: (n) => n.includes("plank") && !n.includes("side"), mapping: { primary: ["abs"], secondary: ["obliques"] } },
   { match: (n) => n.includes("side plank"), mapping: { primary: ["obliques"], secondary: ["abs"] } },
   { match: (n) => n.includes("crunch") || n.includes("sit-up") || n.includes("situp") || n.includes("ab wheel") || (n.includes("leg raise") && (n.includes("hanging") || n.includes("captain"))), mapping: { primary: ["abs"], secondary: [] } },
   { match: (n) => n.includes("twist") || n.includes("oblique") || n.includes("woodchop"), mapping: { primary: ["obliques"], secondary: ["abs"] } },
+
+  // ── Muscle-name fallbacks — LAST, so movement rules always win. People
+  //    name exercises (and review imports) after the muscle itself:
+  //    "biceps", "forearms", "back", "leg day". A named muscle must never
+  //    leave the map gray. Word-boundary matches keep "hack squat" away
+  //    from \bback\b and "front raise" away from \barms?\b.
+  { match: (n) => /\b(biceps?|bis)\b/.test(n), mapping: { primary: ["biceps"], secondary: ["forearm"] } },
+  { match: (n) => /\b(triceps?|tris)\b/.test(n), mapping: { primary: ["triceps"], secondary: [] } },
+  { match: (n) => /\b(forearms?|grip|wrists?)\b/.test(n), mapping: { primary: ["forearm"], secondary: [] } },
+  { match: (n) => /\b(chest|pecs?)\b/.test(n), mapping: { primary: ["chest"], secondary: ["front-deltoids", "triceps"] } },
+  { match: (n) => /\blats?\b/.test(n), mapping: { primary: ["upper-back"], secondary: ["biceps"] } },
+  { match: (n) => /\blower back\b/.test(n), mapping: { primary: ["lower-back"], secondary: ["gluteal"] } },
+  { match: (n) => /\bback\b/.test(n), mapping: { primary: ["upper-back"], secondary: ["back-deltoids", "biceps"] } },
+  { match: (n) => /\b(shoulders?|delts?)\b/.test(n), mapping: { primary: ["front-deltoids", "back-deltoids"], secondary: ["trapezius"] } },
+  { match: (n) => /\btraps?\b/.test(n), mapping: { primary: ["trapezius"], secondary: [] } },
+  { match: (n) => /\b(quads?|quadriceps)\b/.test(n), mapping: { primary: ["quadriceps"], secondary: [] } },
+  { match: (n) => /\b(hamstrings?|hammies)\b/.test(n), mapping: { primary: ["hamstring"], secondary: ["gluteal"] } },
+  { match: (n) => /\b(glutes?|booty)\b/.test(n), mapping: { primary: ["gluteal"], secondary: ["hamstring"] } },
+  { match: (n) => /\b(abs|core|abdominals?)\b/.test(n), mapping: { primary: ["abs"], secondary: ["obliques"] } },
+  { match: (n) => /\blegs?\b/.test(n), mapping: { primary: ["quadriceps", "hamstring", "gluteal"], secondary: ["calves"] } },
+  { match: (n) => /\barms?\b/.test(n), mapping: { primary: ["biceps", "triceps"], secondary: ["forearm"] } },
+  { match: (n) => /\bneck\b/.test(n), mapping: { primary: ["neck"], secondary: ["trapezius"] } },
 ];
 
 export const lookupMuscles = (exerciseName: string): MuscleMapping | null => {

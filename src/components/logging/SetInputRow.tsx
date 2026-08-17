@@ -1,4 +1,4 @@
-import { HoldStepper, roundToStep } from "@/components/logging/HoldStepper";
+import { formatHoldInput, sanitizeHold } from "@/lib/exerciseTracking";
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
 import { forwardRef, type KeyboardEvent, type MouseEvent } from "react";
@@ -11,8 +11,12 @@ import { forwardRef, type KeyboardEvent, type MouseEvent } from "react";
  *     single tap commits it (then selects, so typing overwrites)
  *   - Enter-key focus auto-advance: reps → weight → done-toggle (weight-Enter
  *     marks done; the parent decides whether to move focus to the next set)
- *   - press-and-hold accelerating weight steppers (5 lb / 2.5 kg per tap,
- *     doubled step on auto-repeat while held)
+ *   - effort="time" swaps the reps column for a hold-duration field (planks,
+ *     hangs, carries) — bare digits read as seconds ("90" → 1:30); the weight
+ *     column stays for loaded holds and reads bodyweight when empty
+ *
+ *   Three cells and a check — no steppers, no chrome (owner's brief:
+ *   minimal; plate math still opens from a filled weight value).
  */
 
 export const sanitizeReps = (raw: string): string => raw.replace(/\D/g, "");
@@ -31,13 +35,17 @@ export const formatWeightForDisplay = (n: number): string => {
 export type SetInputRowProps = {
   idx: number;
   showLabels: boolean;
+  /** "reps" (default) or "time" — which effort column this row shows. */
+  effort?: "reps" | "time";
+  /** Workout-mode register: larger condensed numerals, taller rows —
+      arm's-length legibility on the black scoreboard. */
+  scoreboard?: boolean;
   reps: string;
   weight: string;
   done: boolean;
   unitsLabel: string;
   repsHint: number | null;
   weightHint: number | null;
-  isMetric: boolean;
   /** Renders the quiet warm-up variant: W chip, muted values, no terracotta. */
   isWarmup?: boolean;
   registerRepsRef: (el: HTMLInputElement | null) => void;
@@ -65,13 +73,14 @@ export type SetInputRowProps = {
 export const SetInputRow = ({
   idx,
   showLabels,
+  effort = "reps",
+  scoreboard = false,
   reps,
   weight,
   done,
   unitsLabel,
   repsHint,
   weightHint,
-  isMetric,
   isWarmup = false,
   registerRepsRef,
   registerWeightRef,
@@ -83,12 +92,17 @@ export const SetInputRow = ({
   onWeightEnter,
   onWeightValueTap,
 }: SetInputRowProps) => {
+  const isTimed = effort === "time";
   const repsEmpty = reps === "";
   const weightEmpty = weight === "";
+  // In time mode the "reps" channel carries the hold text — hints are seconds.
+  const formatEffortHint = (n: number): string =>
+    isTimed ? formatHoldInput(n) : String(n);
+  const sanitizeEffort = isTimed ? sanitizeHold : sanitizeReps;
 
   const handleRepsClick = (e: MouseEvent<HTMLInputElement>) => {
     if (repsEmpty && repsHint !== null) {
-      onRepsChange(String(repsHint));
+      onRepsChange(formatEffortHint(repsHint));
       const el = e.currentTarget;
       requestAnimationFrame(() => el?.select());
     }
@@ -127,27 +141,19 @@ export const SetInputRow = ({
     // DOM order so focus naturally lands there.
   };
 
-  const handleStep = (delta: number) => {
-    const curr = weight === "" ? (weightHint ?? 0) : parseFloat(weight);
-    const base = Number.isFinite(curr) ? curr : 0;
-    const step = Math.abs(delta);
-    const next = Math.max(0, roundToStep(base + delta, step));
-    onWeightChange(formatWeightForDisplay(next));
-  };
-
   return (
     <div className="space-y-1">
       {showLabels && (
-        <div className="grid grid-cols-[28px_minmax(0,0.8fr)_minmax(0,1.6fr)_36px] items-end gap-2 px-1 text-[10px] uppercase tracking-widest text-fg-muted">
+        <div className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1.2fr)_36px] items-end gap-2 px-1 text-[10px] uppercase tracking-widest text-fg-muted">
           <span>Set</span>
-          <span>Reps</span>
+          <span>{isTimed ? "Time" : "Reps"}</span>
           <span>Weight</span>
           <span />
         </div>
       )}
       <div
         className={cn(
-          "grid grid-cols-[28px_minmax(0,0.8fr)_minmax(0,1.6fr)_36px] items-center gap-2 rounded-[0.875rem] py-0.5 transition",
+          "grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1.2fr)_36px] items-center gap-2 rounded-[0.875rem] py-0.5 transition",
           done && (isWarmup ? "bg-secondary/60" : "bg-primary/[0.06]"),
         )}
       >
@@ -164,41 +170,44 @@ export const SetInputRow = ({
           </span>
         )}
 
-        {/* Reps */}
+        {/* Effort: reps, or hold time ("90" reads as seconds → 1:30) */}
         <NumericInput
           ref={registerRepsRef}
+          scoreboard={scoreboard}
           value={reps}
           hint={repsHint}
-          onChange={(v) => onRepsChange(sanitizeReps(v))}
+          formatHint={formatEffortHint}
+          onChange={(v) => onRepsChange(sanitizeEffort(v))}
           onClickEmpty={handleRepsClick}
           onKeyDown={handleRepsKey}
           inputMode="numeric"
-          pattern="[0-9]*"
-          ariaLabel={isWarmup ? "Warm-up set reps" : `Set ${idx + 1} reps`}
+          pattern={isTimed ? undefined : "[0-9]*"}
+          ariaLabel={
+            isWarmup
+              ? `Warm-up set ${isTimed ? "time" : "reps"}`
+              : `Set ${idx + 1} ${isTimed ? "time" : "reps"}`
+          }
           align="center"
           muted={isWarmup}
         />
 
-        {/* Weight cluster: [-] [value lb] [+] */}
-        <div className="flex h-11 items-center gap-1 rounded-[0.875rem] bg-secondary px-1">
-          <HoldStepper direction="down" isMetric={isMetric} onStep={handleStep} ariaLabel="Decrease weight" />
-          <NumericInput
-            ref={registerWeightRef}
-            value={weight}
-            hint={weightHint}
-            onChange={(v) => onWeightChange(sanitizeWeight(v))}
-            onClickEmpty={handleWeightClick}
-            onMouseDown={handleWeightMouseDown}
-            onKeyDown={handleWeightKey}
-            inputMode="decimal"
-            ariaLabel={isWarmup ? "Warm-up set weight" : `Set ${idx + 1} weight`}
-            align="center"
-            suffix={unitsLabel}
-            transparent
-            muted={isWarmup}
-          />
-          <HoldStepper direction="up" isMetric={isMetric} onStep={handleStep} ariaLabel="Increase weight" />
-        </div>
+        {/* Weight — same quiet cell as the effort column */}
+        <NumericInput
+          ref={registerWeightRef}
+          scoreboard={scoreboard}
+          value={weight}
+          hint={weightHint}
+          emptyPlaceholder={isTimed ? "BW" : undefined}
+          onChange={(v) => onWeightChange(sanitizeWeight(v))}
+          onClickEmpty={handleWeightClick}
+          onMouseDown={handleWeightMouseDown}
+          onKeyDown={handleWeightKey}
+          inputMode="decimal"
+          ariaLabel={isWarmup ? "Warm-up set weight" : `Set ${idx + 1} weight`}
+          align="center"
+          suffix={unitsLabel}
+          muted={isWarmup}
+        />
 
         {/* Done toggle — warm-ups complete in quiet ink, never terracotta */}
         <button
@@ -209,14 +218,20 @@ export const SetInputRow = ({
           className={cn(
             "relative inline-flex h-9 w-9 items-center justify-center rounded-full border transition after:absolute after:-inset-1 after:content-[''] focus:outline-none focus:ring-2",
             done && isWarmup && "border-border bg-secondary text-fg-soft focus:ring-primary/30",
-            done && !isWarmup && "border-primary bg-primary text-primary-foreground focus:ring-primary/40",
+            done && !isWarmup && "check-pop border-primary bg-primary text-primary-foreground focus:ring-primary/40",
             !done &&
               (isWarmup
                 ? "border-border bg-secondary text-fg-muted hover:text-fg-soft focus:ring-primary/30"
                 : "border-border bg-secondary text-fg-muted hover:border-primary/50 hover:text-primary focus:ring-primary/30"),
           )}
         >
-          <Check size={14} strokeWidth={2.5} />
+          {/* keyed remount replays the 200ms draw each completion */}
+          <Check
+            key={done ? "done" : "todo"}
+            size={14}
+            strokeWidth={2.5}
+            className={done && !isWarmup ? "check-draw" : undefined}
+          />
         </button>
       </div>
     </div>
@@ -226,8 +241,13 @@ export const SetInputRow = ({
 // ── NumericInput (inline placeholder + optional suffix) ─────────────────────
 
 type NumericInputProps = {
+  scoreboard?: boolean;
   value: string;
   hint: number | null;
+  /** How to render the hint as placeholder text (default: weight formatting). */
+  formatHint?: (n: number) => string;
+  /** Placeholder when there is no hint at all (default "—"; "BW" for hold weights). */
+  emptyPlaceholder?: string;
   onChange: (v: string) => void;
   onClickEmpty: (e: MouseEvent<HTMLInputElement>) => void;
   onMouseDown?: (e: MouseEvent<HTMLInputElement>) => void;
@@ -245,8 +265,11 @@ type NumericInputProps = {
 const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
   function NumericInput(
     {
+      scoreboard,
       value,
       hint,
+      formatHint,
+      emptyPlaceholder,
       onChange,
       onClickEmpty,
       onMouseDown,
@@ -262,11 +285,14 @@ const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
     ref,
   ) {
     const isEmpty = value === "";
-    const placeholder = hint !== null ? formatWeightForDisplay(hint) : "—";
+    const placeholder =
+      hint !== null
+        ? (formatHint ?? formatWeightForDisplay)(hint)
+        : (emptyPlaceholder ?? "—");
     return (
       <div
         className={cn(
-          "relative flex h-11 min-w-0 flex-1 items-center",
+          scoreboard ? "relative flex h-12 min-w-0 flex-1 items-center" : "relative flex h-11 min-w-0 flex-1 items-center",
           !transparent && "rounded-[0.875rem] bg-secondary",
           isEmpty && hint !== null && "group/hint",
         )}
@@ -287,7 +313,13 @@ const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
             "h-full w-full min-w-0 bg-transparent font-semibold tabular-nums outline-none placeholder:font-medium placeholder:text-fg-muted",
             muted && "font-medium text-fg-muted",
             align === "center" ? "text-center" : "px-3",
-            suffix ? "pl-1 pr-6 text-[15px]" : "px-2 text-[15px]",
+            scoreboard
+              ? suffix
+                ? "stat-scoreboard pl-1 pr-6 text-[22px]"
+                : "stat-scoreboard px-2 text-[22px]"
+              : suffix
+                ? "pl-1 pr-6 text-[15px]"
+                : "px-2 text-[15px]",
             "transition group-hover/hint:placeholder:text-primary/70 group-hover/hint:cursor-copy",
           )}
         />

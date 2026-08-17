@@ -13,6 +13,7 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryRecoveryMetrics", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startObserving", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "debugSeedWorkout", returnType: CAPPluginReturnPromise),
     ]
@@ -38,12 +39,22 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         guard let heartRate = HKQuantityType.quantityType(forIdentifier: .heartRate),
-              let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)
+              let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
+              let hrv = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN),
+              let restingHeartRate = HKQuantityType.quantityType(forIdentifier: .restingHeartRate),
+              let respiratoryRate = HKQuantityType.quantityType(forIdentifier: .respiratoryRate),
+              let sleepAnalysis = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)
         else {
             call.reject("HealthKit types unavailable")
             return
         }
-        let read: Set<HKObjectType> = [HKObjectType.workoutType(), heartRate, energy]
+        // Overnight recovery metrics ride the same permission sheet — the
+        // readiness engine (src/lib/recovery.ts) reads HRV, resting HR,
+        // sleep, and respiratory rate via queryRecoveryMetrics.
+        let read: Set<HKObjectType> = [
+            HKObjectType.workoutType(), heartRate, energy,
+            hrv, restingHeartRate, respiratoryRate, sleepAnalysis,
+        ]
         // Write access exists only so debug builds can seed the simulator's
         // empty Health store for end-to-end QA.
         #if DEBUG
@@ -94,6 +105,119 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
             self.buildPayloads(for: workouts) { payloads in
                 DispatchQueue.main.async { call.resolve(["workouts": payloads]) }
             }
+        }
+        store.execute(query)
+    }
+
+    /// Each series is capped at the newest 5000 entries — 60 days of nightly
+    /// metrics is a few hundred rows, so the cap only bites on pathological
+    /// multi-source stores, and losing the OLDEST rows is the harmless
+    /// direction for a rolling-baseline consumer.
+    private static let maxRecoverySamples = 5000
+
+    /// Overnight recovery metrics for the readiness engine
+    /// (src/lib/recovery.ts): HRV SDNN, resting heart rate, sleep analysis
+    /// intervals, and respiratory rate, ascending, over the last `days` days.
+    @objc public func queryRecoveryMetrics(_ call: CAPPluginCall) {
+        let days = call.getInt("days") ?? 60
+        let since = Date().addingTimeInterval(TimeInterval(-days * 24 * 60 * 60))
+        guard let hrvType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN),
+              let restingType = HKQuantityType.quantityType(forIdentifier: .restingHeartRate),
+              let respiratoryType = HKQuantityType.quantityType(forIdentifier: .respiratoryRate),
+              let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)
+        else {
+            call.reject("HealthKit types unavailable")
+            return
+        }
+        let msUnit = HKUnit.secondUnit(with: .milli)
+        // Serial like buildPayloads — four fast local reads, then one resolve.
+        quantitySeries(of: hrvType, since: since, unit: msUnit, valueKey: "ms") { hrv in
+            self.quantitySeries(
+                of: restingType, since: since, unit: Self.bpmUnit, valueKey: "bpm"
+            ) { restingHr in
+                self.quantitySeries(
+                    of: respiratoryType, since: since, unit: Self.bpmUnit, valueKey: "brpm"
+                ) { respiratory in
+                    self.sleepSeries(of: sleepType, since: since) { sleep in
+                        DispatchQueue.main.async {
+                            call.resolve([
+                                "hrv": hrv,
+                                "restingHr": restingHr,
+                                "sleep": sleep,
+                                "respiratory": respiratory,
+                            ])
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Ascending {t, <valueKey>} rows for one quantity type since `since`.
+    private func quantitySeries(
+        of type: HKQuantityType,
+        since: Date,
+        unit: HKUnit,
+        valueKey: String,
+        completion: @escaping ([[String: Any]]) -> Void
+    ) {
+        let predicate = HKQuery.predicateForSamples(
+            withStart: since, end: nil, options: .strictStartDate)
+        let oldestFirst = NSSortDescriptor(
+            key: HKSampleSortIdentifierStartDate, ascending: true)
+        let query = HKSampleQuery(
+            sampleType: type, predicate: predicate,
+            limit: HKObjectQueryNoLimit, sortDescriptors: [oldestFirst]
+        ) { _, samples, _ in
+            // Errors (including denied reads) surface as empty series — the
+            // JS tier ladder treats sparse data honestly, so no reject here.
+            let rows: [[String: Any]] = ((samples as? [HKQuantitySample]) ?? []).map {
+                [
+                    "t": Self.iso.string(from: $0.startDate),
+                    valueKey: $0.quantity.doubleValue(for: unit),
+                ]
+            }
+            completion(Array(rows.suffix(Self.maxRecoverySamples)))
+        }
+        store.execute(query)
+    }
+
+    /// Ascending {start, end, stage} sleep intervals. Awake segments are
+    /// skipped; all asleep stages collapse to "asleep" (the JS side never
+    /// distinguishes core/deep/REM).
+    private func sleepSeries(
+        of type: HKCategoryType,
+        since: Date,
+        completion: @escaping ([[String: Any]]) -> Void
+    ) {
+        let predicate = HKQuery.predicateForSamples(
+            withStart: since, end: nil, options: .strictStartDate)
+        let oldestFirst = NSSortDescriptor(
+            key: HKSampleSortIdentifierStartDate, ascending: true)
+        let query = HKSampleQuery(
+            sampleType: type, predicate: predicate,
+            limit: HKObjectQueryNoLimit, sortDescriptors: [oldestFirst]
+        ) { _, samples, _ in
+            var rows: [[String: Any]] = []
+            for sample in ((samples as? [HKCategorySample]) ?? []) {
+                // Raw values, not enum cases — asleepCore/Deep/REM (3/4/5)
+                // are iOS 16 symbols and this target deploys to 15.0.
+                // 0 inBed · 1 asleepUnspecified · 2 awake (skipped) ·
+                // 3 asleepCore · 4 asleepDeep · 5 asleepREM.
+                let stage: String?
+                switch sample.value {
+                case 0: stage = "inBed"
+                case 1, 3, 4, 5: stage = "asleep"
+                default: stage = nil
+                }
+                guard let stage = stage else { continue }
+                rows.append([
+                    "start": Self.iso.string(from: sample.startDate),
+                    "end": Self.iso.string(from: sample.endDate),
+                    "stage": stage,
+                ])
+            }
+            completion(Array(rows.suffix(Self.maxRecoverySamples)))
         }
         store.execute(query)
     }

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { WorkoutExercise } from "@/data/liftosMock";
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
-import { featuredLift, getLiftTrends } from "./strengthTrend";
+import {
+  featuredLift,
+  getLiftTrends,
+  lastSessionDeltas,
+  liftSessionSeries,
+  lockedTrendCandidates,
+} from "./strengthTrend";
 import { getWeeklyStreak } from "./workoutStats";
 
 const DAY_MS = 86_400_000;
@@ -81,10 +87,45 @@ describe("getLiftTrends", () => {
   });
 });
 
+describe("timed exercises", () => {
+  const plank = (duration: number): WorkoutExercise => ({
+    id: "plank",
+    name: "Plank",
+    tracking: "time",
+    category: "Core",
+    target: "t",
+    sets: [{ id: `plank-${duration}`, duration_seconds: duration, completed: true }],
+  });
+
+  it("trends hold-only exercises on duration", () => {
+    const logs = [
+      log(daysAgo(2), [plank(90)]),
+      log(daysAgo(10), [plank(75)]),
+      log(daysAgo(20), [plank(60)]),
+    ];
+    const [trend] = getLiftTrends(logs);
+    expect(trend.metric).toBe("time");
+    expect(trend.points).toEqual([60, 75, 90]);
+    expect(trend.delta).toBe(30);
+  });
+
+  it("weight trends outrank time trends; an improving hold beats a flat lift for the feature", () => {
+    const logs = [
+      log(daysAgo(2), [plank(90), ex("Bench Press", 200)]),
+      log(daysAgo(10), [plank(75), ex("Bench Press", 200)]),
+      log(daysAgo(20), [plank(60), ex("Bench Press", 200)]),
+    ];
+    const trends = getLiftTrends(logs);
+    expect(trends.map((t) => t.name)).toEqual(["Bench Press", "Plank"]);
+    expect(featuredLift(trends)?.name).toBe("Plank"); // +30s beats +0 lb
+  });
+});
+
 describe("featuredLift", () => {
+  const base = { metric: "weight" as const };
   it("prefers the biggest gainer, falls back to most-trained when nothing improves", () => {
-    const gaining = { name: "A", first: 1, last: 2, delta: 1, points: [1, 2], sessions: 2 };
-    const flat = { name: "B", first: 5, last: 5, delta: 0, points: [5, 5, 5], sessions: 3 };
+    const gaining = { ...base, name: "A", first: 1, last: 2, delta: 1, points: [1, 2], sessions: 2 };
+    const flat = { ...base, name: "B", first: 5, last: 5, delta: 0, points: [5, 5, 5], sessions: 3 };
     expect(featuredLift([gaining, flat])?.name).toBe("A");
     expect(featuredLift([{ ...gaining, delta: -1, last: 0 }, flat])?.name).toBe("B");
     expect(featuredLift([])).toBeNull();
@@ -106,5 +147,130 @@ describe("getWeeklyStreak", () => {
       log(daysAgo(21), [ex("Bench Press", 100)]),
     ];
     expect(getWeeklyStreak(logs)).toBe(1);
+  });
+});
+
+describe("lockedTrendCandidates", () => {
+  it("names lifts one session short, excluding junk and cardio", () => {
+    const logs = [
+      log(daysAgo(3), [ex("Squat", 250), ex("Exercise 1", 100)]),
+      log(daysAgo(1), [ex("Bench Press", 200)]),
+      log(daysAgo(10), [ex("Bench Press", 195)]),
+    ];
+    const locked = lockedTrendCandidates(logs, 84, 2);
+    expect(locked).toEqual([{ name: "Squat", sessions: 1, needed: 1 }]);
+  });
+});
+
+describe("lastSessionDeltas", () => {
+  it("compares the latest workout's best sets against the previous occurrence", () => {
+    const logs = [
+      log(daysAgo(1), [ex("Bench Press", 82.5)]),
+      log(daysAgo(8), [ex("Bench Press", 80)]),
+    ];
+    const [d] = lastSessionDeltas(logs);
+    expect(d.name).toBe("Bench Press");
+    expect(d.prev).toEqual([80, 5]);
+    expect(d.last).toEqual([82.5, 5]);
+    expect(d.direction).toBe("up");
+  });
+
+  it("skips lifts with no earlier occurrence and junk names", () => {
+    const logs = [
+      log(daysAgo(1), [ex("Exercise 1", 100), ex("Overhead Press", 95)]),
+      log(daysAgo(8), [ex("Bench Press", 80)]),
+    ];
+    expect(lastSessionDeltas(logs)).toEqual([]);
+  });
+});
+
+describe("liftSessionSeries", () => {
+  it("one best-set point per session with a ≤10-rep estimate", () => {
+    const logs = [
+      log(daysAgo(1), [ex("Bench Press", 200)]),
+      log(daysAgo(10), [ex("Bench Press", 190)]),
+    ];
+    const series = liftSessionSeries(logs, "bench press");
+    expect(series.map((p) => p.weight)).toEqual([190, 200]);
+    expect(series[1].e1rm).toBeCloseTo(233.33, 1);
+  });
+});
+
+describe("placeholder exclusion", () => {
+  it("junk imported names never chart", () => {
+    const logs = [
+      log(daysAgo(1), [ex("Exercise 1", 200)]),
+      log(daysAgo(10), [ex("Exercise 1", 190)]),
+      log(daysAgo(20), [ex("Exercise 1", 180)]),
+    ];
+    expect(getLiftTrends(logs)).toEqual([]);
+  });
+});
+
+describe("review-hardening regressions", () => {
+  it("duplicate entries of one lift in one log are one session, not two", () => {
+    const dup = log(daysAgo(1), [ex("Bench Press", 80), ex("Bench Press", 85)]);
+    expect(getLiftTrends([dup], 84, 2)).toEqual([]); // one session — no trend
+    expect(lockedTrendCandidates([dup], 84, 2)).toEqual([
+      { name: "Bench Press", sessions: 1, needed: 1 },
+    ]);
+    const series = liftSessionSeries([dup], "Bench Press");
+    expect(series).toHaveLength(1);
+    expect(series[0].weight).toBe(85); // merged to the log's best
+  });
+
+  it("reps-only bodyweight lifts produce series points and deltas", () => {
+    const pushups = (iso: string, reps: number) =>
+      log(iso, [
+        {
+          id: "pu",
+          name: "Push-Up",
+          category: "c",
+          target: "t",
+          sets: [{ id: `pu-${reps}`, reps, weight: 0, completed: true }],
+        },
+      ]);
+    const logs = [pushups(daysAgo(1), 25), pushups(daysAgo(8), 22)];
+    const series = liftSessionSeries(logs, "Push-Up");
+    expect(series.map((p) => p.reps)).toEqual([22, 25]);
+    const [d] = lastSessionDeltas(logs);
+    expect(d.prev).toEqual([0, 22]);
+    expect(d.last).toEqual([0, 25]);
+    expect(d.direction).toBe("up");
+  });
+
+  it("a completed weight with zero reps is a failed lift — never a best set", () => {
+    const l = log(daysAgo(1), [
+      {
+        id: "b",
+        name: "Bench Press",
+        category: "c",
+        target: "t",
+        sets: [
+          { id: "b1", reps: 0, weight: 185, completed: true },
+          { id: "b2", reps: 5, weight: 180, completed: true },
+        ],
+      },
+    ]);
+    const [point] = liftSessionSeries([l], "Bench Press");
+    expect([point.weight, point.reps]).toEqual([180, 5]);
+  });
+
+  it("a session's longest hold survives a heavier shorter set", () => {
+    const l = log(daysAgo(1), [
+      {
+        id: "p",
+        name: "Plank",
+        tracking: "time" as const,
+        category: "Core",
+        target: "t",
+        sets: [
+          { id: "p1", duration_seconds: 90, completed: true },
+          { id: "p2", weight: 25, reps: 1, duration_seconds: 30, completed: true },
+        ],
+      },
+    ]);
+    const [point] = liftSessionSeries([l], "Plank");
+    expect(point.duration).toBe(90);
   });
 });

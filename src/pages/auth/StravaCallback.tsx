@@ -19,6 +19,9 @@ const StravaCallback = () => {
     const code = params.get("code");
     const error = params.get("error");
     const state = params.get("state");
+    // Granted scopes ride the redirect, not the token exchange — forward them
+    // so the server records whether this token can write activities.
+    const scope = params.get("scope");
 
     if (error) {
       toast({
@@ -38,7 +41,7 @@ const StravaCallback = () => {
       try {
         const { error: oauthError } = await supabase.functions.invoke(
           "strava-oauth",
-          { body: { code } },
+          { body: { code, scope } },
         );
         if (oauthError) throw oauthError;
 

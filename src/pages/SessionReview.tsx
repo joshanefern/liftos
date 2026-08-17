@@ -220,7 +220,12 @@ const SessionReview = () => {
     [logs, existingLog],
   );
   const hasCardio = cardioBlock !== null && cardioBlockHasContent(cardioBlock);
-  const canSave = totalSets > 0 || hasCardio;
+  // Every exercise with sets must carry a real name — unnamed groups would
+  // save as "Exercise 1" placeholders that poison records and trends.
+  const unnamedGroups = groups.filter(
+    (g) => g.sets.length > 0 && g.name.trim() === "",
+  ).length;
+  const canSave = (totalSets > 0 || hasCardio) && unnamedGroups === 0;
 
   const weightPlaceholderFor = (name: string): number | null =>
     lastWeightForExercise(logs, name);
@@ -548,6 +553,14 @@ const SessionReview = () => {
             </button>
           </div>
         </section>
+      )}
+
+      {unnamedGroups > 0 && (
+        <p className="caption mt-4 !text-primary">
+          {unnamedGroups === 1
+            ? "One exercise still needs a name before saving."
+            : `${unnamedGroups} exercises still need names before saving.`}
+        </p>
       )}
 
       <ReviewFooter

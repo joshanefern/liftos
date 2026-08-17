@@ -4,6 +4,7 @@ import {
   type PluginListenerHandle,
 } from "@capacitor/core";
 import type { HRSample, SessionAggregates } from "@/lib/capture/types";
+import type { RecoveryMetrics } from "@/lib/recovery";
 import { supabase } from "@/lib/supabase";
 
 /* ── HealthKit capture — the Strava-killer path. The iOS app reads finished
@@ -37,6 +38,9 @@ type HealthKitPluginIface = {
       queries come back empty. */
   requestAuthorization(): Promise<void>;
   queryWorkouts(options: { sinceISO: string }): Promise<{ workouts: HealthKitWorkout[] }>;
+  /** Overnight recovery metrics (HRV, resting HR, sleep, respiratory rate)
+      for the readiness engine — see src/lib/recovery.ts. */
+  queryRecoveryMetrics(options: { days: number }): Promise<RecoveryMetrics>;
   /** Registers the HKObserverQuery + background delivery; idempotent. */
   startObserving(): Promise<void>;
   addListener(
@@ -228,6 +232,39 @@ export const startHealthKitObserver = async (
   const handle = await HealthKit.addListener("workoutsChanged", onWorkoutsChanged);
   await HealthKit.startObserving();
   return handle;
+};
+
+/** Overnight metrics for the readiness engine (lib/recovery.ts). Returns
+    null when there is no HealthKit to ask — web build, plugin missing, or a
+    native failure — which the engine treats as tier 3 (no wearable). Denied
+    READ permission is invisible on iOS (queries just come back empty), so
+    empty arrays are returned as-is and the tier ladder handles the
+    sparseness honestly. */
+/** Present the HealthKit permission sheet for any still-undetermined read
+    types. iOS shows nothing when everything was already decided, so this is
+    safe to call before recovery queries for users who connected under a
+    build with a smaller read set (their new types sit at .notDetermined and
+    would silently query empty forever). */
+export const requestHealthKitAuthorization = async (): Promise<void> => {
+  if (!healthKitSupported()) return;
+  await HealthKit.requestAuthorization();
+};
+
+export const fetchRecoveryMetrics = async (
+  days = 60,
+): Promise<RecoveryMetrics | null> => {
+  if (!healthKitSupported()) return null;
+  try {
+    const metrics = await HealthKit.queryRecoveryMetrics({ days });
+    return {
+      hrv: metrics.hrv ?? [],
+      restingHr: metrics.restingHr ?? [],
+      sleep: metrics.sleep ?? [],
+      respiratory: metrics.respiratory ?? [],
+    };
+  } catch {
+    return null;
+  }
 };
 
 /** QA hook (5-tap gesture on the Dashboard row): seed the local Health store

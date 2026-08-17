@@ -18,9 +18,12 @@ const DAY_NAMES = [
 type Props = {
   /** Mon=0 … Sun=6 indices of days with a logged session (WeekStats.workedDayIndices). */
   workedDayIndices: number[];
+  /** "inverse" (default) = drawn for the hero ink panel; "surface" = drawn
+      on the ordinary page background. */
+  variant?: "inverse" | "surface";
 };
 
-export const WeekBadgeRow = ({ workedDayIndices }: Props) => {
+export const WeekBadgeRow = ({ workedDayIndices, variant = "inverse" }: Props) => {
   const now = new Date();
   const todayIdx = (now.getDay() + 6) % 7;
   const monday = new Date(now);
@@ -45,17 +48,27 @@ export const WeekBadgeRow = ({ workedDayIndices }: Props) => {
         // On the inverted panel the mode's own raspberry fails contrast —
         // primary-on-inverse borrows the opposite mode's. The check glyph
         // uses text-foreground (= the panel's opposite pole) which clears
-        // 3:1 on that fill in both themes.
-        const tone = trained
-          ? "bg-[hsl(var(--primary-on-inverse))]"
-          : isToday
-            ? "border-[1.5px] border-background text-background"
-            : "bg-background/10 text-background/70";
+        // 3:1 on that fill in both themes. The surface variant uses the
+        // mode's own tokens instead.
+        const tone =
+          variant === "inverse"
+            ? trained
+              ? "bg-[hsl(var(--primary-on-inverse))]"
+              : isToday
+                ? "border-[1.5px] border-background text-background"
+                : "bg-background/10 text-background/70"
+            : trained
+              ? "bg-primary"
+              : isToday
+                ? "border-[1.5px] border-fg-soft text-fg"
+                : "bg-foreground/[0.06] text-fg-muted";
+        const checkTone =
+          variant === "inverse" ? "text-foreground" : "text-primary-foreground";
 
         return (
           <span key={dayName} role="listitem" aria-label={label} className={`${shape} ${tone}`}>
             {trained ? (
-              <Check size={14} strokeWidth={2.5} className="text-foreground" aria-hidden />
+              <Check size={14} strokeWidth={2.5} className={checkTone} aria-hidden />
             ) : (
               date.getDate()
             )}

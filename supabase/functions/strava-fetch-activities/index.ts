@@ -2,14 +2,14 @@
 // Edge Function: strava-fetch-activities
 // Pulls recent activities from the Strava API for the authenticated user and
 // writes them to captured_sessions. Refreshes the access token transparently
-// if expired. Idempotent on (provider, external_id) — re-runs only upsert.
+// if expired (shared helper). Idempotent on (user_id, provider, external_id):
+// inserts use ignoreDuplicates, so an existing row — including the dismissed
+// seed rows created by strava-export-activity for the user's own write-backs —
+// is never overwritten or flipped back to pending.
 // Token storage uses app-side AES-GCM (see _shared/strava-token-crypto.ts).
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  decryptStravaToken,
-  encryptStravaToken,
-} from "../_shared/strava-token-crypto.ts";
+import { getFreshStravaToken } from "../_shared/strava-token.ts";
 
 const STRAVA_CLIENT_ID = Deno.env.get("STRAVA_CLIENT_ID");
 const STRAVA_CLIENT_SECRET = Deno.env.get("STRAVA_CLIENT_SECRET");
@@ -30,15 +30,6 @@ const json = (body: unknown, status = 200): Response =>
     headers: { "Content-Type": "application/json", ...CORS_HEADERS },
   });
 
-type IntegrationRow = {
-  id: string;
-  user_id: string;
-  access_token: string;
-  refresh_token: string;
-  expires_at: string;
-  last_synced_at: string | null;
-};
-
 type StravaActivity = {
   id: number;
   name: string;
@@ -51,6 +42,8 @@ type StravaActivity = {
   average_heartrate?: number;
   max_heartrate?: number;
   calories?: number;
+  /** Uploader-supplied id — LiftOS write-backs carry "liftos-<log id>". */
+  external_id?: string | null;
 };
 
 type Streams = {
@@ -92,78 +85,22 @@ serve(async (req) => {
 
   const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  const { data: integration } = await serviceClient
-    .from("wearable_integrations")
-    .select("id, user_id, access_token, refresh_token, expires_at, last_synced_at")
-    .eq("user_id", user.id)
-    .eq("provider", "strava")
-    .maybeSingle();
-
-  if (!integration) {
-    return json({ error: "no strava integration" }, 404);
-  }
-  const row = integration as IntegrationRow;
-
-  // Decrypt tokens (app-side AES-GCM)
-  let currentAccess: string;
-  let currentRefresh: string;
-  try {
-    currentAccess = await decryptStravaToken(row.access_token);
-    currentRefresh = await decryptStravaToken(row.refresh_token);
-  } catch (e) {
-    const detail = e instanceof Error ? e.message : String(e);
-    return json({ error: "could not decrypt tokens", detail }, 500);
-  }
-  let currentExpiresAt = new Date(row.expires_at).getTime();
-
-  // Refresh if the token is expired or within 60s of expiry
-  if (currentExpiresAt < Date.now() + 60_000) {
-    const refreshRes = await fetch("https://www.strava.com/api/v3/oauth/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id: STRAVA_CLIENT_ID,
-        client_secret: STRAVA_CLIENT_SECRET,
-        refresh_token: currentRefresh,
-        grant_type: "refresh_token",
-      }),
-    });
-    if (!refreshRes.ok) {
-      await serviceClient
-        .from("wearable_integrations")
-        .update({ status: "expired" })
-        .eq("id", row.id);
+  const token = await getFreshStravaToken(
+    serviceClient,
+    user.id,
+    STRAVA_CLIENT_ID,
+    STRAVA_CLIENT_SECRET,
+  );
+  if (!token.ok) {
+    if (token.reason === "no_integration") {
+      return json({ error: "no strava integration" }, 404);
+    }
+    if (token.reason === "refresh_failed") {
       return json({ error: "refresh failed" }, 401);
     }
-    const refreshed = (await refreshRes.json()) as {
-      access_token: string;
-      refresh_token: string;
-      expires_at: number;
-    };
-    currentAccess = refreshed.access_token;
-    currentRefresh = refreshed.refresh_token;
-    currentExpiresAt = refreshed.expires_at * 1000;
-
-    let newAccessEnc: string;
-    let newRefreshEnc: string;
-    try {
-      newAccessEnc = await encryptStravaToken(currentAccess);
-      newRefreshEnc = await encryptStravaToken(currentRefresh);
-    } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e);
-      return json({ error: "could not re-encrypt refreshed tokens", detail }, 500);
-    }
-
-    await serviceClient
-      .from("wearable_integrations")
-      .update({
-        access_token: newAccessEnc,
-        refresh_token: newRefreshEnc,
-        expires_at: new Date(currentExpiresAt).toISOString(),
-        status: "active",
-      })
-      .eq("id", row.id);
+    return json({ error: "could not decrypt tokens", detail: token.detail }, 500);
   }
+  const { accessToken, row } = token;
 
   // Pull activities since the last sync (or 30 days back on first sync)
   const after = row.last_synced_at
@@ -172,21 +109,39 @@ serve(async (req) => {
 
   const activitiesRes = await fetch(
     `https://www.strava.com/api/v3/athlete/activities?after=${after}&per_page=30`,
-    { headers: { Authorization: `Bearer ${currentAccess}` } },
+    { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   if (!activitiesRes.ok) {
     return json({ error: `fetch failed: ${await activitiesRes.text()}` }, 502);
   }
   const activities = (await activitiesRes.json()) as StravaActivity[];
 
+  // Rows that already exist (imported before, or seeded by write-back) are
+  // skipped BEFORE the per-activity streams fetch — no wasted Strava calls.
+  const { data: existing } = await serviceClient
+    .from("captured_sessions")
+    .select("external_id")
+    .eq("user_id", user.id)
+    .eq("provider", "strava")
+    .in(
+      "external_id",
+      activities.map((a) => String(a.id)),
+    );
+  const known = new Set((existing ?? []).map((r: any) => String(r.external_id)));
+
   let inserted = 0;
   for (const activity of activities) {
+    if (known.has(String(activity.id))) continue;
+    // Never re-import our own write-backs — the user already logged these in
+    // LiftOS; bouncing them back as pending reviews would be a loop.
+    if (activity.external_id?.startsWith("liftos-")) continue;
+
     let hr_samples: Array<{ t: number; bpm: number }> | null = null;
     let motion_samples: Array<{ t: number; intensity: number }> | null = null;
 
     const streamsRes = await fetch(
       `https://www.strava.com/api/v3/activities/${activity.id}/streams?keys=time,heartrate,cadence&key_by_type=true`,
-      { headers: { Authorization: `Bearer ${currentAccess}` } },
+      { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     if (streamsRes.ok) {
       const streams = (await streamsRes.json()) as Streams;
@@ -221,7 +176,7 @@ serve(async (req) => {
           },
           review_status: "pending",
         },
-        { onConflict: "user_id,provider,external_id" },
+        { onConflict: "user_id,provider,external_id", ignoreDuplicates: true },
       );
     if (!upsertErr) inserted++;
   }

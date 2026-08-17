@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { createContext, lazy, Suspense, useContext, useState } from "react";
 import { UserProvider } from "@/context/UserContext";
 import { HealthKitAutoSync } from "@/hooks/useHealthKitAutoSync";
+import { StravaAutoSync } from "@/hooks/useStravaAutoSync";
 import { ThemeProvider } from "@/context/ThemeContext";
 import {
   CapturedSessionsProvider,
@@ -77,8 +78,13 @@ const AppShell = ({ children }: { children: React.ReactNode }) => {
       {!isActiveWorkout && <FitnessBackground />}
       {/* iOS overlays the status bar on the webview: without a mask, scrolled
           content collides with the clock. This strip fades content out behind
-          it like a native app — zero-height on web where --safe-top is 0. */}
-      <div className="pointer-events-none fixed inset-x-0 top-0 z-30 h-[var(--safe-top)] bg-background/90 backdrop-blur-[10px]" />
+          it like a native app — zero-height on web where --safe-top is 0.
+          Mid-workout it flips dark with the scoreboard (Split Shift). */}
+      <div
+        className={`pointer-events-none fixed inset-x-0 top-0 z-30 h-[var(--safe-top)] bg-background/90 backdrop-blur-[10px] ${
+          isActiveWorkout ? "dark" : ""
+        }`}
+      />
       <AppSidebar />
       <MobileTabBar />
       <main
@@ -110,6 +116,8 @@ const App = () => {
         <Sonner />
         {/* Mount-once: HealthKit observer + catch-up sync (iOS native only). */}
         <HealthKitAutoSync />
+        {/* Mount-once: throttled Strava catch-up sync on app open/foreground. */}
+        <StravaAutoSync />
         <SidebarContext.Provider value={{ collapsed, setCollapsed }}>
           <BrowserRouter>
             <Suspense fallback={<BootSplash />}>

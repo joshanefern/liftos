@@ -1,4 +1,5 @@
 import ActiveWorkoutLogger from "@/components/ActiveWorkoutLogger";
+import { ForceDarkScope } from "@/context/ThemeContext";
 import { CTAButton } from "@/components/GoldButton";
 import type { WorkoutExercise } from "@/data/liftosMock";
 
@@ -49,7 +50,13 @@ const ActiveWorkout = () => {
     );
   }
 
-  return <ActiveWorkoutLogger session={session} />;
+  // Split Shift: training always happens on the black scoreboard, whatever
+  // the rest of the app is wearing.
+  return (
+    <ForceDarkScope>
+      <ActiveWorkoutLogger session={session} />
+    </ForceDarkScope>
+  );
 };
 
 export default ActiveWorkout;

@@ -38,7 +38,10 @@ serve(async (req) => {
     return json({ error: "strava credentials not configured on server" }, 500);
   }
 
-  let payload: { code?: string };
+  // `scope` is the granted-scope string Strava appends to the redirect URL
+  // (the token-exchange response body does not include it) — the callback
+  // page forwards it so we can record what this token can actually do.
+  let payload: { code?: string; scope?: string };
   try {
     payload = await req.json();
   } catch {
@@ -47,6 +50,10 @@ serve(async (req) => {
   if (!payload.code) {
     return json({ error: "missing code" }, 400);
   }
+  const grantedScope =
+    typeof payload.scope === "string" && payload.scope.length > 0
+      ? payload.scope.slice(0, 200)
+      : null;
 
   const authHeader = req.headers.get("authorization");
   if (!authHeader) return json({ error: "missing authorization" }, 401);
@@ -114,6 +121,7 @@ serve(async (req) => {
         refresh_token: refreshEnc,
         expires_at: new Date(tokenBody.expires_at * 1000).toISOString(),
         connected_at: new Date().toISOString(),
+        scope: grantedScope,
       },
       { onConflict: "user_id,provider" },
     );

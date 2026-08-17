@@ -1,13 +1,28 @@
 import { CTAButton } from "@/components/GoldButton";
 import { MuscleMap } from "@/components/MuscleMap";
+import { LiftDetailSheet, type LiftRef } from "@/components/progress/LiftDetailSheet";
+import { RenameExercisesSheet } from "@/components/progress/RenameExercisesSheet";
 import { useUser } from "@/context/UserContext";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
-import { getMuscleActivation } from "@/lib/muscleMap";
+import { isPlaceholderName, placeholderNames } from "@/lib/exerciseNames";
+import { formatHold, formatHoldDelta, inferTracking } from "@/lib/exerciseTracking";
 import { getLastTrainedByMuscle, labelForMuscle } from "@/lib/muscleCoverage";
+import { getMuscleActivation } from "@/lib/muscleMap";
 import { allTimePRs, bestWeight, type WeightRecord } from "@/lib/prs";
-import { featuredLift, getLiftTrends } from "@/lib/strengthTrend";
-import { getVolumeTrend, getWeeklyStreak, getWeekStats } from "@/lib/workoutStats";
-import { ArrowRight, ChevronDown, Dumbbell } from "lucide-react";
+import {
+  featuredLift,
+  getLiftTrends,
+  lastSessionDeltas,
+  lockedTrendCandidates,
+} from "@/lib/strengthTrend";
+import {
+  getPrevWeekSessions,
+  getTopLifts,
+  getVolumeTrend,
+  getWeeklyStreak,
+  getWeekStats,
+} from "@/lib/workoutStats";
+import { ArrowRight, ChevronDown, Dumbbell, PenLine } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -19,23 +34,28 @@ import {
   YAxis,
 } from "recharts";
 
-/* ── Progress — answers ONE question: "am I getting stronger?"
-     (Research: per-lift strength trend is what lifters re-check; totals and
-     averages are share-card material, not screen material.) Structure:
-     strength-trend hero, then exactly three cards — Strength, Records,
-     This week — with the volume chart demoted behind a tap. ── */
+/* ── Progress — answers ONE question: "am I getting stronger?" — and reads
+     top-to-bottom like a spoken summary (research round 2, Aug 2026):
+     interpreted hero → Strength trends (beat-last-time + sparklines, never
+     silently missing) → Your records (real names only, no invented maxes)
+     → This week (neutral count, no quota grades, no gray-corpse body map)
+     → total-weight chart demoted behind a tap. Every number is plain
+     English with visible provenance; junk imported names surface only as
+     one fix-it row. ── */
 
 const DAY_MS = 86_400_000;
 const PR_RECENT_DAYS = 7;
 const RECORDS_VISIBLE = 3;
+const TREND_MIN_SESSIONS = 2;
 
 const relativeDay = (iso: string): string => {
   const days = Math.floor((Date.now() - Date.parse(iso)) / DAY_MS);
   if (days <= 0) return "today";
-  if (days < 7) return `${days}d ago`;
-  if (days < 56) return `${Math.floor(days / 7)}w ago`;
-  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
-  return `${Math.floor(days / 365)}y ago`;
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 56) return `${Math.floor(days / 7)} weeks ago`;
+  if (days < 365) return `${Math.floor(days / 30)} months ago`;
+  return `${Math.floor(days / 365)} years ago`;
 };
 
 /** Tiny sparkline points for a 100×28 viewBox. */
@@ -52,27 +72,60 @@ const sparkPoints = (values: number[], w = 100, h = 28, pad = 3): string => {
     .join(" ");
 };
 
+/** Rotating real-world scale for total weight lifted — tonnage is a
+    share-toy, so give it a grin instead of more math. Input in the user's
+    units; ladder is in lb. */
+const tonnageEquivalence = (total: number, units: string): string | null => {
+  const lb = units === "lb" ? total : total * 2.20462;
+  const ladder: [number, string, string][] = [
+    [970_000, "jumbo jet", "jumbo jets"],
+    [25_000, "school bus", "school buses"],
+    [13_000, "elephant", "elephants"],
+    [750, "grand piano", "grand pianos"],
+    [160, "beer keg", "beer kegs"],
+  ];
+  for (const [weight, one, many] of ladder) {
+    const n = lb / weight;
+    if (n >= 1) {
+      const rounded = n >= 10 ? Math.round(n) : Math.round(n * 10) / 10;
+      return `that's about ${rounded} ${rounded === 1 ? one : many}`;
+    }
+  }
+  return null;
+};
+
 const CARD_CLASS =
   "rounded-[14px] bg-card p-4 shadow-[0_4px_12px_rgba(16,22,35,0.08)] " +
   "dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]";
 
 const Progress = () => {
   const { profile } = useUser();
-  const { logs } = useWorkoutLogs();
+  const { logs, reload } = useWorkoutLogs();
   const units = profile?.units ?? "lb";
   const [showAllRecords, setShowAllRecords] = useState(false);
   const [showLifted, setShowLifted] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [detailLift, setDetailLift] = useState<LiftRef | null>(null);
 
-  const trends = useMemo(() => getLiftTrends(logs), [logs]);
+  // ── Data (placeholder "Exercise N" imports are excluded everywhere and
+  //    surface only through the fix-it row) ──
+  const junkNames = useMemo(() => placeholderNames(logs), [logs]);
+
+  const trends = useMemo(() => getLiftTrends(logs, 84, TREND_MIN_SESSIONS), [logs]);
   const hero = useMemo(() => featuredLift(trends), [trends]);
   const keyLifts = useMemo(() => trends.slice(0, 4), [trends]);
+  const locked = useMemo(
+    () => lockedTrendCandidates(logs, 84, TREND_MIN_SESSIONS).slice(0, 3),
+    [logs],
+  );
+  const deltas = useMemo(() => lastSessionDeltas(logs), [logs]);
 
-  // Records, most recently improved first — "what did I just achieve".
+  // Records, most recently improved first — real names only.
   const prs = useMemo(
     () =>
-      [...allTimePRs(logs)].sort(
-        (a, b) => Date.parse(b.lastImproved) - Date.parse(a.lastImproved),
-      ),
+      allTimePRs(logs)
+        .filter((pr) => !isPlaceholderName(pr.exerciseName))
+        .sort((a, b) => Date.parse(b.lastImproved) - Date.parse(a.lastImproved)),
     [logs],
   );
   const bestWeightRecords = useMemo(() => {
@@ -81,16 +134,24 @@ const Progress = () => {
     return map;
   }, [logs, prs]);
   const visibleRecords = showAllRecords ? prs : prs.slice(0, RECORDS_VISIBLE);
+  const newPrCount = useMemo(
+    () =>
+      prs.filter((pr) => Date.now() - Date.parse(pr.lastImproved) < PR_RECENT_DAYS * DAY_MS)
+        .length,
+    [prs],
+  );
 
   const weekStats = useMemo(() => getWeekStats(logs), [logs]);
+  const prevWeekSessions = useMemo(() => getPrevWeekSessions(logs), [logs]);
   const weeklyStreak = useMemo(() => getWeeklyStreak(logs), [logs]);
   const volumeTrend = useMemo(() => getVolumeTrend(logs), [logs]);
-  const frequency =
-    String(profile?.frequency ?? "").replace(/\s*days?\s*/i, "").trim() || null;
+  const activation = useMemo(() => getMuscleActivation(logs, 7), [logs]);
+  const hasActivation = activation.primary.size + activation.secondary.size > 0;
+  const lastLog = logs[0] ?? null;
 
-  // One plain-English balance verdict under the body map: celebrate full
-  // coverage, otherwise name the most neglected muscle.
-  const balanceVerdict = useMemo(() => {
+  // Forward-looking balance guidance — say what to do, never grade.
+  const balanceGuidance = useMemo(() => {
+    if (!hasActivation) return null;
     const lastTrained = getLastTrainedByMuscle(logs);
     if (lastTrained.size === 0) return null;
     let stalest: { muscle: string; days: number } | null = null;
@@ -104,10 +165,59 @@ const Progress = () => {
     if (!stalest || stalest.days <= 7) {
       return "Every trained muscle hit within the last week.";
     }
-    return `${stalest.muscle}: ${stalest.days} days since last trained — worth a look.`;
-  }, [logs]);
+    return `Not much ${stalest.muscle.toLowerCase()} work lately — worth a session soon.`;
+  }, [logs, hasActivation]);
 
-  const heroDelta = hero ? hero.delta : 0;
+  // Hero fallback material: the best real (named) lift, preserved forever.
+  // getTopLifts is uncapped here so a heavy junk import can't crowd out a
+  // genuinely named best.
+  const bestNamedLift = useMemo(
+    () => getTopLifts(logs, Infinity).find((t) => !isPlaceholderName(t.name)) ?? null,
+    [logs],
+  );
+  const bestNamedHold = useMemo(
+    () => prs.find((pr) => pr.maxDuration !== null) ?? null,
+    [prs],
+  );
+  const bestNamedReps = useMemo(
+    () => prs.find((pr) => pr.maxReps !== null) ?? null,
+    [prs],
+  );
+
+  // One timed-ness rule for rows AND the sheet they open: real hold data
+  // wins; name inference only fills in when the data is silent (a "Glute
+  // Bridge" logged with weight × reps is a weight lift, whatever the name
+  // sounds like).
+  const isTimedPr = (pr: { maxDuration: number | null; maxWeight: number | null }, name: string) =>
+    pr.maxDuration !== null || (pr.maxWeight === null && inferTracking(name) === "time");
+
+  const openDetail = (name: string) => {
+    const pr = prs.find((p) => p.exerciseName === name);
+    setDetailLift({ name, timed: pr ? isTimedPr(pr, name) : inferTracking(name) === "time" });
+  };
+
+  const weekLine =
+    weekStats.sessions > 0
+      ? `${weekStats.sessions} session${weekStats.sessions === 1 ? "" : "s"} this week` +
+        (prevWeekSessions === weekStats.sessions
+          ? " · same as last week"
+          : prevWeekSessions === 0
+            ? ""
+            : weekStats.sessions > prevWeekSessions
+              ? ` · ${weekStats.sessions - prevWeekSessions} more than last week`
+              : ` · ${prevWeekSessions - weekStats.sessions} fewer than last week`)
+      : lastLog
+        ? Date.now() - Date.parse(lastLog.finished_at) < 2 * DAY_MS
+          ? // A Monday after a Sunday session must not read "no sessions" —
+            // that's a calendar technicality, not a lapse.
+            `Fresh week — last workout ${relativeDay(lastLog.finished_at)}`
+          : `No sessions yet this week · last workout ${relativeDay(lastLog.finished_at)}`
+        : "No sessions yet this week";
+
+  const expandedTonnage = useMemo(
+    () => tonnageEquivalence(volumeTrend.reduce((s, p) => s + p.volume, 0), units),
+    [volumeTrend, units],
+  );
 
   return (
     <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
@@ -116,41 +226,78 @@ const Progress = () => {
         <p className="eyebrow !text-fg">Progress</p>
       </header>
 
-      {/* ── THE NUMBER — your headline lift's trend ── */}
+      {/* ── HERO — one interpreted headline, never an invented number ── */}
       <section className="mt-10 md:mt-14 animate-reveal-up" style={{ animationDelay: "60ms" }}>
         {hero ? (
           <>
             <p className="stat-hero !text-6xl md:!text-7xl whitespace-nowrap">
-              {hero.first}
+              {hero.metric === "time" ? formatHold(hero.first) : hero.first}
               <span className="mx-2 align-middle text-2xl font-extralight text-fg-muted">→</span>
-              {hero.last}
+              {hero.metric === "time" ? formatHold(hero.last) : hero.last}
               <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
-                {units}
+                {hero.metric === "time" ? "hold" : units}
               </span>
             </p>
             <p className="eyebrow mt-4">{hero.name}</p>
             <p className="body-sm mt-4 max-w-sm">
-              {heroDelta > 0
-                ? `Up ${heroDelta} ${units} across ${hero.sessions} sessions — your best-moving lift right now.`
-                : heroDelta === 0
+              {hero.delta > 0
+                ? `${hero.name} is climbing — up ${hero.metric === "time" ? formatHold(hero.delta) : `${hero.delta} ${units}`} across ${hero.sessions} sessions.`
+                : hero.delta === 0
                   ? `Holding steady across ${hero.sessions} sessions — your most-trained lift.`
-                  : `Down ${Math.abs(heroDelta)} ${units} across ${hero.sessions} sessions — worth asking the coach about.`}
+                  : `Down ${hero.metric === "time" ? formatHold(Math.abs(hero.delta)) : `${Math.abs(hero.delta)} ${units}`} across ${hero.sessions} sessions — worth asking the coach.`}
+              <span className="text-fg-faint"> Last 12 weeks.</span>
             </p>
           </>
-        ) : prs.length > 0 ? (
-          /* History exists but no lift has 3+ recent sessions — lead with the
-             latest best instead of contradicting the records below. */
+        ) : bestNamedLift || bestNamedHold || bestNamedReps ? (
+          /* History exists but nothing has 2 recent sessions — welcome back
+             with a preserved best. Bests never decay or reset for absence. */
           <>
             <p className="stat-hero !text-6xl md:!text-7xl whitespace-nowrap">
-              {prs[0].maxE1RM !== null ? Math.round(prs[0].maxE1RM) : prs[0].maxReps ?? 0}
-              <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
-                {prs[0].maxE1RM !== null ? units : "reps"}
-              </span>
+              {bestNamedLift ? (
+                <>
+                  {bestNamedLift.weight}
+                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
+                    {units}
+                  </span>
+                </>
+              ) : bestNamedHold ? (
+                <>
+                  {formatHold(bestNamedHold.maxDuration!)}
+                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
+                    hold
+                  </span>
+                </>
+              ) : (
+                <>
+                  {bestNamedReps!.maxReps}
+                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
+                    reps
+                  </span>
+                </>
+              )}
             </p>
-            <p className="eyebrow mt-4">Latest best · {prs[0].exerciseName}</p>
+            <p className="eyebrow mt-4">
+              Your best ·{" "}
+              {bestNamedLift
+                ? bestNamedLift.name
+                : bestNamedHold
+                  ? bestNamedHold.exerciseName
+                  : bestNamedReps!.exerciseName}
+            </p>
             <p className="body-sm mt-4 max-w-sm">
-              Log three sessions of any lift and its strength trend charts
-              here.
+              {lastLog
+                ? `Welcome back — last workout ${relativeDay(lastLog.finished_at)}. `
+                : ""}
+              Log {TREND_MIN_SESSIONS} sessions of any lift and its trend appears here.
+            </p>
+          </>
+        ) : junkNames.length > 0 ? (
+          /* Only unnamed imports exist — the fix-it row below is the way in. */
+          <>
+            <p className="heading-lg max-w-sm">Your imported workouts need names.</p>
+            <p className="body-sm mt-4 max-w-sm">
+              Name the exercises below and your records and trends start
+              charting from what you've already logged.
             </p>
           </>
         ) : (
@@ -158,8 +305,8 @@ const Progress = () => {
             <p className="stat-hero !text-6xl md:!text-7xl !text-fg-muted">0</p>
             <p className="eyebrow mt-4">Strength trend</p>
             <p className="body-sm mt-4 max-w-sm">
-              Log a few workouts and this becomes the story of your strongest
-              lifts — every weight in {units}.
+              Log your first workout — after {TREND_MIN_SESSIONS} sessions of a
+              lift, its trend appears right here.
             </p>
             <CTAButton to="/workouts" className="mt-7">
               <Dumbbell size={15} />
@@ -169,18 +316,55 @@ const Progress = () => {
         )}
       </section>
 
-      {/* ── Card 1 · STRENGTH — your key lifts, trending ── */}
-      {keyLifts.length > 0 && (
+      {/* ── Card 1 · STRENGTH TRENDS — never silently missing ── */}
+      {(keyLifts.length > 0 || locked.length > 0 || deltas.length > 0) && (
         <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
-          <p className="eyebrow mb-1">Strength</p>
-          <p className="caption mb-3">Best working set per session, last 12 weeks.</p>
+          <p className="eyebrow mb-1">Strength trends</p>
+          <p className="caption mb-3">Best set per session · last 12 weeks. Tap a lift for detail.</p>
+
+          {/* Beat-last-time — the readout lifters actually check */}
+          {deltas.length > 0 && (
+            <div className="mb-3 rounded-[0.75rem] bg-secondary/60 px-3 py-2.5">
+              <p className="eyebrow mb-1.5 !text-[10px]">Last workout vs the one before</p>
+              {deltas.map((d) => (
+                <div key={d.name} className="flex items-center justify-between gap-3 py-1">
+                  <span className="min-w-0 truncate text-sm font-medium text-fg">{d.name}</span>
+                  <span className="shrink-0 text-sm tabular-nums text-fg-soft">
+                    {d.metric === "time"
+                      ? `${formatHold(d.prev[0])} → ${formatHold(d.last[0])}`
+                      : d.prev[0] <= 0 && d.last[0] <= 0
+                        ? // Bodyweight lifts — compare reps, never "0 × 22".
+                          `${d.prev[1]} → ${d.last[1]} reps`
+                        : `${d.prev[0]} × ${d.prev[1]} → ${d.last[0]} × ${d.last[1]}`}
+                    <span
+                      role="img"
+                      className={`ml-1.5 ${d.direction === "up" ? "text-primary" : "text-fg-faint"}`}
+                      aria-label={
+                        d.direction === "up" ? "improved" : d.direction === "down" ? "lower" : "matched"
+                      }
+                    >
+                      {d.direction === "up" ? "▲" : d.direction === "down" ? "▽" : "—"}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="divide-y divide-border">
             {keyLifts.map((lift) => (
-              <div key={lift.name} className="flex items-center gap-4 py-3">
+              <button
+                key={lift.name}
+                type="button"
+                onClick={() => setDetailLift({ name: lift.name, timed: lift.metric === "time" })}
+                className="flex min-h-11 w-full items-center gap-4 py-3 text-left transition hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-fg">{lift.name}</p>
                   <p className="caption mt-0.5">
-                    {lift.first} → {lift.last} {units}
+                    {lift.metric === "time"
+                      ? `${formatHold(lift.first)} → ${formatHold(lift.last)}`
+                      : `${lift.first} → ${lift.last} ${units}`}
                   </p>
                 </div>
                 <svg viewBox="0 0 100 28" aria-hidden className="h-7 w-24 shrink-0">
@@ -199,8 +383,24 @@ const Progress = () => {
                     lift.delta > 0 ? "text-fg" : "text-fg-muted"
                   }`}
                 >
-                  {lift.delta > 0 ? `+${lift.delta}` : lift.delta}
-                  <span className="ml-1 text-[11px] font-normal text-fg-muted">{units}</span>
+                  {lift.metric === "time" ? (
+                    formatHoldDelta(lift.delta)
+                  ) : (
+                    <>
+                      {lift.delta > 0 ? `+${lift.delta}` : lift.delta}
+                      <span className="ml-1 text-[11px] font-normal text-fg-muted">{units}</span>
+                    </>
+                  )}
+                </p>
+              </button>
+            ))}
+
+            {/* Lifts one session short — say so instead of vanishing */}
+            {locked.map((l) => (
+              <div key={l.name} className="flex items-center justify-between gap-4 py-3">
+                <p className="min-w-0 truncate text-sm font-medium text-fg-soft">{l.name}</p>
+                <p className="caption shrink-0 text-right">
+                  {l.needed} more session{l.needed === 1 ? "" : "s"} unlocks its trend
                 </p>
               </div>
             ))}
@@ -208,17 +408,33 @@ const Progress = () => {
         </section>
       )}
 
-      {/* ── Card 2 · RECORDS — most recent bests ── */}
-      {prs.length > 0 && (
+      {/* ── Card 2 · YOUR RECORDS ── */}
+      {(prs.length > 0 || junkNames.length > 0) && (
         <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "180ms" }}>
-          <p className="eyebrow mb-3">Records</p>
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <p className="eyebrow">Your records</p>
+            {newPrCount > 0 && (
+              <p className="caption !text-primary">
+                {newPrCount} new in the last 7 days
+              </p>
+            )}
+          </div>
           <div className="divide-y divide-border">
             {visibleRecords.map((pr) => {
               const best = bestWeightRecords.get(pr.exerciseName) ?? null;
+              // Holds never get an estimated single — Epley over a plank's
+              // "reps" invents a lift that never happened.
+              const timed = isTimedPr(pr, pr.exerciseName);
+              const holdNamed = inferTracking(pr.exerciseName) === "time";
               const recentlyImproved =
                 Date.now() - Date.parse(pr.lastImproved) < PR_RECENT_DAYS * DAY_MS;
               return (
-                <div key={pr.exerciseName} className="flex items-center justify-between gap-4 py-3">
+                <button
+                  key={pr.exerciseName}
+                  type="button"
+                  onClick={() => openDetail(pr.exerciseName)}
+                  className="flex min-h-11 w-full items-center justify-between gap-4 py-3 text-left transition hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                >
                   <div className="min-w-0">
                     <p className="flex items-center gap-2 text-sm font-semibold text-fg">
                       {recentlyImproved && (
@@ -227,24 +443,39 @@ const Progress = () => {
                       <span className="truncate">{pr.exerciseName}</span>
                     </p>
                     <p className="caption mt-0.5">
-                      {best !== null
-                        ? `Best ${best.weight} ${units} × ${best.reps}`
-                        : pr.maxReps !== null
-                          ? `Best ${pr.maxReps} reps`
-                          : "Logged"}
+                      {pr.maxDuration !== null
+                        ? `Longest hold ${formatHold(pr.maxDuration)}`
+                        : holdNamed && best !== null
+                          ? // Rep-shaped legacy log of a hold exercise — state it
+                            // plainly, claim no rep record.
+                            `Logged ${best.weight} ${units} × ${best.reps}`
+                          : best !== null
+                            ? `Best ${best.weight} ${units} × ${best.reps}`
+                            : pr.maxReps !== null
+                              ? `Best ${pr.maxReps} reps`
+                              : "Logged"}
                       <span className="text-fg-faint"> · {relativeDay(pr.lastImproved)}</span>
                     </p>
                   </div>
-                  {pr.maxE1RM !== null && (
+                  {timed || holdNamed ? (
+                    pr.maxDuration !== null && (
+                      <div className="shrink-0 text-right">
+                        <p className="stat-lg whitespace-nowrap">
+                          <b>{formatHold(pr.maxDuration)}</b>
+                        </p>
+                        <p className="caption !text-fg-muted">Hold</p>
+                      </div>
+                    )
+                  ) : pr.maxE1RM !== null ? (
                     <div className="shrink-0 text-right">
                       <p className="stat-lg whitespace-nowrap">
                         <b>{Math.round(pr.maxE1RM)}</b>
                         <span className="text-fg-muted"> {units}</span>
                       </p>
-                      <p className="caption !text-fg-muted">Est. max</p>
+                      <p className="caption !text-fg-muted">Est. best single</p>
                     </div>
-                  )}
-                </div>
+                  ) : null}
+                </button>
               );
             })}
           </div>
@@ -257,26 +488,50 @@ const Progress = () => {
               {showAllRecords ? "Show fewer" : `All records (${prs.length})`}
             </button>
           )}
+
+          {/* Fix-it row — the only acknowledgment of messy imports */}
+          {junkNames.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setRenameOpen(true)}
+              className="mt-1 flex min-h-11 w-full items-center gap-2 rule-hairline pt-2 text-left transition hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              <PenLine size={13} className="shrink-0 text-primary" />
+              <span className="caption !text-fg-soft">
+                {junkNames.length} imported exercise{junkNames.length === 1 ? "" : "s"} need
+                {junkNames.length === 1 ? "s" : ""} a name — tap to name{" "}
+                {junkNames.length === 1 ? "it" : "them"}
+              </span>
+            </button>
+          )}
         </section>
       )}
 
-      {/* ── Card 3 · THIS WEEK — consistency + balance ── */}
+      {/* ── Card 3 · THIS WEEK — neutral count, no quota, no gray corpse ── */}
       {logs.length > 0 && (
         <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "240ms" }}>
           <div className="flex items-baseline justify-between gap-3">
             <p className="eyebrow">This week</p>
             {weeklyStreak > 1 && (
-              <p className="caption">
-                {weeklyStreak} weeks in a row
-              </p>
+              <p className="caption">{weeklyStreak} weeks in a row</p>
             )}
           </div>
-          <p className="mt-2 text-base font-medium text-fg">
-            {weekStats.sessions} workout{weekStats.sessions === 1 ? "" : "s"}
-            {frequency ? ` of ${frequency} planned` : ""} this week
-          </p>
-          <MuscleMap activation={getMuscleActivation(logs, 7)} className="mt-4 mb-3" />
-          {balanceVerdict && <p className="caption">{balanceVerdict}</p>}
+          <p className="mt-2 text-base font-medium text-fg">{weekLine}</p>
+
+          {hasActivation ? (
+            <>
+              <MuscleMap activation={activation} className="mt-4 mb-2" />
+              <p className="caption !text-fg-faint">
+                Muscles worked, last 7 days — assisting muscles count half.
+              </p>
+              {balanceGuidance && <p className="caption mt-1">{balanceGuidance}</p>}
+            </>
+          ) : (
+            <p className="caption mt-1">
+              Your next session lights up the muscle map here.
+            </p>
+          )}
+
           <Link
             to="/calendar"
             className="mt-2 flex min-h-11 items-center justify-between text-sm font-semibold text-fg transition hover:opacity-80"
@@ -303,49 +558,67 @@ const Progress = () => {
             />
           </button>
           {showLifted && (
-            <div className="mt-3 h-[170px] animate-fade-in">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={volumeTrend} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
-                  <XAxis
-                    dataKey="week"
-                    tick={{ fontSize: 10, fill: "hsl(var(--text-tertiary))" }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 10, fill: "hsl(var(--text-tertiary))" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--popover))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "0.75rem",
-                      fontSize: 12,
-                      color: "hsl(var(--popover-foreground))",
-                    }}
-                    formatter={(v: number) => [`${v.toLocaleString()} ${units}`, "Lifted"]}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="volume"
-                    stroke="hsl(var(--chart-line))"
-                    fill="hsl(var(--chart-line))"
-                    fillOpacity={0.08}
-                    strokeWidth={1.5}
-                    dot={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="animate-fade-in">
+              <div className="mt-3 h-[170px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={volumeTrend} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                    <XAxis
+                      dataKey="week"
+                      tick={{ fontSize: 10, fill: "hsl(var(--text-tertiary))" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10, fill: "hsl(var(--text-tertiary))" }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
+                    />
+                    <Tooltip
+                      formatter={(v) => [`${Number(v).toLocaleString()} ${units}`, "Lifted"]}
+                      contentStyle={{
+                        background: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 10,
+                        fontSize: 12,
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="volume"
+                      stroke="hsl(var(--chart-line))"
+                      strokeWidth={1.5}
+                      fill="hsl(var(--chart-line) / 0.12)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
               <p className="caption mt-2">
-                Weekly total of every completed working set, last 8 weeks.
+                Weekly totals, last 8 weeks
+                {expandedTonnage ? (
+                  <span className="text-fg-faint"> — {expandedTonnage}.</span>
+                ) : (
+                  "."
+                )}
               </p>
             </div>
           )}
         </section>
       )}
+
+      {/* ── Sheets ── */}
+      <LiftDetailSheet
+        lift={detailLift}
+        onClose={() => setDetailLift(null)}
+        logs={logs}
+        units={units}
+      />
+      <RenameExercisesSheet
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        logs={logs}
+        onRenamed={reload}
+      />
     </div>
   );
 };

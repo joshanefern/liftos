@@ -94,6 +94,16 @@ export const LiveMuscleMap = ({
   );
 };
 
+/* Atmosphere — three cached gradients (no CSS blur filters: they freeze
+   browser-pane screenshots on this machine). Raspberry aura behind the
+   torso, vignette toward the page background, soft floor ellipse. */
+const AURA_BG =
+  "radial-gradient(58% 40% at 50% 32%, hsl(var(--primary) / 0.06), transparent 72%)";
+const VIGNETTE_BG =
+  "radial-gradient(125% 100% at 50% 46%, transparent 56%, hsl(var(--background) / 0.65) 100%)";
+const FLOOR_BG =
+  "radial-gradient(50% 50% at 50% 50%, hsl(var(--foreground) / 0.22), hsl(var(--foreground) / 0.07) 55%, transparent 78%)";
+
 const Figure = ({
   gender,
   view,
@@ -106,11 +116,32 @@ const Figure = ({
   heat: FigureHeat;
   label: string;
   height: number;
-}) => (
-  <div className="flex flex-col items-center">
-    <div className="flex items-center justify-center" style={{ height }}>
-      <BodyHeatMap gender={gender} view={view} heat={heat} className="h-full w-auto" />
+}) => {
+  const lit = Object.values(heat).some((h) => (h ?? 0) > 0);
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative flex items-center justify-center" style={{ height }}>
+        {/* The figure stands in a lit studio rather than floating; the
+            aura breathes on once training starts. */}
+        <div
+          aria-hidden
+          className="absolute -inset-x-4 inset-y-0 transition-opacity duration-700"
+          style={{ opacity: lit ? 1 : 0.45, background: AURA_BG }}
+        />
+        <div aria-hidden className="absolute -inset-x-4 inset-y-0" style={{ background: VIGNETTE_BG }} />
+        <div
+          aria-hidden
+          className="absolute bottom-0 left-1/2 h-3 w-2/3 -translate-x-1/2"
+          style={{ background: FLOOR_BG }}
+        />
+        <BodyHeatMap
+          gender={gender}
+          view={view}
+          heat={heat}
+          className="relative h-full w-auto"
+        />
+      </div>
+      <span className="eyebrow mt-1.5 !text-[10px]">{label}</span>
     </div>
-    <span className="eyebrow mt-1.5 !text-[10px]">{label}</span>
-  </div>
-);
+  );
+};

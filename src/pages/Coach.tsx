@@ -3,6 +3,7 @@ import { useCapturedSessions } from "@/context/CapturedSessionsProvider";
 import { useUser } from "@/context/UserContext";
 import { starterPrograms } from "@/data/starterPrograms";
 import { useDayKey } from "@/hooks/useDayKey";
+import { useReadiness } from "@/hooks/useReadiness";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
 import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
 import { suggestNextWorkout } from "@/lib/suggestion";
@@ -173,9 +174,10 @@ const Coach = () => {
     [logs, templates, profile, dayKey],
   );
 
+  const readiness = useReadiness();
   const context = useMemo(
-    () => buildCoachContext(logs, profile, hrDetailSessions, suggestion),
-    [logs, profile, hrDetailSessions, suggestion],
+    () => buildCoachContext(logs, profile, hrDetailSessions, suggestion, readiness),
+    [logs, profile, hrDetailSessions, suggestion, readiness],
   );
 
   const suggestions = useMemo(() => buildSuggestions(context), [context]);

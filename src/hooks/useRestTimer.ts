@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { Haptics } from "@capacitor/haptics";
+import { warnHaptic } from "@/lib/haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const DEFAULT_REST_SECONDS = 120;
@@ -54,6 +55,7 @@ export const useRestTimer = (
   useEffect(() => {
     if (endsAt === null) return;
     let fired = false;
+    let warned = false;
     const update = () => {
       const secs = Math.ceil((endsAt - Date.now()) / 1000);
       if (secs <= 0) {
@@ -65,6 +67,11 @@ export const useRestTimer = (
           onFinishRef.current?.();
         }
         return;
+      }
+      // One quiet nudge at 10s — eyes off the phone, back to the bar.
+      if (secs <= 10 && !warned) {
+        warned = true;
+        warnHaptic();
       }
       setRemaining(secs);
     };

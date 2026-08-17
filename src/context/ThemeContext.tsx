@@ -10,7 +10,11 @@ import { Capacitor } from "@capacitor/core";
 
 export type ThemePreference = "light" | "dark" | "system";
 
-const STORAGE_KEY = "liftos-theme";
+// v2: the dark instrument IS the identity (research: dark-first is where
+// premium lives; the light sandstone is the reading theme). New key so
+// existing "system/light" habits don't hide the redesign — one toggle
+// brings sandstone back.
+const STORAGE_KEY = "liftos-theme-v2";
 
 const systemPrefersDark = () =>
   window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -27,7 +31,7 @@ const readStoredPreference = (): ThemePreference => {
   } catch {
     /* storage unavailable — fall through */
   }
-  return "system";
+  return "dark";
 };
 
 /* iOS status bar text must flip with the canvas: dark glyphs over
@@ -91,3 +95,29 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const useTheme = () => useContext(ThemeContext);
+
+/* ── Forced-dark scope (Split Shift) — the active-workout screen is a black
+   scoreboard in every theme. Wraps its subtree in the .dark token class and
+   overrides useTheme so canvas consumers (muscle figures) composite for the
+   dark ground. The iOS status bar flips for the visit and restores on exit. ── */
+export const ForceDarkScope = ({ children }: { children: ReactNode }) => {
+  const outer = useTheme();
+
+  useEffect(() => {
+    void syncStatusBar(true);
+    return () => {
+      void syncStatusBar(resolveIsDark(outer.preference));
+    };
+  }, [outer.preference]);
+
+  return (
+    <ThemeContext.Provider value={{ ...outer, isDark: true }}>
+      {/* text-fg re-resolves the inherited text color inside the scope —
+          without it, unstyled elements inherit the light body ink. isolate
+          creates a stacking context so the page's z-[-1] canvas layer paints
+          above the light body background (otherwise a light strip shows
+          behind the status bar). */}
+      <div className="dark isolate text-fg">{children}</div>
+    </ThemeContext.Provider>
+  );
+};

@@ -19,7 +19,9 @@ export const buildStravaAuthorizeUrl = (state?: string): string => {
     redirect_uri: getStravaRedirectUri(),
     response_type: "code",
     approval_prompt: "auto",
-    scope: "read,activity:read_all",
+    // activity:write powers the workout write-back; users connected before it
+    // shipped re-run this flow once to upgrade their token.
+    scope: "read,activity:read_all,activity:write",
   });
   if (state) params.set("state", state);
   return `${STRAVA_AUTHORIZE_URL}?${params.toString()}`;

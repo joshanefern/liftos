@@ -44,7 +44,9 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
       .select("*")
       .order("finished_at", { ascending: false })
       .limit(200);
-    setLogs((data as WorkoutLog[]) ?? []);
+    // A failed reload keeps the stale cache — blanking every screen to the
+    // empty state on a network hiccup would read as data loss.
+    if (data) setLogs(data as WorkoutLog[]);
     setLoading(false);
   }, []);
 

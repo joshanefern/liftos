@@ -70,6 +70,13 @@ export type CoachContext = {
   hr_sessions: HRSessionSummary[];
   /** Null when the caller has no engine pick (e.g. logs still loading). */
   today_suggestion: TodaySuggestion | null;
+  /** Overnight readiness verdict — null without a wearable baseline. The
+      coach must never contradict it (same hand-off rule as the pick). */
+  today_readiness: {
+    state: "primed" | "steady" | "run_down";
+    illness: boolean;
+    summary: string | null;
+  } | null;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -155,6 +162,11 @@ export const buildCoachContext = (
   profile: UserProfile | null,
   hrDetailSessions: CapturedSessionRow[] = [],
   todaySuggestion: TodaySuggestion | null = null,
+  todayReadiness: {
+    state: "primed" | "steady" | "run_down" | null;
+    illness: boolean;
+    summary: string | null;
+  } | null = null,
 ): CoachContext => {
   const weekStats = getWeekStats(logs);
   const monthStats = getMonthStats(logs);
@@ -207,6 +219,16 @@ export const buildCoachContext = (
           reason: todaySuggestion.reason,
         }
       : null,
+    // Re-narrow for the same reason as the pick — and drop the no-verdict
+    // tiers entirely so the model can't invent a readiness state.
+    today_readiness:
+      todayReadiness && todayReadiness.state !== null
+        ? {
+            state: todayReadiness.state,
+            illness: todayReadiness.illness,
+            summary: todayReadiness.summary,
+          }
+        : null,
   };
 };
 

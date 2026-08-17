@@ -6,7 +6,8 @@ import { usePendingReviews } from "@/hooks/usePendingReviews";
 const tabs = [
   { title: "Home", url: "/dashboard", icon: LayoutDashboard },
   { title: "Workouts", url: "/workouts", icon: Dumbbell },
-  { title: "Log", url: "/workouts/active", icon: Plus, center: true },
+  // The + creates a workout — nothing else. Logging lives in Workouts.
+  { title: "New workout", url: "/workouts?new=1", icon: Plus, center: true },
   { title: "Progress", url: "/progress", icon: TrendingUp },
   { title: "Coach", url: "/coach", icon: Sparkles },
 ];
@@ -18,13 +19,18 @@ const tabs = [
 const MobileTabBar = () => {
   const { pendingCount } = usePendingReviews();
   const { pathname } = useLocation();
-  // Nested-route truth: review screens belong to the Workouts tab; the Log
-  // circle gets a visible ring so the bar never loses the "you are here" cue.
-  const workoutsActive =
-    pathname === "/workouts" || pathname.startsWith("/workouts/review");
-  const logActive = pathname === "/workouts/active";
+  // Nested-route truth: the active session and review screens belong to the
+  // Workouts tab — start a workout and you're still "in Workouts".
+  const workoutsActive = pathname.startsWith("/workouts");
+  // Mid-workout the whole screen is the black scoreboard (Split Shift) —
+  // the bar flips with it so the frame reads as one surface.
+  const scoreboard = pathname === "/workouts/active";
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 md:hidden border-t border-border bg-background/95 backdrop-blur-[10px] pb-safe">
+    <nav
+      className={`fixed inset-x-0 bottom-0 z-40 md:hidden border-t border-border bg-background/95 backdrop-blur-[10px] pb-safe text-fg ${
+        scoreboard ? "dark" : ""
+      }`}
+    >
       <div className="flex items-stretch justify-around h-16">
         {tabs.map((tab) =>
           tab.center ? (
@@ -32,15 +38,14 @@ const MobileTabBar = () => {
               key={tab.url}
               to={tab.url}
               // flex-1 like its siblings — without it the circle owns no
-              // column and crowds Workouts/Progress.
+              // column and crowds Workouts/Progress. The + circle carries no
+              // text label (owner's call) — the aria-label keeps it named
+              // for screen readers.
               className="flex flex-1 flex-col items-center justify-center"
               activeClassName=""
+              aria-label={tab.title}
             >
-              <span
-                className={`flex h-12 w-12 items-center justify-center rounded-full bg-foreground text-background shadow-[0_2px_10px_hsl(var(--foreground)/0.2)] active:scale-95 transition-transform duration-150 ${
-                  logActive ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
-                }`}
-              >
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-foreground text-background shadow-[0_2px_10px_hsl(var(--foreground)/0.2)] active:scale-95 transition-transform duration-150">
                 <tab.icon size={22} strokeWidth={2.5} />
               </span>
             </NavLink>

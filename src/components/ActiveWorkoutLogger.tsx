@@ -17,9 +17,25 @@ import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { toast } from "@/components/ui/use-toast";
 import { useUser } from "@/context/UserContext";
 import type { WorkoutExercise } from "@/data/liftosMock";
+import { RollingNumber } from "@/components/motion/RollingNumber";
+import { useExerciseNotes } from "@/hooks/useExerciseNotes";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useWorkoutLogs, type WorkoutLog } from "@/hooks/useWorkoutLogs";
+import {
+  formatHold,
+  formatHoldInput,
+  parseHoldSeconds,
+  trackingFor,
+  type EffortTracking,
+} from "@/lib/exerciseTracking";
+import { successHaptic, tapHaptic } from "@/lib/haptics";
+import { buildStravaAuthorizeUrl, stravaIsConfigured } from "@/lib/strava/auth";
+import {
+  fetchStravaIntegration,
+  postWorkoutToStrava,
+  type StravaPostState,
+} from "@/lib/strava/writeback";
 import { lookupMuscles, type Muscle } from "@/lib/muscleMap";
 import { formatPlateMath, plateBreakdown } from "@/lib/plateMath";
 import { suggestProgression, type ProgressionSuggestion } from "@/lib/progression";
@@ -33,7 +49,9 @@ import {
   Check,
   ChevronDown,
   Dumbbell,
+  Pin,
   Plus,
+  Repeat,
   SkipForward,
   Timer,
   Trophy,
@@ -42,18 +60,26 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
+/** Live logger progress (completed sets, typed values, notes) — the seed key
+    alone only stores the untouched template, so without this every logged
+    set evaporated on navigation and the Dashboard's "Resume workout" banner
+    was a lie. Keyed to the seed's startedAt so a different session never
+    inherits it. */
+const ACTIVE_WORKOUT_PROGRESS_KEY = "liftos_active_workout_progress";
 const REST_SECONDS = 120;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
 type LoggedSet = {
   id: string;
-  /** User-entered value; "" renders the hint as a tap-to-fill placeholder. */
+  /** User-entered effort value — rep count, or hold text ("1:30") when the
+      exercise tracks time; "" renders the hint as a tap-to-fill placeholder. */
   reps: string;
   weight: string;
   completed: boolean;
   /** Prescription from the template (hint source, never mutated). */
   targetReps: number | null;
+  targetTime: number | null;
   targetWeight: number | null;
   /** Generated ramp set — excluded from totals, volume, PRs, and muscle heat. */
   isWarmup?: boolean;
@@ -61,13 +87,17 @@ type LoggedSet = {
 
 type LoggedExercise = Omit<WorkoutExercise, "sets"> & { sets: LoggedSet[] };
 
+type SessionPR =
+  | { name: string; kind: "weight"; weight: number; reps: number; isFirst: boolean }
+  | { name: string; kind: "hold"; duration: number; weight: number; isFirst: boolean };
+
 type SessionSummary = {
   durationSeconds: number;
   volume: number;
   completedSets: number;
   totalSets: number;
   exercisesCount: number;
-  prs: { name: string; weight: number; reps: number; isFirst: boolean }[];
+  prs: SessionPR[];
   intensities: Partial<Record<Muscle, number>>;
   trainedCount: number;
 };
@@ -83,10 +113,35 @@ const cloneExercises = (exercises: WorkoutExercise[]): LoggedExercise[] =>
       weight: "",
       completed: false,
       targetReps: set.reps ?? null,
+      targetTime: set.duration_seconds ?? null,
       targetWeight: set.weight ?? null,
       ...(set.isWarmup ? { isWarmup: true } : {}),
     })),
   }));
+
+type PersistedProgress = {
+  startedAt: string;
+  exercises: LoggedExercise[];
+  notes: string;
+};
+
+/** Restore in-flight progress for THIS seeded session, if any survives. */
+const restoreProgress = (startedAt: string): PersistedProgress | null => {
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_WORKOUT_PROGRESS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedProgress;
+    if (parsed.startedAt !== startedAt || !Array.isArray(parsed.exercises)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const clearActiveWorkoutStorage = (): void => {
+  window.localStorage.removeItem(ACTIVE_WORKOUT_STORAGE_KEY);
+  window.localStorage.removeItem(ACTIVE_WORKOUT_PROGRESS_KEY);
+};
 
 const formatClock = (totalSeconds: number): string => {
   const s = Math.max(0, totalSeconds);
@@ -97,24 +152,52 @@ const formatClock = (totalSeconds: number): string => {
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 };
 
-/** Session PRs vs saved history: heavier top weight, or first-ever log of a lift. */
+/** Session PRs vs saved history: heavier top weight (rep lifts), longer top
+    hold (timed lifts), or first-ever log of a lift. */
 const computePrs = (
   exercises: LoggedExercise[],
   history: WorkoutLog[],
 ): SessionSummary["prs"] => {
-  const bestByName = new Map<string, number>();
+  const bestWeightByName = new Map<string, number>();
+  const bestHoldByName = new Map<string, number>();
   for (const log of history) {
     for (const exercise of log.exercises) {
       const key = exercise.name.trim().toLowerCase();
       for (const set of exercise.sets) {
-        if (set.isWarmup || !set.completed || !set.weight || set.weight <= 0) continue;
-        bestByName.set(key, Math.max(bestByName.get(key) ?? 0, set.weight));
+        if (set.isWarmup || !set.completed) continue;
+        if (set.weight && set.weight > 0) {
+          bestWeightByName.set(key, Math.max(bestWeightByName.get(key) ?? 0, set.weight));
+        }
+        // Cardio durations are not holds.
+        if (exercise.kind !== "cardio" && set.duration_seconds && set.duration_seconds > 0) {
+          bestHoldByName.set(key, Math.max(bestHoldByName.get(key) ?? 0, set.duration_seconds));
+        }
       }
     }
   }
 
   const prs: SessionSummary["prs"] = [];
   for (const exercise of exercises) {
+    const key = exercise.name.trim().toLowerCase();
+    if (trackingFor(exercise) === "time") {
+      let best: { duration: number; weight: number } | null = null;
+      for (const set of exercise.sets) {
+        if (set.isWarmup || !set.completed) continue;
+        const duration = parseHoldSeconds(set.reps) ?? 0;
+        if (duration > 0 && (best === null || duration > best.duration)) {
+          best = { duration, weight: Number(set.weight) || 0 };
+        }
+      }
+      if (!best) continue;
+      const prior = bestHoldByName.get(key);
+      if (prior === undefined) {
+        prs.push({ name: exercise.name, kind: "hold", ...best, isFirst: true });
+      } else if (best.duration > prior) {
+        prs.push({ name: exercise.name, kind: "hold", ...best, isFirst: false });
+      }
+      continue;
+    }
+
     let best: { weight: number; reps: number } | null = null;
     for (const set of exercise.sets) {
       if (set.isWarmup || !set.completed) continue;
@@ -124,11 +207,11 @@ const computePrs = (
       }
     }
     if (!best) continue;
-    const prior = bestByName.get(exercise.name.trim().toLowerCase());
+    const prior = bestWeightByName.get(key);
     if (prior === undefined) {
-      prs.push({ name: exercise.name, ...best, isFirst: true });
+      prs.push({ name: exercise.name, kind: "weight", ...best, isFirst: true });
     } else if (best.weight > prior) {
-      prs.push({ name: exercise.name, ...best, isFirst: false });
+      prs.push({ name: exercise.name, kind: "weight", ...best, isFirst: false });
     }
   }
   return prs.sort((a, b) => b.weight - a.weight);
@@ -138,18 +221,45 @@ const computePrs = (
 
 const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const { save, logs } = useWorkoutLogs();
+  const { noteFor, saveNote } = useExerciseNotes();
   const { profile } = useUser();
   const units = profile?.units ?? "lb";
   const isMetric = isMetricUnits(units);
   const weightUnit: WeightUnit = isMetric ? "kg" : "lb";
 
-  const [exercises, setExercises] = useState<LoggedExercise[]>(() =>
-    cloneExercises(session.exercises),
+  const [exercises, setExercises] = useState<LoggedExercise[]>(
+    () => restoreProgress(session.startedAt)?.exercises ?? cloneExercises(session.exercises),
   );
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(
+    () => restoreProgress(session.startedAt)?.notes ?? "",
+  );
   const [saving, setSaving] = useState(false);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [prCelebration, setPrCelebration] = useState<PREvent[] | null>(null);
+  // Strava write-back: null = no row on the recap (not connected / autopost
+  // off); otherwise the row narrates posting → posted / a fix-it state.
+  const [stravaPost, setStravaPost] = useState<"posting" | StravaPostState | null>(null);
+  const savedLogRef = useRef<WorkoutLog | null>(null);
+
+  // Every edit lands in localStorage so navigating away (tab bar stays
+  // visible mid-workout) and coming back through the resume banner restores
+  // the session exactly. Skipped once the recap is up — the session is over.
+  useEffect(() => {
+    if (summary) return;
+    try {
+      window.localStorage.setItem(
+        ACTIVE_WORKOUT_PROGRESS_KEY,
+        JSON.stringify({
+          startedAt: session.startedAt,
+          exercises,
+          notes,
+        } satisfies PersistedProgress),
+      );
+    } catch {
+      /* storage full/unavailable — resume just falls back to the bare seed */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exercises, notes, session.startedAt, summary]);
   const [mapOpen, setMapOpen] = useState(false);
   const [musclePulseKey, setMusclePulseKey] = useState(0);
   // Plate math sheet: weight sticks around while the drawer animates closed.
@@ -179,6 +289,69 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     return () => window.clearInterval(id);
   }, [finished]);
 
+  // ── Live PR moment — a small banner the second a record set is saved.
+  //    Research: instant PR feedback is the emotional core of progress, and
+  //    "motivating without being obnoxious" means banner, never modal. ──
+  const [liveBanner, setLiveBanner] = useState<string | null>(null);
+  const liveBannerTimeout = useRef<number | null>(null);
+  // History bests per exercise name (weight lifts and holds), computed once —
+  // beaten values are tracked in-session so one record fires one banner.
+  const historyBests = useMemo(() => {
+    const weightBest = new Map<string, number>();
+    const holdBest = new Map<string, number>();
+    for (const log of logs) {
+      for (const exercise of log.exercises) {
+        const key = exercise.name.trim().toLowerCase();
+        for (const set of exercise.sets) {
+          if (set.isWarmup || !set.completed) continue;
+          if (set.weight && set.weight > 0) {
+            weightBest.set(key, Math.max(weightBest.get(key) ?? 0, set.weight));
+          }
+          if (exercise.kind !== "cardio" && set.duration_seconds && set.duration_seconds > 0) {
+            holdBest.set(key, Math.max(holdBest.get(key) ?? 0, set.duration_seconds));
+          }
+        }
+      }
+    }
+    return { weightBest, holdBest };
+  }, [logs]);
+  const liveBestRef = useRef(new Map<string, number>());
+
+  const celebrateIfRecord = (
+    exercise: LoggedExercise,
+    weightText: string,
+    effortText: string,
+  ) => {
+    const key = exercise.name.trim().toLowerCase();
+    const timed = trackingFor(exercise) === "time";
+    const value = timed ? (parseHoldSeconds(effortText) ?? 0) : Number(weightText) || 0;
+    if (value <= 0) return;
+    // A weight without reps is a failed/untracked lift — no record (matches
+    // the PR engine's eligibility rule).
+    if (!timed && !(Number(effortText) >= 1)) return;
+    const prior = timed
+      ? historyBests.holdBest.get(key)
+      : historyBests.weightBest.get(key);
+    // First-ever logs get their moment at the finish screen, not mid-set.
+    if (prior === undefined) return;
+    const sessionBest = liveBestRef.current.get(`${timed ? "t" : "w"}:${key}`) ?? 0;
+    if (value <= prior || value <= sessionBest) return;
+    liveBestRef.current.set(`${timed ? "t" : "w"}:${key}`, value);
+    setLiveBanner(
+      timed
+        ? `Longest ${exercise.name.toLowerCase()} ever — ${formatHold(value)}`
+        : `Heaviest ${exercise.name.toLowerCase()} ever — ${formatWeightForDisplay(value)} ${units}`,
+    );
+    if (liveBannerTimeout.current !== null) window.clearTimeout(liveBannerTimeout.current);
+    liveBannerTimeout.current = window.setTimeout(() => setLiveBanner(null), 4000);
+  };
+  useEffect(
+    () => () => {
+      if (liveBannerTimeout.current !== null) window.clearTimeout(liveBannerTimeout.current);
+    },
+    [],
+  );
+
   // Rest countdown with a brief terracotta pulse + haptic when it hits zero.
   const [restPulse, setRestPulse] = useState(false);
   const restPulseTimeout = useRef<number | null>(null);
@@ -197,7 +370,10 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   // Most recent completed values per exercise name across saved history —
   // the deepest hint layer under "previous set in this session" and "target".
   const historyFor = useMemo(() => {
-    const map = new Map<string, { reps: number | null; weight: number | null }>();
+    const map = new Map<
+      string,
+      { reps: number | null; weight: number | null; duration: number | null }
+    >();
     for (const log of logs) {
       // logs arrive newest-first; keep the first (most recent) match per name
       for (const exercise of log.exercises) {
@@ -206,37 +382,56 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         const done = exercise.sets.filter((s) => s.completed);
         const last = done[done.length - 1];
         if (!last) continue;
-        map.set(key, { reps: last.reps ?? null, weight: last.weight ?? null });
+        map.set(key, {
+          reps: last.reps ?? null,
+          weight: last.weight ?? null,
+          duration: last.duration_seconds ?? null,
+        });
       }
     }
     return map;
   }, [logs]);
+
+  /** The effort column's entered value in numeric form (reps, or hold seconds). */
+  const effortValue = (raw: string, tracking: EffortTracking): number | null => {
+    if (raw.trim() === "") return null;
+    if (tracking === "time") return parseHoldSeconds(raw);
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
 
   const hintFor = (
     exercise: LoggedExercise,
     index: number,
     field: "reps" | "weight",
   ): number | null => {
+    const tracking = trackingFor(exercise);
     const set = exercise.sets[index];
+    const targetOf = (s: LoggedSet): number | null =>
+      field === "weight" ? s.targetWeight : tracking === "time" ? s.targetTime : s.targetReps;
     // Warm-up rows always hint from their own generated prescription.
     if (set.isWarmup) {
-      const target = field === "reps" ? set.targetReps : set.targetWeight;
+      const target = targetOf(set);
       return target !== null && target > 0 ? target : null;
     }
     for (let i = index - 1; i >= 0; i--) {
       if (exercise.sets[i].isWarmup) continue; // ramp values are not working hints
       const raw = exercise.sets[i][field];
-      if (raw.trim() !== "") {
-        const n = Number(raw);
-        if (Number.isFinite(n) && n > 0) return n;
-      }
+      const n =
+        field === "weight" ? (Number(raw) > 0 ? Number(raw) : null) : effortValue(raw, tracking);
+      if (raw.trim() !== "" && n !== null) return n;
     }
-    const target = field === "reps" ? set.targetReps : set.targetWeight;
+    const target = targetOf(set);
     if (target !== null && target > 0) return target;
     const hist = historyFor.get(exercise.name.trim().toLowerCase());
-    const h = field === "reps" ? hist?.reps : hist?.weight;
+    const h =
+      field === "weight" ? hist?.weight : tracking === "time" ? hist?.duration : hist?.reps;
     return h != null && h > 0 ? h : null;
   };
+
+  /** Format an effort hint the way it should land in the input. */
+  const commitEffortHint = (hint: number, tracking: EffortTracking): string =>
+    tracking === "time" ? formatHoldInput(hint) : String(hint);
 
   // Double-progression hints from the last session containing each exercise.
   // Keyed on session.exercises (names are fixed for the session), so this
@@ -259,12 +454,14 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     let totalSets = 0;
     let volume = 0;
     for (const exercise of exercises) {
+      // Timed sets have no rep count — holds contribute zero lifted volume.
+      const timed = trackingFor(exercise) === "time";
       for (const set of exercise.sets) {
         if (set.isWarmup) continue;
         totalSets++;
         if (set.completed) {
           completedSets++;
-          volume += (Number(set.reps) || 0) * (Number(set.weight) || 0);
+          if (!timed) volume += (Number(set.reps) || 0) * (Number(set.weight) || 0);
         }
       }
     }
@@ -330,9 +527,10 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     let reps = set.reps;
     let weight = set.weight;
     if (becomingDone) {
+      const tracking = trackingFor(exercise);
       if (reps.trim() === "") {
         const hint = hintFor(exercise, index, "reps");
-        if (hint !== null) reps = String(hint);
+        if (hint !== null) reps = commitEffortHint(hint, tracking);
       }
       if (weight.trim() === "") {
         const hint = hintFor(exercise, index, "weight");
@@ -353,7 +551,13 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       ),
     );
 
-    if (becomingDone) onSetCompleted(exercise.name, set.isWarmup === true);
+    if (becomingDone) {
+      onSetCompleted(exercise.name, set.isWarmup === true);
+      if (!set.isWarmup) {
+        tapHaptic();
+        celebrateIfRecord(exercise, weight, reps);
+      }
+    }
   };
 
   /** Exercise-level Done: complete (or reopen) every set, filling hints in order. */
@@ -372,16 +576,20 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       return;
     }
 
+    const tracking = trackingFor(exercise);
+    const timed = tracking === "time";
     const hist = historyFor.get(exercise.name.trim().toLowerCase());
+    const histEffort = timed ? hist?.duration : hist?.reps;
     let prevReps: string | null = null;
     let prevWeight: string | null = null;
     const filled = exercise.sets.map((set) => {
+      const targetEffort = timed ? set.targetTime : set.targetReps;
       // Warm-ups fill from their own ramp prescription and stay out of the
       // working-set cascade in both directions.
       if (set.isWarmup) {
         const reps =
-          set.reps.trim() === "" && set.targetReps !== null && set.targetReps > 0
-            ? String(set.targetReps)
+          set.reps.trim() === "" && targetEffort !== null && targetEffort > 0
+            ? commitEffortHint(targetEffort, tracking)
             : set.reps;
         const weight =
           set.weight.trim() === "" && set.targetWeight !== null && set.targetWeight > 0
@@ -393,8 +601,10 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       let weight = set.weight;
       if (reps.trim() === "") {
         if (prevReps !== null) reps = prevReps;
-        else if (set.targetReps !== null && set.targetReps > 0) reps = String(set.targetReps);
-        else if (hist?.reps != null && hist.reps > 0) reps = String(hist.reps);
+        else if (targetEffort !== null && targetEffort > 0)
+          reps = commitEffortHint(targetEffort, tracking);
+        else if (histEffort != null && histEffort > 0)
+          reps = commitEffortHint(histEffort, tracking);
       }
       if (weight.trim() === "") {
         if (prevWeight !== null) weight = prevWeight;
@@ -428,11 +638,22 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   weight: "",
                   completed: false,
                   targetReps: exercise.sets.at(-1)?.targetReps ?? null,
+                  targetTime: exercise.sets.at(-1)?.targetTime ?? null,
                   targetWeight: exercise.sets.at(-1)?.targetWeight ?? null,
                 },
               ],
             }
           : exercise,
+      ),
+    );
+  };
+
+  /** Reps ↔ time for one exercise — entered values stay put, the columns
+      just reinterpret ("60" logged as reps becomes a 60s hold). */
+  const setTracking = (exerciseId: string, tracking: EffortTracking) => {
+    setExercises((current) =>
+      current.map((exercise) =>
+        exercise.id === exerciseId ? { ...exercise, tracking } : exercise,
       ),
     );
   };
@@ -459,6 +680,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       weight: "",
       completed: false,
       targetReps: set.reps ?? null,
+      targetTime: null,
       targetWeight: set.weight ?? null,
       isWarmup: true,
     }));
@@ -492,31 +714,38 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     );
     const durationMinutes = Math.max(1, Math.round(durationSeconds / 60));
 
-    const exercisesForSave: WorkoutExercise[] = exercises.map((exercise) => ({
-      id: exercise.id,
-      name: exercise.name,
-      kind: exercise.kind,
-      category: exercise.category,
-      target: exercise.target,
-      notes: exercise.notes,
-      sets: exercise.sets.map((set) => ({
-        id: set.id,
-        reps: Number(set.reps) || 0,
-        weight: Number(set.weight) || 0,
-        completed: set.completed,
-        ...(set.isWarmup ? { isWarmup: true } : {}),
-      })),
-    }));
+    const exercisesForSave: WorkoutExercise[] = exercises.map((exercise) => {
+      const tracking = trackingFor(exercise);
+      return {
+        id: exercise.id,
+        name: exercise.name,
+        kind: exercise.kind,
+        tracking,
+        category: exercise.category,
+        target: exercise.target,
+        notes: exercise.notes,
+        sets: exercise.sets.map((set) => ({
+          id: set.id,
+          reps: tracking === "time" ? 0 : Number(set.reps) || 0,
+          weight: Number(set.weight) || 0,
+          ...(tracking === "time"
+            ? { duration_seconds: parseHoldSeconds(set.reps) ?? 0 }
+            : {}),
+          completed: set.completed,
+          ...(set.isWarmup ? { isWarmup: true } : {}),
+        })),
+      };
+    });
 
     // PRs must compare against history *before* this session lands in logs.
     const prs = computePrs(exercises, logs);
     const prEvents = detectSessionPRs(logs, {
       name: session.name,
-      exercises: exercisesForSave.map((e) => ({ name: e.name, sets: e.sets })),
+      exercises: exercisesForSave.map((e) => ({ name: e.name, kind: e.kind, sets: e.sets })),
     });
 
     try {
-      await save({
+      const saved = await save({
         template_id: session.templateId ?? null,
         name: session.name,
         exercises: exercisesForSave,
@@ -530,6 +759,16 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         source: "manual",
         captured_session_id: null,
       });
+      // The workout is history now — clear the live-session keys HERE, not
+      // on the recap's exit buttons: the recap's Reconnect button leaves for
+      // OAuth via a full page navigation, and a surviving seed would haunt
+      // the Dashboard as a phantom "Resume workout" banner.
+      clearActiveWorkoutStorage();
+      // Fire-and-forget — the save is done; Strava narrates on the recap.
+      if (saved) {
+        savedLogRef.current = saved;
+        void autoPostToStrava(saved);
+      }
       restTimer.skip();
       setSummary({
         durationSeconds,
@@ -541,24 +780,40 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         intensities: muscleData.intensities,
         trainedCount: muscleData.trainedCount,
       });
-      // Celebrate only after the save landed — never block or risk the log.
-      if (prEvents.length > 0) {
-        setPrCelebration(prEvents);
-        if (Capacitor.isNativePlatform()) {
-          import("@capacitor/haptics")
-            .then(({ Haptics, NotificationType }) =>
-              Haptics.notification({ type: NotificationType.Success }),
-            )
-            .catch(() => {
-              /* haptics unavailable — the overlay is celebration enough */
-            });
-        }
-      }
+      // One long success haptic at the session boundary — the recap moment.
+      successHaptic();
+      if (prEvents.length > 0) setPrCelebration(prEvents);
     } catch {
       toast({ title: "Could not save workout", variant: "destructive" });
     } finally {
       setSaving(false);
     }
+  };
+
+  /** Auto-post the saved workout when the user has Strava write-back on.
+      Silent when not connected or autopost is off; otherwise the recap row
+      narrates the outcome. Never blocks or fails the save. */
+  const autoPostToStrava = async (saved: WorkoutLog): Promise<void> => {
+    try {
+      const integration = await fetchStravaIntegration();
+      if (!integration.connected || !integration.autopost) return;
+      if (!integration.canWrite) {
+        setStravaPost("missing_write_scope");
+        return;
+      }
+      setStravaPost("posting");
+      setStravaPost(await postWorkoutToStrava(saved, units));
+    } catch {
+      // Integration lookup failed (offline) — recap simply shows no row.
+    }
+  };
+
+  /** Manual retry from the recap row. */
+  const retryStravaPost = async (): Promise<void> => {
+    const saved = savedLogRef.current;
+    if (!saved || stravaPost === "posting") return;
+    setStravaPost("posting");
+    setStravaPost(await postWorkoutToStrava(saved, units));
   };
 
   /** Abandon the session: same teardown as a successful finish, minus the
@@ -567,7 +822,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const handleDiscard = () => {
     setDiscardOpen(false);
     restTimer.skip();
-    window.localStorage.removeItem(ACTIVE_WORKOUT_STORAGE_KEY);
+    clearActiveWorkoutStorage();
     toast({ title: "Session discarded" });
     navigate("/dashboard");
   };
@@ -633,10 +888,30 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
               <p className="eyebrow mb-4">Session totals</p>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: "Duration", value: formatClock(summary.durationSeconds) },
-                  { label: "Volume", value: `${summary.volume.toLocaleString()} ${units}` },
-                  { label: "Sets", value: `${summary.completedSets}/${summary.totalSets}` },
-                  { label: "Exercises", value: String(summary.exercisesCount) },
+                  {
+                    label: "Duration",
+                    value: <>{formatClock(summary.durationSeconds)}</>,
+                  },
+                  {
+                    label: "Lifted",
+                    // Count-up choreography — the recap's signature moment.
+                    value: (
+                      <>
+                        <RollingNumber countUp value={summary.volume.toLocaleString()} />{" "}
+                        {units}
+                      </>
+                    ),
+                  },
+                  {
+                    label: "Sets",
+                    value: (
+                      <>
+                        <RollingNumber countUp countUpMs={500} value={summary.completedSets} />/
+                        {summary.totalSets}
+                      </>
+                    ),
+                  },
+                  { label: "Exercises", value: <>{summary.exercisesCount}</> },
                 ].map((item, i) => (
                   <div
                     key={item.label}
@@ -673,7 +948,11 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                         )}
                       </span>
                       <span className="mono shrink-0 text-sm font-semibold text-primary">
-                        {formatWeightForDisplay(pr.weight)} {units} × {pr.reps}
+                        {pr.kind === "hold"
+                          ? pr.weight > 0
+                            ? `${formatHold(pr.duration)} at ${formatWeightForDisplay(pr.weight)} ${units}`
+                            : `${formatHold(pr.duration)} hold`
+                          : `${formatWeightForDisplay(pr.weight)} ${units} × ${pr.reps}`}
                       </span>
                     </div>
                   ))}
@@ -683,11 +962,50 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   No new records today — showing up is the record that compounds.
                 </p>
               )}
+              {/* Strava write-back status — only renders when a post was
+                  attempted; failures offer the one action that fixes them. */}
+              {stravaPost && (
+                <div className="mt-5 flex min-h-[32px] items-center justify-between gap-3">
+                  <span className="caption">
+                    {stravaPost === "posting" && "Posting to Strava…"}
+                    {stravaPost === "posted" && "Posted to Strava ✓"}
+                    {stravaPost === "missing_write_scope" &&
+                      "Strava needs permission to post workouts"}
+                    {(stravaPost === "reconnect_required" ||
+                      stravaPost === "not_connected") &&
+                      "Strava connection expired"}
+                    {stravaPost === "failed" && "Couldn't post to Strava"}
+                  </span>
+                  {stravaPost === "failed" && (
+                    <button
+                      type="button"
+                      onClick={() => void retryStravaPost()}
+                      className="relative shrink-0 text-xs font-semibold text-primary after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    >
+                      Retry
+                    </button>
+                  )}
+                  {(stravaPost === "missing_write_scope" ||
+                    stravaPost === "reconnect_required" ||
+                    stravaPost === "not_connected") &&
+                    stravaIsConfigured() && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.location.href = buildStravaAuthorizeUrl();
+                        }}
+                        className="relative shrink-0 text-xs font-semibold text-primary after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      >
+                        Reconnect
+                      </button>
+                    )}
+                </div>
+              )}
               <CTAButton
                 to="/dashboard"
-                onClick={() => window.localStorage.removeItem(ACTIVE_WORKOUT_STORAGE_KEY)}
+                onClick={clearActiveWorkoutStorage}
                 fullWidth
-                className="mt-6"
+                className={stravaPost ? "mt-3" : "mt-6"}
               >
                 View dashboard
               </CTAButton>
@@ -701,9 +1019,22 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   // ── Active logging screen ──
 
   return (
-    <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
+    <div className="scoreboard-reveal relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
       {/* Solid canvas: no grain, no blur — battery + arm's-length legibility. */}
       <div aria-hidden className="fixed inset-0 z-[-1] bg-background" />
+
+      {/* Live PR banner — quiet celebration the moment a record set lands */}
+      {liveBanner && (
+        <div className="pointer-events-none fixed inset-x-4 top-[calc(var(--safe-top)+0.75rem)] z-40 flex justify-center">
+          <div
+            role="status"
+            className="flex items-center gap-2 rounded-full border border-primary/40 bg-card px-4 py-2.5 shadow-lg animate-reveal-up"
+          >
+            <Trophy size={13} className="shrink-0 text-primary" />
+            <p className="text-sm font-semibold text-primary">{liveBanner}</p>
+          </div>
+        </div>
+      )}
 
       {/* THE NUMBER: elapsed time. One eyebrow above, one CTA beside, one line under. */}
       <header className="relative mb-8 animate-reveal-up md:mb-10">
@@ -715,8 +1046,8 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           <span className="min-w-0 truncate">Active session · {session.name}</span>
         </p>
         <div className="mt-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-5">
-          <h1 className="stat-hero whitespace-nowrap !text-6xl md:!text-7xl">
-            {formatClock(elapsed)}
+          <h1 className="stat-scoreboard whitespace-nowrap text-[84px] leading-none text-fg md:text-[96px]">
+            <RollingNumber value={formatClock(elapsed)} />
           </h1>
           <div className="flex shrink-0 items-center gap-5">
             {/* Quiet exit for abandoned sessions — always confirms first */}
@@ -778,13 +1109,17 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           {exercises.map((exercise, exerciseIndex) => {
             const allDone =
               exercise.sets.length > 0 && exercise.sets.every((set) => set.completed);
+            const tracking = trackingFor(exercise);
             const progressionHint =
-              progressionHints.get(exercise.name.trim().toLowerCase()) ?? null;
+              tracking === "reps"
+                ? (progressionHints.get(exercise.name.trim().toLowerCase()) ?? null)
+                : null;
             const isWeighted = exercise.kind !== "cardio" && exercise.kind !== "bodyweight";
             const hasWarmups = exercise.sets.some((set) => set.isWarmup);
             const workingWeight = isWeighted ? workingWeightFor(exercise) : null;
             const canAddWarmup =
               isWeighted &&
+              tracking === "reps" &&
               !hasWarmups &&
               workingWeight !== null &&
               workingWeight > BAR_WEIGHT[weightUnit];
@@ -807,9 +1142,31 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                         strokeWidth={1.9}
                       />
                       <span className="caption !text-fg-muted">{exercise.category}</span>
+                      <span aria-hidden className="caption !text-fg-faint">·</span>
+                      {/* Effort mode — planks count time, most lifts count reps.
+                          One tap flips how this exercise logs. */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTracking(exercise.id, tracking === "time" ? "reps" : "time")
+                        }
+                        aria-label={`Tracking by ${tracking === "time" ? "time" : "reps"} — switch to ${
+                          tracking === "time" ? "reps" : "time"
+                        }`}
+                        className="caption relative inline-flex items-center gap-1 rounded-full !text-fg-muted transition after:absolute after:-inset-x-1.5 after:-inset-y-3 after:content-[''] hover:!text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      >
+                        {tracking === "time" ? (
+                          <Timer size={11} strokeWidth={2} />
+                        ) : (
+                          <Repeat size={11} strokeWidth={2} />
+                        )}
+                        {tracking === "time" ? "time" : "reps"}
+                      </button>
                     </div>
                     <h2 className="text-base font-semibold leading-snug">{exercise.name}</h2>
-                    <p className="caption mt-0.5 !text-fg-muted">{exercise.target}</p>
+                    {exercise.target && (
+                      <p className="caption mt-0.5 !text-fg-muted">{exercise.target}</p>
+                    )}
                     {progressionHint && (
                       <p className="caption mt-1 flex items-center gap-1.5">
                         {progressionHint.kind === "add_weight" && (
@@ -824,6 +1181,12 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     {exercise.notes && (
                       <p className="caption mt-1 max-w-sm leading-relaxed">{exercise.notes}</p>
                     )}
+                    {/* Pinned note — the user's own cue (seat height, grip),
+                        stuck to this exercise's card in every session. */}
+                    <PinnedNote
+                      note={noteFor(exercise.name)}
+                      onSave={(value) => saveNote(exercise.name, value)}
+                    />
                   </div>
                   <button
                     type="button"
@@ -853,7 +1216,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
 
                 {exerciseIndex === 0 && (
                   <p className="caption mb-2 !text-fg-faint">
-                    Tap a faded number to accept it, or type your own — then hit the check.
+                    Tap a faded number to use it, or type your own.
                   </p>
                 )}
 
@@ -863,13 +1226,14 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       key={set.id}
                       idx={ordinals[setIndex]}
                       showLabels={setIndex === 0}
+                      scoreboard
+                      effort={tracking}
                       reps={set.reps}
                       weight={set.weight}
                       done={set.completed}
                       unitsLabel={units}
                       repsHint={hintFor(exercise, setIndex, "reps")}
                       weightHint={hintFor(exercise, setIndex, "weight")}
-                      isMetric={isMetric}
                       isWarmup={set.isWarmup === true}
                       registerRepsRef={registerRepsRef(set.id)}
                       registerWeightRef={registerWeightRef(set.id)}
@@ -898,6 +1262,19 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
               </article>
             );
           })}
+
+          {/* Session notes — phones/tablets never see the desktop sidebar,
+              so the notes field lives at the end of the flow here. */}
+          <label className="block rounded-lg border border-border bg-card p-4 md:p-5 xl:hidden">
+            <span className="eyebrow mb-3 block">Session notes</span>
+            <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="How did this session feel?"
+              rows={3}
+              className="w-full resize-none rounded-md border border-border bg-secondary/50 p-3 text-sm outline-none transition focus:border-primary/60"
+            />
+          </label>
         </section>
 
         {/* Desktop sidebar */}
@@ -1038,6 +1415,80 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
 
 // ── Small pieces ────────────────────────────────────────────────────────────
 
+/** Pinned exercise note: persistent cue text shown on this exercise's card in
+    every session. Tap the note (or the quiet "Pin a note" affordance) to edit
+    in place; blur commits, empty text unpins. */
+const PinnedNote = ({
+  note,
+  onSave,
+}: {
+  note: string | null;
+  onSave: (value: string) => void;
+}) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  if (editing) {
+    return (
+      <textarea
+        autoFocus
+        value={draft}
+        rows={2}
+        maxLength={2000}
+        placeholder="Seat height, grip width, cues…"
+        aria-label="Pinned note for this exercise"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          if (draft.trim() !== (note ?? "")) onSave(draft);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+          if (event.key === "Escape") {
+            setDraft(note ?? "");
+            event.currentTarget.blur();
+          }
+        }}
+        className="mt-1.5 w-full max-w-sm resize-none rounded-md border border-primary/40 bg-secondary/50 p-2 text-xs leading-relaxed text-fg outline-none"
+      />
+    );
+  }
+
+  if (note) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(note);
+          setEditing(true);
+        }}
+        aria-label="Edit pinned note"
+        className="relative mt-1.5 flex max-w-sm items-start gap-1.5 rounded-md text-left transition after:absolute after:-inset-1.5 after:content-[''] hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+      >
+        <Pin size={11} strokeWidth={2.2} className="mt-0.5 shrink-0 text-primary" />
+        <span className="caption whitespace-pre-wrap leading-relaxed !text-fg-soft">{note}</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setDraft("");
+        setEditing(true);
+      }}
+      className="relative mt-1.5 inline-flex items-center gap-1.5 rounded-md caption !text-fg-faint transition after:absolute after:-inset-x-1.5 after:-inset-y-2.5 after:content-[''] hover:!text-fg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
+      <Pin size={10} strokeWidth={2.2} />
+      Pin a note
+    </button>
+  );
+};
+
 /** Editorial plate breakdown for the tapped weight — arm's-length numerals. */
 const PlateMathSheet = ({
   weight,
@@ -1092,8 +1543,9 @@ const PlateMathSheet = ({
 
 const PR_KIND_LABELS: Record<PREvent["kind"], string> = {
   weight: "Heaviest lift",
-  e1rm: "Est. 1RM",
+  e1rm: "Est. best single",
   reps: "Rep record",
+  duration: "Longest hold",
 };
 
 const prValueParts = (pr: PREvent, units: string): { digits: string; suffix: string } => {
@@ -1111,6 +1563,14 @@ const prValueParts = (pr: PREvent, units: string): { digits: string; suffix: str
             ? `reps at ${formatWeightForDisplay(pr.weight)} ${units}`
             : "reps",
       };
+    case "duration":
+      return {
+        digits: formatHold(pr.value),
+        suffix:
+          pr.weight && pr.weight > 0
+            ? `at ${formatWeightForDisplay(pr.weight)} ${units}`
+            : "hold",
+      };
   }
 };
 
@@ -1123,6 +1583,8 @@ const prPreviousLabel = (pr: PREvent, units: string): string => {
       return `Previous: ${Math.round(pr.previousValue)} ${units}`;
     case "reps":
       return `Previous: ${pr.previousValue} reps`;
+    case "duration":
+      return `Previous: ${formatHold(pr.previousValue)}`;
   }
 };
 

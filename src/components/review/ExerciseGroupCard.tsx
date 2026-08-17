@@ -198,7 +198,6 @@ export const ExerciseGroupCard = ({
                   unitsLabel={unitsLabel}
                   repsHint={repsHint}
                   weightHint={weightHint}
-                  isMetric={isMetric}
                   registerRepsRef={registerRepsRef(set.id)}
                   registerWeightRef={registerWeightRef(set.id)}
                   onRepsChange={(v) => updateSet(set.id, "reps", v)}

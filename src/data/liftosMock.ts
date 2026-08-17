@@ -1,5 +1,10 @@
 export type ExerciseKind = "weighted" | "bodyweight" | "cardio";
 
+/** How effort is measured for an exercise's sets — reps (default) or time
+    (planks, hangs, carries). Weight stays optional in both modes. See
+    lib/exerciseTracking.ts for inference + parsing. */
+export type EffortTracking = "reps" | "time";
+
 export type WorkoutSet = {
   id: string;
   reps?: number;
@@ -15,6 +20,8 @@ export type WorkoutExercise = {
   id: string;
   name: string;
   kind?: ExerciseKind;
+  /** Explicit effort mode; absent = inferred from the name. */
+  tracking?: EffortTracking;
   category: string;
   target: string;
   notes?: string;
