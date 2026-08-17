@@ -557,12 +557,11 @@ const Dashboard = () => {
               <div className="mt-3 border-t border-background/10 pt-2">
                 {(toBeat.length > 0 ? toBeat : null)?.map((row) => (
                   <div key={row.name} className="flex items-center justify-between gap-3 py-1">
-                    <span className="min-w-0 truncate text-sm font-medium text-background/90">
+                    <span className="min-w-0 truncate text-sm font-medium capitalize text-background/90">
                       {row.name}
                     </span>
-                    <span className="shrink-0 text-sm tabular-nums text-background/70">
+                    <span className="shrink-0 text-sm font-semibold tabular-nums text-background/80">
                       {row.line}
-                      <span className="ml-1.5 text-background/45">· {row.when}</span>
                     </span>
                   </div>
                 ))}
@@ -601,7 +600,7 @@ const Dashboard = () => {
               </div>
             )}
 
-            <p className="display-sentence mt-3 line-clamp-2 max-w-md text-[15px] leading-6 text-background/75">
+            <p className="mt-3 line-clamp-2 max-w-md text-[13px] leading-5 text-background/65">
               {sentence}
             </p>
 
@@ -637,7 +636,7 @@ const Dashboard = () => {
               <button
                 type="button"
                 onClick={handleSuggestionStart}
-                className="inline-flex min-h-[44px] items-center gap-2 rounded-full bg-background px-5 py-3 text-[14px] font-semibold text-foreground transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                className="inline-flex min-h-[44px] items-center gap-2 rounded-full bg-[hsl(var(--primary-on-inverse))] px-5 py-3 text-[14px] font-semibold text-foreground transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
                 {ctaLabel}
                 <ChevronsRight size={16} />

@@ -1,19 +1,15 @@
 import { CTAButton } from "@/components/GoldButton";
-import { MuscleMap } from "@/components/MuscleMap";
 import { LiftDetailSheet, type LiftRef } from "@/components/progress/LiftDetailSheet";
 import { RenameExercisesSheet } from "@/components/progress/RenameExercisesSheet";
 import { useUser } from "@/context/UserContext";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
 import { isPlaceholderName, placeholderNames } from "@/lib/exerciseNames";
 import { formatHold, formatHoldDelta, inferTracking } from "@/lib/exerciseTracking";
-import { getLastTrainedByMuscle, labelForMuscle } from "@/lib/muscleCoverage";
-import { getMuscleActivation } from "@/lib/muscleMap";
 import { allTimePRs, bestWeight, type WeightRecord } from "@/lib/prs";
 import {
   featuredLift,
   getLiftTrends,
   lastSessionDeltas,
-  lockedTrendCandidates,
 } from "@/lib/strengthTrend";
 import {
   getPrevWeekSessions,
@@ -114,10 +110,6 @@ const Progress = () => {
   const trends = useMemo(() => getLiftTrends(logs, 84, TREND_MIN_SESSIONS), [logs]);
   const hero = useMemo(() => featuredLift(trends), [trends]);
   const keyLifts = useMemo(() => trends.slice(0, 4), [trends]);
-  const locked = useMemo(
-    () => lockedTrendCandidates(logs, 84, TREND_MIN_SESSIONS).slice(0, 3),
-    [logs],
-  );
   const deltas = useMemo(() => lastSessionDeltas(logs), [logs]);
 
   // Records, most recently improved first — real names only.
@@ -145,28 +137,7 @@ const Progress = () => {
   const prevWeekSessions = useMemo(() => getPrevWeekSessions(logs), [logs]);
   const weeklyStreak = useMemo(() => getWeeklyStreak(logs), [logs]);
   const volumeTrend = useMemo(() => getVolumeTrend(logs), [logs]);
-  const activation = useMemo(() => getMuscleActivation(logs, 7), [logs]);
-  const hasActivation = activation.primary.size + activation.secondary.size > 0;
   const lastLog = logs[0] ?? null;
-
-  // Forward-looking balance guidance — say what to do, never grade.
-  const balanceGuidance = useMemo(() => {
-    if (!hasActivation) return null;
-    const lastTrained = getLastTrainedByMuscle(logs);
-    if (lastTrained.size === 0) return null;
-    let stalest: { muscle: string; days: number } | null = null;
-    const now = Date.now();
-    for (const [muscle, time] of lastTrained) {
-      const days = Math.floor((now - time) / DAY_MS);
-      if (stalest === null || days > stalest.days) {
-        stalest = { muscle: labelForMuscle(muscle), days };
-      }
-    }
-    if (!stalest || stalest.days <= 7) {
-      return "Every trained muscle hit within the last week.";
-    }
-    return `Not much ${stalest.muscle.toLowerCase()} work lately — worth a session soon.`;
-  }, [logs, hasActivation]);
 
   // Hero fallback material: the best real (named) lift, preserved forever.
   // getTopLifts is uncapped here so a heavy junk import can't crowd out a
@@ -317,7 +288,7 @@ const Progress = () => {
       </section>
 
       {/* ── Card 1 · STRENGTH TRENDS — never silently missing ── */}
-      {(keyLifts.length > 0 || locked.length > 0 || deltas.length > 0) && (
+      {(keyLifts.length > 0 || deltas.length > 0) && (
         <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
           <p className="eyebrow mb-1">Strength trends</p>
           <p className="caption mb-3">Best set per session · last 12 weeks. Tap a lift for detail.</p>
@@ -395,15 +366,6 @@ const Progress = () => {
               </button>
             ))}
 
-            {/* Lifts one session short — say so instead of vanishing */}
-            {locked.map((l) => (
-              <div key={l.name} className="flex items-center justify-between gap-4 py-3">
-                <p className="min-w-0 truncate text-sm font-medium text-fg-soft">{l.name}</p>
-                <p className="caption shrink-0 text-right">
-                  {l.needed} more session{l.needed === 1 ? "" : "s"} unlocks its trend
-                </p>
-              </div>
-            ))}
           </div>
         </section>
       )}
@@ -507,7 +469,8 @@ const Progress = () => {
         </section>
       )}
 
-      {/* ── Card 3 · THIS WEEK — neutral count, no quota, no gray corpse ── */}
+      {/* ── Card 3 · THIS WEEK — one line and the calendar; nothing to read,
+          nothing to grade. ── */}
       {logs.length > 0 && (
         <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "240ms" }}>
           <div className="flex items-baseline justify-between gap-3">
@@ -517,20 +480,6 @@ const Progress = () => {
             )}
           </div>
           <p className="mt-2 text-base font-medium text-fg">{weekLine}</p>
-
-          {hasActivation ? (
-            <>
-              <MuscleMap activation={activation} className="mt-4 mb-2" />
-              <p className="caption !text-fg-faint">
-                Muscles worked, last 7 days — assisting muscles count half.
-              </p>
-              {balanceGuidance && <p className="caption mt-1">{balanceGuidance}</p>}
-            </>
-          ) : (
-            <p className="caption mt-1">
-              Your next session lights up the muscle map here.
-            </p>
-          )}
 
           <Link
             to="/calendar"
