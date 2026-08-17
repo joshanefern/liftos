@@ -162,12 +162,19 @@
     overscroll-behavior: none;
   }
 
-  /* Native-app feel: no text-selection or long-press callouts on chrome,
-     while keeping inputs and content editable/selectable */
-  button, a, nav, header {
+  /* Native-app feel: no text-selection or long-press callouts anywhere by
+     default — a scroll flick on stat text must never open the iOS Copy bar.
+     Selection comes back exactly where users genuinely copy: text entry and
+     coach replies (data-selectable). */
+  body {
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
+  }
+  input, textarea, [contenteditable="true"],
+  [data-selectable], [data-selectable] * {
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   .pt-safe { padding-top: var(--safe-top); }

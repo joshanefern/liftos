@@ -32,6 +32,7 @@ const CoachMessage = ({ role, content, streaming = false }: CoachMessageProps) =
         </span>
       </div>
       <div
+        data-selectable
         className={cn(
           "text-sm leading-6 text-fg",
           streaming && content.length === 0 && "min-h-[1.5rem]",
