@@ -1,5 +1,4 @@
 import { CTAButton } from "@/components/GoldButton";
-import { LiveMuscleMap, colorForIntensity } from "@/components/logging/LiveMuscleMap";
 import { RestTimerRing } from "@/components/logging/RestTimerRing";
 import { SetInputRow, formatWeightForDisplay } from "@/components/logging/SetInputRow";
 import { useEnterAdvance } from "@/components/logging/useEnterAdvance";
@@ -36,7 +35,6 @@ import {
   postWorkoutToStrava,
   type StravaPostState,
 } from "@/lib/strava/writeback";
-import { lookupMuscles, type Muscle } from "@/lib/muscleMap";
 import { formatPlateMath, plateBreakdown } from "@/lib/plateMath";
 import { suggestProgression, type ProgressionSuggestion } from "@/lib/progression";
 import { detectSessionPRs, type PREvent } from "@/lib/prs";
@@ -98,8 +96,6 @@ type SessionSummary = {
   totalSets: number;
   exercisesCount: number;
   prs: SessionPR[];
-  intensities: Partial<Record<Muscle, number>>;
-  trainedCount: number;
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -260,8 +256,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exercises, notes, session.startedAt, summary]);
-  const [mapOpen, setMapOpen] = useState(false);
-  const [musclePulseKey, setMusclePulseKey] = useState(0);
   // Plate math sheet: weight sticks around while the drawer animates closed.
   const [plateWeight, setPlateWeight] = useState<number | null>(null);
   const [plateOpen, setPlateOpen] = useState(false);
@@ -468,25 +462,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     return { exercises: exercises.length, completedSets, totalSets, volume };
   }, [exercises]);
 
-  // Live muscle heat: completed sets → per-muscle score (primary 1, secondary
-  // 0.5 per set) → 0..1 intensity, saturating at 6 hard sets. Fully local via
-  // lookupMuscles — recomputed on every set completion.
-  const muscleData = useMemo(() => {
-    const scores = new Map<Muscle, number>();
-    for (const exercise of exercises) {
-      const completedCount = exercise.sets.filter((s) => s.completed && !s.isWarmup).length;
-      if (completedCount === 0) continue;
-      const mapping = lookupMuscles(exercise.name);
-      if (!mapping) continue;
-      for (const m of mapping.primary) scores.set(m, (scores.get(m) ?? 0) + completedCount);
-      for (const m of mapping.secondary)
-        scores.set(m, (scores.get(m) ?? 0) + completedCount * 0.5);
-    }
-    const intensities: Partial<Record<Muscle, number>> = {};
-    for (const [muscle, score] of scores) intensities[muscle] = Math.min(1, score / 6);
-    return { intensities, trainedCount: scores.size };
-  }, [exercises]);
-
   // ── Focus auto-advance (reps → weight → next set, across exercises) ──
 
   const allSetIds = exercises.flatMap((exercise) => exercise.sets.map((set) => set.id));
@@ -513,7 +488,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const onSetCompleted = (exerciseName: string, isWarmup = false) => {
     restTimer.start();
     // Warm-ups don't feed the heat map, so no pulse — just the rest countdown.
-    if (!isWarmup && lookupMuscles(exerciseName)) setMusclePulseKey((k) => k + 1);
   };
 
   /** Toggle one set. Marking done commits hint values so the log stays honest. */
@@ -777,8 +751,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         totalSets: stats.totalSets,
         exercisesCount: exercises.length,
         prs,
-        intensities: muscleData.intensities,
-        trainedCount: muscleData.trainedCount,
       });
       // One long success haptic at the session boundary — the recap moment.
       successHaptic();
@@ -846,39 +818,10 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         <div className="relative mb-8 animate-reveal-up">
           <p className="eyebrow mb-2 !text-primary">Workout complete</p>
           <h1 className="heading-lg">{session.name}</h1>
-          <p className="body-md mt-3 max-w-2xl">
-            Logged and saved. Here's what you lit up.
-          </p>
+          <p className="body-md mt-3 max-w-2xl">Logged and saved.</p>
         </div>
 
-        <div className="relative grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          {/* Final muscle map — the reward */}
-          <section
-            className="relative overflow-hidden rounded-lg border border-border bg-card p-5 md:p-6 animate-reveal-up"
-            style={{ animationDelay: "120ms" }}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <p className="eyebrow !text-primary">Muscles trained</p>
-              <span className="mono text-sm font-semibold text-primary">
-                {summary.trainedCount}
-              </span>
-            </div>
-            {summary.trainedCount > 0 ? (
-              <>
-                <LiveMuscleMap
-                  intensities={summary.intensities}
-                  bodyHeight={250}
-                  showGenderToggle={false}
-                />
-                <IntensityLegend className="mt-4" />
-              </>
-            ) : (
-              <p className="body-md py-10 text-center text-fg-muted">
-                No mapped muscles this time — name your exercises to light the map.
-              </p>
-            )}
-          </section>
-
+        <div className="relative mx-auto w-full max-w-xl">
           {/* Numbers + PRs */}
           <div className="flex flex-col gap-6">
             <section
@@ -1077,35 +1020,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
 
       <div className="relative grid gap-6 xl:grid-cols-[1fr_340px]">
         <section className="space-y-3">
-          {/* Muscle activity — quiet hairline index row, expands in place */}
-          <div className="border-y border-border">
-            <button
-              type="button"
-              onClick={() => setMapOpen((open) => !open)}
-              aria-expanded={mapOpen}
-              className="flex min-h-[44px] w-full items-center justify-between gap-3 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-            >
-              <span className="text-sm font-semibold text-fg">Muscle activity</span>
-              <span className="flex items-center gap-2 text-fg-muted">
-                <span className="caption tabular-nums">{muscleData.trainedCount} lit</span>
-                <ChevronDown
-                  size={16}
-                  className={cn("transition-transform duration-200", mapOpen && "rotate-180")}
-                />
-              </span>
-            </button>
-            {mapOpen && (
-              <div className="pb-4 pt-1">
-                <LiveMuscleMap
-                  intensities={muscleData.intensities}
-                  pulseKey={musclePulseKey}
-                  bodyHeight={210}
-                />
-                <IntensityLegend className="mt-3" />
-              </div>
-            )}
-          </div>
-
           {exercises.map((exercise, exerciseIndex) => {
             const allDone =
               exercise.sets.length > 0 && exercise.sets.every((set) => set.completed);
@@ -1675,20 +1589,6 @@ const RestControls = ({
     >
       <SkipForward size={compact ? 13 : 15} />
     </button>
-  </div>
-);
-
-const IntensityLegend = ({ className }: { className?: string }) => (
-  <div className={cn("flex items-center justify-center gap-2.5", className)}>
-    <span className="caption !text-fg-faint">1 set</span>
-    <span
-      aria-hidden
-      className="h-1.5 w-24 rounded-full"
-      style={{
-        background: `linear-gradient(90deg, ${colorForIntensity(0)}, ${colorForIntensity(0.5)}, ${colorForIntensity(1)})`,
-      }}
-    />
-    <span className="caption !text-fg-faint">6+ sets</span>
   </div>
 );
 

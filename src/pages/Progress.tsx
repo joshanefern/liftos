@@ -1,7 +1,11 @@
 import { CTAButton } from "@/components/GoldButton";
 import { LiftDetailSheet, type LiftRef } from "@/components/progress/LiftDetailSheet";
 import { RenameExercisesSheet } from "@/components/progress/RenameExercisesSheet";
+import { WeekBadgeRow } from "@/components/home/WeekBadgeRow";
 import { useUser } from "@/context/UserContext";
+import { useReadiness } from "@/hooks/useReadiness";
+import { labelForMuscle } from "@/lib/muscleCoverage";
+import { muscleFreshnessFromLogs } from "@/lib/recovery";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
 import { isPlaceholderName, placeholderNames } from "@/lib/exerciseNames";
 import { formatHold, formatHoldDelta, inferTracking } from "@/lib/exerciseTracking";
@@ -134,6 +138,16 @@ const Progress = () => {
   );
 
   const weekStats = useMemo(() => getWeekStats(logs), [logs]);
+  const readiness = useReadiness();
+  // Least-recovered trained muscles — the chips on the recovery card.
+  const soreMuscles = useMemo(
+    () =>
+      muscleFreshnessFromLogs(logs)
+        .filter((f) => f.freshness < 0.85)
+        .sort((a, b) => a.freshness - b.freshness)
+        .slice(0, 4),
+    [logs],
+  );
   const prevWeekSessions = useMemo(() => getPrevWeekSessions(logs), [logs]);
   const weeklyStreak = useMemo(() => getWeeklyStreak(logs), [logs]);
   const volumeTrend = useMemo(() => getVolumeTrend(logs), [logs]);
@@ -205,7 +219,7 @@ const Progress = () => {
               {hero.metric === "time" ? formatHold(hero.first) : hero.first}
               <span className="mx-2 align-middle text-2xl font-extralight text-fg-muted">→</span>
               {hero.metric === "time" ? formatHold(hero.last) : hero.last}
-              <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
+              <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-primary">
                 {hero.metric === "time" ? "hold" : units}
               </span>
             </p>
@@ -227,21 +241,21 @@ const Progress = () => {
               {bestNamedLift ? (
                 <>
                   {bestNamedLift.weight}
-                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
+                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-primary">
                     {units}
                   </span>
                 </>
               ) : bestNamedHold ? (
                 <>
                   {formatHold(bestNamedHold.maxDuration!)}
-                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
+                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-primary">
                     hold
                   </span>
                 </>
               ) : (
                 <>
                   {bestNamedReps!.maxReps}
-                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
+                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-primary">
                     reps
                   </span>
                 </>
@@ -287,10 +301,74 @@ const Progress = () => {
         )}
       </section>
 
+      {/* ── Card 0 · RECOVERY — the overnight verdict when a wearable
+          baseline exists, muscle-group freshness always. ── */}
+      {logs.length > 0 && (
+        <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "90ms" }}>
+          <p className="eyebrow mb-3 !text-primary">Recovery</p>
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden
+              className={`h-2.5 w-2.5 rounded-full ${
+                readiness?.state === "run_down"
+                  ? "border-2 border-primary bg-transparent"
+                  : readiness?.state === "steady"
+                    ? "bg-fg-muted"
+                    : "bg-primary"
+              }`}
+            />
+            <p className="text-2xl font-semibold text-fg">
+              {readiness?.state === "primed"
+                ? "Primed"
+                : readiness?.state === "steady"
+                  ? "Steady"
+                  : readiness?.state === "run_down"
+                    ? "Run down"
+                    : readiness?.baselineDaysRemaining != null
+                      ? "Learning your baseline"
+                      : soreMuscles.length > 0
+                        ? "Recovering"
+                        : "Recovered"}
+            </p>
+          </div>
+          {readiness?.state === "run_down" && readiness.summary && (
+            <p className="body-sm mt-2 max-w-sm">{readiness.summary}</p>
+          )}
+          {readiness && readiness.flags.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {readiness.flags.map((flag) => (
+                <div
+                  key={flag.metric}
+                  className="flex items-baseline justify-between gap-3 rounded-[11px] bg-foreground/[0.04] px-3.5 py-2"
+                >
+                  <span className="text-sm font-semibold text-fg">{flag.label}</span>
+                  <span className="text-sm tabular-nums text-fg-soft">{flag.detail}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {soreMuscles.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {soreMuscles.map((f) => (
+                <span
+                  key={f.muscle}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 text-[12px] font-semibold text-primary"
+                >
+                  {labelForMuscle(f.muscle)}
+                  <span className="opacity-70">{Math.round(f.freshness * 100)}%</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="caption mt-2">All trained muscle groups are recovered.</p>
+          )}
+        </section>
+      )}
+
       {/* ── Card 1 · STRENGTH TRENDS — never silently missing ── */}
       {(keyLifts.length > 0 || deltas.length > 0) && (
         <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
-          <p className="eyebrow mb-1">Strength trends</p>
+          <p className="eyebrow mb-1 !text-primary">Strength trends</p>
           <p className="caption mb-3">Best set per session · last 12 weeks. Tap a lift for detail.</p>
 
           {/* Beat-last-time — the readout lifters actually check */}
@@ -374,7 +452,7 @@ const Progress = () => {
       {(prs.length > 0 || junkNames.length > 0) && (
         <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "180ms" }}>
           <div className="mb-3 flex items-baseline justify-between gap-3">
-            <p className="eyebrow">Your records</p>
+            <p className="eyebrow !text-primary">Your records</p>
             {newPrCount > 0 && (
               <p className="caption !text-primary">
                 {newPrCount} new in the last 7 days
@@ -422,17 +500,17 @@ const Progress = () => {
                   {timed || holdNamed ? (
                     pr.maxDuration !== null && (
                       <div className="shrink-0 text-right">
-                        <p className="stat-lg whitespace-nowrap">
-                          <b>{formatHold(pr.maxDuration)}</b>
+                        <p className="stat-scoreboard whitespace-nowrap text-[24px] leading-7 text-fg">
+                          {formatHold(pr.maxDuration)}
                         </p>
                         <p className="caption !text-fg-muted">Hold</p>
                       </div>
                     )
                   ) : pr.maxE1RM !== null ? (
                     <div className="shrink-0 text-right">
-                      <p className="stat-lg whitespace-nowrap">
-                        <b>{Math.round(pr.maxE1RM)}</b>
-                        <span className="text-fg-muted"> {units}</span>
+                      <p className="stat-scoreboard whitespace-nowrap text-[24px] leading-7 text-fg">
+                        {Math.round(pr.maxE1RM)}
+                        <span className="ml-1 text-[12px] font-medium text-fg-muted">{units}</span>
                       </p>
                       <p className="caption !text-fg-muted">Est. best single</p>
                     </div>
@@ -474,12 +552,15 @@ const Progress = () => {
       {logs.length > 0 && (
         <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "240ms" }}>
           <div className="flex items-baseline justify-between gap-3">
-            <p className="eyebrow">This week</p>
+            <p className="eyebrow !text-primary">This week</p>
             {weeklyStreak > 1 && (
               <p className="caption">{weeklyStreak} weeks in a row</p>
             )}
           </div>
           <p className="mt-2 text-base font-medium text-fg">{weekLine}</p>
+          <div className="mt-3">
+            <WeekBadgeRow workedDayIndices={weekStats.workedDayIndices} variant="surface" />
+          </div>
 
           <Link
             to="/calendar"

@@ -1,5 +1,3 @@
-import type { FigureHeat } from "@/components/body/BodyHeatMap";
-import type { BodyGender } from "@/lib/bodyAssets";
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
 import type { Muscle, MuscleActivation } from "@/lib/muscleMap";
 
@@ -25,8 +23,6 @@ export type ShareCardOptions = {
   prCount?: number;
   dark: boolean;
   units?: Units;
-  /** Body figure to draw in the muscles section. */
-  gender?: BodyGender;
 };
 
 const W = 1080;
@@ -227,64 +223,8 @@ const drawRule = (ctx: Ctx, y: number, theme: Theme, weight: number, alpha = 1) 
 
 /* ── Muscle figure rendering ────────────────────────────────── */
 
-const FIGURE_TIMEOUT_MS = 2500;
-const MIN_LIT_ALPHA = 0.3;
-
-const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
-  new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("share card: figure render timed out")), ms);
-    p.then(
-      (v) => {
-        clearTimeout(timer);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(timer);
-        reject(e);
-      },
-    );
-  });
-
-/* Floor the normalized intensity so faintly-hit muscles still read on the card. */
-export const cardHeat = (intensity: Map<Muscle, number>): FigureHeat => {
-  const heat: FigureHeat = {};
-  for (const [muscle, value] of intensity) {
-    heat[muscle] = MIN_LIT_ALPHA + (1 - MIN_LIT_ALPHA) * value;
-  }
-  return heat;
-};
-
-/* Compose the clay anatomy charts (front + back) at natural size via the
-   BodyHeatMap pipeline. Dynamic import keeps the component module (and its
-   image assets) out of unit-test scope. */
-const renderFigureCanvases = async (
-  heat: FigureHeat,
-  gender: BodyGender,
-  dark: boolean,
-): Promise<HTMLCanvasElement[]> => {
-  const { loadFigure, composeFigure } = await import("@/components/body/BodyHeatMap");
-  const figures = await Promise.all([loadFigure(gender, "front"), loadFigure(gender, "back")]);
-  return figures.map((fig) => composeFigure(fig, heat, dark));
-};
-
 /* ── Section renderers ──────────────────────────────────────── */
 
-const drawBodies = (ctx: Ctx, imgs: HTMLCanvasElement[], top: number, theme: Theme) => {
-  const bodyH = 540;
-  const gap = 100;
-  const widths = imgs.map((img) => bodyH * (img.width / img.height));
-  const totalW = widths[0] + gap + widths[1];
-  let x = (W - totalW) / 2;
-  imgs.forEach((img, i) => {
-    ctx.drawImage(img, x, top, widths[i], bodyH);
-    drawEyebrow(ctx, i === 0 ? "front" : "back", x + widths[i] / 2, top + bodyH + 52, theme, {
-      size: 20,
-      align: "center",
-      color: hexWithAlpha(theme.ink, 0.4),
-    });
-    x += widths[i] + gap;
-  });
-};
 
 const drawMuscleBars = (ctx: Ctx, top5: TopMuscle[], top: number, theme: Theme) => {
   const rowH = 92;
@@ -321,7 +261,7 @@ const loadFonts = async () => {
 /* ── Main entry ─────────────────────────────────────────────── */
 
 export const renderShareCard = async (opts: ShareCardOptions): Promise<Blob> => {
-  const { log, activations = [], prCount, dark, units = "lb", gender = "male" } = opts;
+  const { log, activations = [], prCount, dark, units = "lb" } = opts;
   const theme = dark ? THEMES.dark : THEMES.light;
 
   await loadFonts();
@@ -414,18 +354,9 @@ export const renderShareCard = async (opts: ShareCardOptions): Promise<Blob> => 
   drawEyebrow(ctx, intensity.size > 0 ? "muscles worked" : "exercises", M, y, theme);
   y += 64;
   if (intensity.size > 0) {
-    let drewFigures = false;
-    try {
-      const figures = await withTimeout(
-        renderFigureCanvases(cardHeat(intensity), gender, dark),
-        FIGURE_TIMEOUT_MS,
-      );
-      drawBodies(ctx, figures, y, theme);
-      drewFigures = true;
-    } catch {
-      /* figure assets failed to load — automatic bar-list fallback below */
-    }
-    if (!drewFigures) drawMuscleBars(ctx, topMuscles(activations), y + 28, theme);
+    // Anatomy figures retired app-wide (owner's call) — the bar list IS the
+    // muscle section now.
+    drawMuscleBars(ctx, topMuscles(activations), y + 28, theme);
   } else {
     drawExerciseList(ctx, log, y + 28, theme);
   }

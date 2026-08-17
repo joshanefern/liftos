@@ -37,7 +37,6 @@ import {
 import { suggestNextWorkout } from "@/lib/suggestion";
 import { isPlaceholderName } from "@/lib/exerciseNames";
 import { getWeeklyStreak, getWeekStats } from "@/lib/workoutStats";
-import { buildCoachContext, fetchDailyInsight } from "@/lib/coach";
 import { useDayKey } from "@/hooks/useDayKey";
 import { useReadiness } from "@/hooks/useReadiness";
 import { RecoverySheet } from "@/components/home/RecoverySheet";
@@ -45,12 +44,6 @@ import type { ActiveSession } from "@/pages/ActiveWorkout";
 import { ArrowRight, ChevronDown, ChevronsRight, RefreshCw } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-
-/** First sentence of a coach insight — the hero screen carries one line, no paragraphs. */
-const firstSentence = (text: string): string => {
-  const match = text.match(/^[\s\S]*?[.!?](?=["')\]]*(\s|$))/);
-  return (match?.[0] ?? text).trim();
-};
 
 /** Compact "when": Today / 1d / 6d / 3w / 2mo / —. Calendar days at local
     midnight, not 24h buckets — yesterday evening must read "1d" this
@@ -308,69 +301,12 @@ const Dashboard = () => {
     navigate("/workouts");
   };
 
-  // hrDetailSessions: full rows (samples included) for the newest HR-bearing
-  // sessions — the list itself is summary-only and can't feed the coach.
-  const { hrDetailSessions, refresh: refreshCapturedSessions } = useCapturedSessions();
+  const { refresh: refreshCapturedSessions } = useCapturedSessions();
 
-  const coachContext = useMemo(
-    () => buildCoachContext(logs, profile, hrDetailSessions, suggestion, readiness),
-    [logs, profile, hrDetailSessions, suggestion, readiness],
-  );
-
-  const [insight, setInsight] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Wait for both queries — an insight generated against a half-loaded pick
-    // would be cached for the rest of the day.
-    if (!dataReady || !lastLog) return;
-    let cancelled = false;
-    fetchDailyInsight(coachContext)
-      .then((text) => {
-        if (!cancelled) setInsight(text);
-      })
-      .catch(() => {
-        if (!cancelled) setInsight(null); // coach offline → computed fallback below, no AI claim
-      });
-    return () => {
-      cancelled = true;
-    };
-    // Cached per (user, local day, pick) inside fetchDailyInsight; re-run when
-    // the newest log, the pick, or the local day changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataReady, lastLog?.id, suggestion.kind, suggestion.title, dayKey]);
-
-  // One supporting sentence, max. Priority: welcome-back continuity (first
-  // session after a 30d+ gap — never mention the gap itself) → AI insight,
-  // but ONLY when it cites a number from the user's data (research: generic
-  // coach-speak trains people to skip the line) → suggestion reason →
-  // last-session fact → first-workout nudge. The computed line renders
-  // immediately; a qualifying coach line replaces it without a skeleton.
-  const backAtIt = useMemo(() => {
-    if (!lastLog || logs.length < 2) return null;
-    const gapDays =
-      (Date.parse(lastLog.finished_at) - Date.parse(logs[1].finished_at)) / 86_400_000;
-    const recentDays = (Date.now() - Date.parse(lastLog.finished_at)) / 86_400_000;
-    if (gapDays >= 30 && recentDays <= 7) {
-      return `Back at it — ${lastLog.name} logged ${fmtAgo(lastLog.finished_at).toLowerCase() === "today" ? "today" : fmtAgo(lastLog.finished_at).toLowerCase() + " ago"}. Pick up where you left off.`;
-    }
-    return null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logs, lastLog, dayKey]);
-
-  // Readiness speaks first, but ONLY the run-down/illness summary — the
-  // engine also writes a tier-4 "learning your baseline" summary, which
-  // belongs to the recovery line, not the hero sentence.
-  const sentence = !dataReady
-    ? "Syncing your training…"
-    : ((readiness?.state === "run_down" ? readiness.summary : null) ??
-      (backAtIt
-        ? backAtIt
-        : insight && /\d/.test(firstSentence(insight))
-          ? firstSentence(insight)
-          : suggestion.reason ||
-            (lastLog
-              ? `Last session: ${lastLog.name} — ${lastLog.completed_sets} sets, ${lastLog.total_volume.toLocaleString()} ${units} lifted.`
-              : "Log your first workout to start tracking.")));
+  // One sentence ONLY when something changed the plan (run-down/illness).
+  // The daily coach-speak line is gone — owner's call: keep it simple.
+  const sentence =
+    dataReady && readiness?.state === "run_down" ? readiness.summary : null;
 
   const ctaLabel = activeSeed
     ? "Resume workout"
@@ -600,9 +536,11 @@ const Dashboard = () => {
               </div>
             )}
 
-            <p className="mt-3 line-clamp-2 max-w-md text-[13px] leading-5 text-background/65">
-              {sentence}
-            </p>
+            {sentence && (
+              <p className="mt-3 line-clamp-2 max-w-md text-[13px] leading-5 text-background/65">
+                {sentence}
+              </p>
+            )}
 
             {/* Recovery line — a state word, not a gauge. Speaks in the
                 sentence above only when ≥2 overnight flags agree. */}
