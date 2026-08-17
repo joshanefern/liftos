@@ -113,7 +113,7 @@ const StarterProgramRow = ({ program, saved, saving, saveDisabled, onSave, onSta
       <button
         type="button"
         onClick={onStart}
-        className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-medium text-fg transition hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+        className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary/45 px-4 text-sm font-semibold text-primary transition hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/40"
       >
         Start
       </button>
@@ -311,7 +311,7 @@ const Workouts = () => {
             No saved workouts yet — build your own or run a starter session below.
           </p>
         )}
-        <CTAButton onClick={openBuilder}>
+        <CTAButton onClick={openBuilder} variant="accent">
           <Plus size={16} />
           New workout
         </CTAButton>
@@ -330,7 +330,7 @@ const Workouts = () => {
         <>
         <section className="animate-reveal-up">
           <div className="rule-heavy pb-3 pt-4">
-            <p className="eyebrow">Your workouts</p>
+            <p className="eyebrow !text-primary">Your workouts</p>
           </div>
           <div className="border-t border-border">
             {templates.map((template) => {
@@ -365,7 +365,7 @@ const Workouts = () => {
                     <button
                       type="button"
                       onClick={() => startWorkout(template)}
-                      className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-medium text-fg transition hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring/40"
+                      className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary/45 px-4 text-sm font-semibold text-primary transition hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     >
                       Start
                     </button>
@@ -386,7 +386,7 @@ const Workouts = () => {
               className="flex w-full items-center justify-between gap-4 py-4 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               <div>
-                <p className="eyebrow">Starter programs</p>
+                <p className="eyebrow !text-primary">Starter programs</p>
                 <p className="caption mt-1">Curated sessions you can run today.</p>
               </div>
               <ChevronDown
@@ -416,7 +416,7 @@ const Workouts = () => {
         /* Starter programs — the screen's content while the library is empty */
         <section className="animate-reveal-up">
           <div className="rule-heavy pb-3 pt-4">
-            <p className="eyebrow">Starter programs</p>
+            <p className="eyebrow !text-primary">Starter programs</p>
             <p className="caption mt-1">Curated sessions you can run today.</p>
           </div>
           <div className="border-t border-border md:grid md:grid-cols-2 md:gap-x-10">

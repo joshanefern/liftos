@@ -610,20 +610,20 @@ const Dashboard = () => {
                 className="shrink-0 text-primary transition-transform duration-200 group-hover:translate-x-0.5"
               />
             </div>
-            <div className="mt-2 grid grid-cols-3 gap-3">
+            <div className="mt-3 grid grid-cols-3 divide-x divide-border">
               {records.map((r) => (
-                <div key={r.label} className="min-w-0">
+                <div key={r.label} className="min-w-0 px-4 first:pl-0 last:pr-3">
                   <p
-                    className={`stat-scoreboard whitespace-nowrap text-[26px] leading-8 ${
+                    className={`stat-scoreboard whitespace-nowrap text-[30px] leading-9 tabular-nums ${
                       r.recent ? "text-primary" : "text-fg"
                     }`}
                   >
                     {r.weight}
-                    <span className="ml-1 text-[12px] font-medium text-fg-muted">
+                    <span className="ml-1 text-[11px] font-medium tracking-normal text-fg-muted">
                       {units}
                     </span>
                   </p>
-                  <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-muted">
+                  <p className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-muted">
                     {r.label}
                   </p>
                 </div>

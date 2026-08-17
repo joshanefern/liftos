@@ -8,12 +8,11 @@ import { labelForMuscle } from "@/lib/muscleCoverage";
 import { muscleFreshnessFromLogs } from "@/lib/recovery";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
 import { isPlaceholderName, placeholderNames } from "@/lib/exerciseNames";
-import { formatHold, formatHoldDelta, inferTracking } from "@/lib/exerciseTracking";
+import { formatHold, inferTracking } from "@/lib/exerciseTracking";
 import { allTimePRs, bestWeight, type WeightRecord } from "@/lib/prs";
 import {
   featuredLift,
   getLiftTrends,
-  lastSessionDeltas,
 } from "@/lib/strengthTrend";
 import {
   getPrevWeekSessions,
@@ -98,6 +97,15 @@ const CARD_CLASS =
   "rounded-[14px] bg-card p-4 shadow-[0_4px_12px_rgba(16,22,35,0.08)] " +
   "dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]";
 
+/** Relative improvement across the trend window, in percent. Null when the
+    starting point is zero (nothing meaningful to divide by). */
+const liftPct = (lift: { first: number; last: number }): number | null =>
+  lift.first > 0 ? Math.round(((lift.last - lift.first) / lift.first) * 100) : null;
+
+const formatPct = (pct: number | null): string =>
+  pct === null ? "—" : pct > 0 ? `+${pct}%` : pct < 0 ? `${pct}%` : "0%";
+
+
 const Progress = () => {
   const { profile } = useUser();
   const { logs, reload } = useWorkoutLogs();
@@ -114,7 +122,6 @@ const Progress = () => {
   const trends = useMemo(() => getLiftTrends(logs, 84, TREND_MIN_SESSIONS), [logs]);
   const hero = useMemo(() => featuredLift(trends), [trends]);
   const keyLifts = useMemo(() => trends.slice(0, 4), [trends]);
-  const deltas = useMemo(() => lastSessionDeltas(logs), [logs]);
 
   // Records, most recently improved first — real names only.
   const prs = useMemo(
@@ -226,7 +233,7 @@ const Progress = () => {
             <p className="eyebrow mt-4">{hero.name}</p>
             <p className="body-sm mt-4 max-w-sm">
               {hero.delta > 0
-                ? `${hero.name} is climbing — up ${hero.metric === "time" ? formatHold(hero.delta) : `${hero.delta} ${units}`} across ${hero.sessions} sessions.`
+                ? `${hero.name} is climbing — up ${hero.metric === "time" ? formatHold(hero.delta) : `${hero.delta} ${units}`}${liftPct(hero) !== null && liftPct(hero)! > 0 ? ` (+${liftPct(hero)}%)` : ""} across ${hero.sessions} sessions.`
                 : hero.delta === 0
                   ? `Holding steady across ${hero.sessions} sessions — your most-trained lift.`
                   : `Down ${hero.metric === "time" ? formatHold(Math.abs(hero.delta)) : `${Math.abs(hero.delta)} ${units}`} across ${hero.sessions} sessions — worth asking the coach.`}
@@ -366,39 +373,13 @@ const Progress = () => {
       )}
 
       {/* ── Card 1 · STRENGTH TRENDS — never silently missing ── */}
-      {(keyLifts.length > 0 || deltas.length > 0) && (
+      {keyLifts.length > 0 && (
         <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
           <p className="eyebrow mb-1 !text-primary">Strength trends</p>
           <p className="caption mb-3">Best set per session · last 12 weeks. Tap a lift for detail.</p>
 
           {/* Beat-last-time — the readout lifters actually check */}
-          {deltas.length > 0 && (
-            <div className="mb-3 rounded-[0.75rem] bg-secondary/60 px-3 py-2.5">
-              <p className="eyebrow mb-1.5 !text-[10px]">Last workout vs the one before</p>
-              {deltas.map((d) => (
-                <div key={d.name} className="flex items-center justify-between gap-3 py-1">
-                  <span className="min-w-0 truncate text-sm font-medium text-fg">{d.name}</span>
-                  <span className="shrink-0 text-sm tabular-nums text-fg-soft">
-                    {d.metric === "time"
-                      ? `${formatHold(d.prev[0])} → ${formatHold(d.last[0])}`
-                      : d.prev[0] <= 0 && d.last[0] <= 0
-                        ? // Bodyweight lifts — compare reps, never "0 × 22".
-                          `${d.prev[1]} → ${d.last[1]} reps`
-                        : `${d.prev[0]} × ${d.prev[1]} → ${d.last[0]} × ${d.last[1]}`}
-                    <span
-                      role="img"
-                      className={`ml-1.5 ${d.direction === "up" ? "text-primary" : "text-fg-faint"}`}
-                      aria-label={
-                        d.direction === "up" ? "improved" : d.direction === "down" ? "lower" : "matched"
-                      }
-                    >
-                      {d.direction === "up" ? "▲" : d.direction === "down" ? "▽" : "—"}
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          
 
           <div className="divide-y divide-border">
             {keyLifts.map((lift) => (
@@ -428,18 +409,15 @@ const Progress = () => {
                   />
                 </svg>
                 <p
-                  className={`w-16 shrink-0 text-right text-sm font-semibold tabular-nums ${
-                    lift.delta > 0 ? "text-fg" : "text-fg-muted"
+                  className={`w-20 shrink-0 text-right ${
+                    liftPct(lift) !== null && liftPct(lift)! > 0
+                      ? "text-primary"
+                      : "text-fg-muted"
                   }`}
                 >
-                  {lift.metric === "time" ? (
-                    formatHoldDelta(lift.delta)
-                  ) : (
-                    <>
-                      {lift.delta > 0 ? `+${lift.delta}` : lift.delta}
-                      <span className="ml-1 text-[11px] font-normal text-fg-muted">{units}</span>
-                    </>
-                  )}
+                  <span className="stat-scoreboard text-[22px] leading-7 tabular-nums">
+                    {formatPct(liftPct(lift))}
+                  </span>
                 </p>
               </button>
             ))}
