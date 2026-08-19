@@ -14,6 +14,7 @@ import { starterPrograms, type StarterProgram } from "@/data/starterPrograms";
 import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
 import {
   ACTIVE_WORKOUT_STORAGE_KEY,
+  buildBlankSession,
   buildSessionFromStarter,
   buildSessionFromTemplate,
   persistActiveSession,
@@ -401,10 +402,23 @@ const Workouts = () => {
             No saved workouts yet — build your own or run a starter session below.
           </p>
         )}
-        <CTAButton onClick={openBuilder} variant="accent">
-          <Plus size={16} />
-          New workout
-        </CTAButton>
+        <div className="flex flex-wrap gap-2.5">
+          <CTAButton onClick={openBuilder} variant="accent">
+            <Plus size={16} />
+            New workout
+          </CTAButton>
+          {/* Start empty, log as you go (voice or typed), decide at the end
+              whether to keep it as a saved workout. */}
+          <CTAButton
+            onClick={() => {
+              persistWithRecovery(buildBlankSession());
+              navigate("/workouts/active");
+            }}
+          >
+            <ChevronsRight size={16} />
+            Quick start
+          </CTAButton>
+        </div>
       </div>
 
       {loading ? (

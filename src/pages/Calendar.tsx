@@ -11,6 +11,9 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useWorkoutLogs, type WorkoutLog } from "@/hooks/useWorkoutLogs";
 import { formatHold } from "@/lib/exerciseTracking";
 import { getLogsByDay, getStreak } from "@/lib/workoutStats";
+import { sessionToTemplateExercises } from "@/lib/sessionToTemplate";
+import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { toast } from "@/components/ui/use-toast";
 import { ChevronLeft, ChevronRight, Dumbbell } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -110,6 +113,26 @@ const HitRateDonut = ({ pct, muted }: { pct: number; muted: boolean }) => {
 const Calendar = () => {
   const { profile } = useUser();
   const { logs } = useWorkoutLogs();
+  const { save: saveTemplate } = useWorkoutTemplates();
+  const [savedLogIds, setSavedLogIds] = useState<Set<string>>(new Set());
+
+  // "Save it later, into workouts" — any calendar session can become a
+  // saved workout with its achieved numbers as the targets.
+  const saveLogAsTemplate = async (log: WorkoutLog): Promise<void> => {
+    if (savedLogIds.has(log.id)) return;
+    const exercises = sessionToTemplateExercises(log.exercises ?? []);
+    if (exercises.length === 0) {
+      toast({ title: "Nothing completed in this session to save" });
+      return;
+    }
+    try {
+      await saveTemplate({ id: null, name: log.name, exercises });
+      setSavedLogIds((current) => new Set(current).add(log.id));
+      toast({ title: `Saved "${log.name}" to your workouts` });
+    } catch {
+      toast({ title: "Could not save workout", variant: "destructive" });
+    }
+  };
   const isMobile = useIsMobile();
   const units = profile?.units ?? "lb";
 
@@ -520,6 +543,15 @@ const Calendar = () => {
                         {log.notes}
                       </p>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => void saveLogAsTemplate(log)}
+                      disabled={savedLogIds.has(log.id)}
+                      className="mt-3 inline-flex min-h-10 items-center gap-1.5 rounded-full border border-primary/45 px-3.5 text-[12.5px] font-semibold text-primary transition hover:bg-primary/10 disabled:border-border disabled:text-fg-muted"
+                    >
+                      {savedLogIds.has(log.id) ? "Saved to workouts ✓" : "Save as workout"}
+                    </button>
 
                     <div className="mt-3 divide-y divide-border border-t border-border">
                       {(log.exercises ?? []).map((exercise) => {

@@ -39,3 +39,12 @@ export const persistActiveSession = (session: ActiveSessionSeed): void => {
     JSON.stringify(session),
   );
 };
+
+/** A session started with nothing planned — the lifter logs as they go
+    (by hand or by voice) and decides at the end whether to keep it as a
+    saved workout. Never has a templateId. */
+export const buildBlankSession = (name = "Workout"): ActiveSessionSeed => ({
+  name,
+  exercises: [],
+  startedAt: new Date().toISOString(),
+});

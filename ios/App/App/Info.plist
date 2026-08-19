@@ -4,6 +4,10 @@
 <dict>
   <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LiftOS listens while you hold the mic button so you can log sets by voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Your speech is turned into logged sets and notes. On-device when your iPhone supports it.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>LiftOS reads your workouts and heart rate to pre-fill your training log — you confirm every session before it is saved.</string>
 	<key>NSHealthUpdateUsageDescription</key>

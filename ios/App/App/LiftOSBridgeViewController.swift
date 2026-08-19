@@ -7,5 +7,6 @@ import Capacitor
 class LiftOSBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(HealthKitPlugin())
+        bridge?.registerPluginInstance(SpeechPlugin())
     }
 }

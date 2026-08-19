@@ -1,6 +1,7 @@
 import { CTAButton } from "@/components/GoldButton";
 import { ShareButton } from "@/components/ShareButton";
 import { RestTimerRing } from "@/components/logging/RestTimerRing";
+import { VoiceLogControl } from "@/components/logging/VoiceLogControl";
 import { SetInputRow, formatWeightForDisplay } from "@/components/logging/SetInputRow";
 import { useEnterAdvance } from "@/components/logging/useEnterAdvance";
 import {
@@ -20,9 +21,15 @@ import type { WorkoutExercise } from "@/data/liftosMock";
 import { RollingNumber } from "@/components/motion/RollingNumber";
 import { getMuscleActivation } from "@/lib/muscleMap";
 import { localDayParam } from "@/lib/workoutStats";
+import type { VoiceApplyResult } from "@/lib/voiceApply";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useWorkoutLogs, type WorkoutLog } from "@/hooks/useWorkoutLogs";
+import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import {
+  exerciseListChanged,
+  sessionToTemplateExercises,
+} from "@/lib/sessionToTemplate";
 import {
   formatHold,
   formatHoldInput,
@@ -234,6 +241,89 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     () => (savedLog ? [getMuscleActivation([savedLog], 36_500)] : []),
     [savedLog],
   );
+
+  // ── Voice logging: apply results from the hold-to-talk control and keep
+  // one level of undo (state + notes snapshot from just before the apply).
+  const voiceUndoRef = useRef<{ exercises: LoggedExercise[]; notes: string } | null>(null);
+
+  const handleVoiceApply = (result: VoiceApplyResult): void => {
+    voiceUndoRef.current = { exercises, notes };
+    setExercises(result.exercises as LoggedExercise[]);
+    if (result.note) {
+      setNotes((current) => (current.trim() ? `${current}\n${result.note}` : result.note!));
+    }
+  };
+
+  const handleVoiceUndo = (): void => {
+    const snapshot = voiceUndoRef.current;
+    if (!snapshot) return;
+    voiceUndoRef.current = null;
+    setExercises(snapshot.exercises);
+    setNotes(snapshot.notes);
+  };
+
+  // ── Save what was actually done as a workout (create-vs-start split).
+  // Quick starts have no templateId → "Save as workout"; template sessions
+  // whose exercise LIST drifted (the planks case) can update the saved
+  // workout or be saved as a new one — or neither, by just leaving.
+  const { save: saveTemplate } = useWorkoutTemplates();
+  const [templateSaveState, setTemplateSaveState] = useState<
+    "idle" | "saving" | "saved"
+  >("idle");
+  const seedNames = useMemo(
+    () => session.exercises.map((e) => e.name),
+    [session.exercises],
+  );
+
+  const handleSaveAsTemplate = async (mode: "new" | "update"): Promise<void> => {
+    if (templateSaveState !== "idle") return;
+    const templateExercises = sessionToTemplateExercises(exercises);
+    if (templateExercises.length === 0) return;
+    setTemplateSaveState("saving");
+    try {
+      await saveTemplate({
+        id: mode === "update" ? (session.templateId ?? null) : null,
+        name: session.name,
+        exercises: templateExercises,
+      });
+      setTemplateSaveState("saved");
+      toast({
+        title: mode === "update" ? `Updated "${session.name}"` : `Saved "${session.name}" to your workouts`,
+      });
+    } catch {
+      setTemplateSaveState("idle");
+      toast({ title: "Could not save workout", variant: "destructive" });
+    }
+  };
+
+  // Manual add-exercise (blank quick starts, or the planks case by hand).
+  const [newExerciseName, setNewExerciseName] = useState("");
+  const addExercise = (): void => {
+    const name = newExerciseName.trim();
+    if (!name) return;
+    setExercises((current) => [
+      ...current,
+      {
+        id: `exercise-${Date.now()}`,
+        name,
+        kind: "weighted",
+        category: "",
+        target: "",
+        sets: [
+          {
+            id: `set-${Date.now()}`,
+            reps: "",
+            weight: "",
+            completed: false,
+            targetReps: null,
+            targetTime: null,
+            targetWeight: null,
+          },
+        ],
+      },
+    ]);
+    setNewExerciseName("");
+  };
 
   // Every edit lands in localStorage so navigating away (tab bar stays
   // visible mid-workout) and coming back through the resume banner restores
@@ -827,6 +917,56 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   No new records today — showing up is the record that compounds.
                 </p>
               )}
+              {/* The session note the lifter spoke or typed — the recap is
+                  where it pays off. */}
+              {savedLog?.notes && (
+                <div className="mt-5 rounded-[12px] bg-foreground/[0.04] px-4 py-3">
+                  <p className="eyebrow !text-[10px]">Session notes</p>
+                  <p className="mt-1 whitespace-pre-line text-sm leading-5 text-fg-soft">
+                    {savedLog.notes}
+                  </p>
+                </div>
+              )}
+
+              {/* Keep what you actually did. Quick starts save as a new
+                  workout; drifted template sessions choose update vs new —
+                  or neither (the log lives on the calendar regardless). */}
+              {savedLog && sessionToTemplateExercises(exercises).length > 0 && (
+                templateSaveState === "saved" ? (
+                  <p className="mt-4 text-center text-[12px] font-semibold text-primary">
+                    Saved to your workouts ✓
+                  </p>
+                ) : !session.templateId ? (
+                  <button
+                    type="button"
+                    disabled={templateSaveState === "saving"}
+                    onClick={() => void handleSaveAsTemplate("new")}
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-primary/45 text-[13.5px] font-semibold text-primary transition hover:bg-primary/10 disabled:opacity-60"
+                  >
+                    {templateSaveState === "saving" ? "Saving…" : "Save as workout"}
+                  </button>
+                ) : exerciseListChanged(seedNames, exercises) ? (
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={templateSaveState === "saving"}
+                      onClick={() => void handleSaveAsTemplate("update")}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-primary/45 px-3 text-[13px] font-semibold text-primary transition hover:bg-primary/10 disabled:opacity-60"
+                    >
+                      Update “{session.name}”
+                    </button>
+                    <button
+                      type="button"
+                      disabled={templateSaveState === "saving"}
+                      onClick={() => void handleSaveAsTemplate("new")}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-border px-3 text-[13px] font-semibold text-fg-soft transition hover:border-fg-soft disabled:opacity-60"
+                    >
+                      Save as new
+                    </button>
+                  </div>
+                ) : null
+              )}
+
               {/* Share — the recap's outbound moment. A native share card
                   (numbers + muscle bars) into whatever the user actually posts
                   to; no third-party API in the loop. */}
@@ -1037,6 +1177,38 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
               className="w-full resize-none rounded-md border border-border bg-secondary/50 p-3 text-sm outline-none transition focus:border-primary/60"
             />
           </label>
+
+          {/* Log-as-you-go: add any exercise mid-session (quick starts begin
+              empty; the planks case by hand). Voice adds these too. */}
+          <div className="rounded-lg border border-border bg-card p-4">
+            {exercises.length === 0 && (
+              <p className="mb-2 text-sm text-fg-soft">
+                Nothing planned — add an exercise, or hold the mic and say what
+                you did.
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                value={newExerciseName}
+                onChange={(e) => setNewExerciseName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addExercise();
+                }}
+                placeholder="Add exercise — e.g. Planks"
+                aria-label="Add exercise"
+                className="h-11 w-full min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm font-medium text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+              />
+              <button
+                type="button"
+                onClick={addExercise}
+                disabled={!newExerciseName.trim()}
+                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-40"
+              >
+                <Plus size={14} />
+                Add
+              </button>
+            </div>
+          </div>
         </section>
 
         {/* Desktop sidebar */}
@@ -1121,6 +1293,14 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           </div>
         </div>
       )}
+
+      {/* Hold-to-talk voice logging — global pill above the tab bar. */}
+      <VoiceLogControl
+        exercises={exercises}
+        units={units}
+        onApply={handleVoiceApply}
+        onUndo={handleVoiceUndo}
+      />
 
       {/* Discard confirmation — Finish with zero completed sets routes here
           too. No "save anyway": an empty log has no value. */}
