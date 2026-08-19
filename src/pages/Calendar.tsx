@@ -13,6 +13,7 @@ import { formatHold } from "@/lib/exerciseTracking";
 import { getLogsByDay, getStreak } from "@/lib/workoutStats";
 import { ChevronLeft, ChevronRight, Dumbbell } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 /* Sunday-start weeks (US convention). */
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -115,8 +116,24 @@ const Calendar = () => {
   const now = new Date();
   const todayKey = localMidnight(now).getTime();
 
-  const [view, setView] = useState(() => ({ year: now.getFullYear(), month: now.getMonth() }));
-  const [selected, setSelected] = useState<Date | null>(null);
+  // Deep link: /calendar?day=YYYY-MM-DD opens straight onto that day's
+  // sessions — the recap and the home "Last workout" card land here.
+  const [searchParams] = useSearchParams();
+  const linkedDay = useMemo(() => {
+    const raw = searchParams.get("day");
+    if (!raw) return null;
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [searchParams]);
+
+  const [view, setView] = useState(() =>
+    linkedDay
+      ? { year: linkedDay.getFullYear(), month: linkedDay.getMonth() }
+      : { year: now.getFullYear(), month: now.getMonth() },
+  );
+  const [selected, setSelected] = useState<Date | null>(linkedDay);
 
   const isCurrentMonth = view.year === now.getFullYear() && view.month === now.getMonth();
   const monthKey = `${view.year}-${view.month}`;

@@ -113,7 +113,7 @@ const StarterProgramRow = ({ program, saved, saving, saveDisabled, onSave, onSta
       <button
         type="button"
         onClick={onStart}
-        className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary/45 px-4 text-sm font-semibold text-primary transition hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/40"
+        className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/40"
       >
         Start
       </button>
@@ -365,7 +365,7 @@ const Workouts = () => {
                     <button
                       type="button"
                       onClick={() => startWorkout(template)}
-                      className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary/45 px-4 text-sm font-semibold text-primary transition hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/40"
                     >
                       Start
                     </button>

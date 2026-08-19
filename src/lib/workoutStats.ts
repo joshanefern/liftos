@@ -206,3 +206,10 @@ export const getLogsByDay = (logs: WorkoutLog[]): Record<number, WorkoutLog[]> =
   }
   return map;
 };
+
+/** `YYYY-MM-DD` in LOCAL time — the Calendar's ?day= deep-link key. */
+export const localDayParam = (iso: string): string => {
+  const d = new Date(iso);
+  const p = (v: number) => String(v).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};

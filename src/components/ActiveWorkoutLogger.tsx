@@ -19,7 +19,7 @@ import { useUser } from "@/context/UserContext";
 import type { WorkoutExercise } from "@/data/liftosMock";
 import { RollingNumber } from "@/components/motion/RollingNumber";
 import { getMuscleActivation } from "@/lib/muscleMap";
-import { useExerciseNotes } from "@/hooks/useExerciseNotes";
+import { localDayParam } from "@/lib/workoutStats";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useWorkoutLogs, type WorkoutLog } from "@/hooks/useWorkoutLogs";
@@ -32,28 +32,27 @@ import {
 } from "@/lib/exerciseTracking";
 import { successHaptic, tapHaptic } from "@/lib/haptics";
 import { formatPlateMath, plateBreakdown } from "@/lib/plateMath";
-import { suggestProgression, type ProgressionSuggestion } from "@/lib/progression";
 import { detectSessionPRs, type PREvent } from "@/lib/prs";
 import { isMetricUnits } from "@/lib/review/inputFormatters";
-import { BAR_WEIGHT, generateWarmupSets, type WeightUnit } from "@/lib/warmup";
+import type { WeightUnit } from "@/lib/warmup";
 import type { ActiveSession } from "@/pages/ActiveWorkout";
 import { cn } from "@/lib/utils";
 import { Capacitor } from "@capacitor/core";
 import {
   Check,
   ChevronDown,
-  Dumbbell,
-  Pin,
   Plus,
-  Repeat,
   SkipForward,
   Timer,
   Trophy,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
+/** Names where flipping to time-tracking is a plausible want — the header
+    tap-to-flip only exists for these, so "Squat" never grows a mystery tap. */
+const TIMED_TOGGLE_HINT = /plank|hold|hang|carry|wall.?sit|bridge|l.?sit|iso|static|farmer/i;
 /** Live logger progress (completed sets, typed values, notes) — the seed key
     alone only stores the untouched template, so without this every logged
     set evaporated on navigation and the Dashboard's "Resume workout" banner
@@ -213,7 +212,6 @@ const computePrs = (
 
 const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const { save, logs } = useWorkoutLogs();
-  const { noteFor, saveNote } = useExerciseNotes();
   const { profile } = useUser();
   const units = profile?.units ?? "lb";
   const isMetric = isMetricUnits(units);
@@ -428,19 +426,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     tracking === "time" ? formatHoldInput(hint) : String(hint);
 
   // Double-progression hints from the last session containing each exercise.
-  // Keyed on session.exercises (names are fixed for the session), so this
-  // doesn't recompute on every keystroke.
-  const progressionHints = useMemo(() => {
-    const map = new Map<string, ProgressionSuggestion>();
-    for (const exercise of session.exercises) {
-      const key = exercise.name.trim().toLowerCase();
-      if (map.has(key)) continue;
-      const suggestion = suggestProgression(logs, exercise.name, { unit: weightUnit });
-      if (suggestion) map.set(key, suggestion);
-    }
-    return map;
-  }, [logs, session.exercises, weightUnit]);
-
   // ── Derived stats (working sets only — warm-ups never count) ──
 
   const stats = useMemo(() => {
@@ -632,38 +617,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     );
   };
 
-  /** First working set's entered weight, falling back through the hint chain. */
-  const workingWeightFor = (exercise: LoggedExercise): number | null => {
-    const index = exercise.sets.findIndex((set) => !set.isWarmup);
-    if (index < 0) return null;
-    const entered = Number(exercise.sets[index].weight);
-    if (Number.isFinite(entered) && entered > 0) return entered;
-    return hintFor(exercise, index, "weight");
-  };
-
-  const addWarmupRamp = (exerciseId: string) => {
-    const exercise = exercises.find((e) => e.id === exerciseId);
-    if (!exercise || exercise.sets.some((set) => set.isWarmup)) return;
-    const workingWeight = workingWeightFor(exercise);
-    if (workingWeight === null) return;
-    const ramp = generateWarmupSets(workingWeight, { unit: weightUnit });
-    if (ramp.length === 0) return;
-    const warmups: LoggedSet[] = ramp.map((set) => ({
-      id: set.id,
-      reps: "",
-      weight: "",
-      completed: false,
-      targetReps: set.reps ?? null,
-      targetTime: null,
-      targetWeight: set.weight ?? null,
-      isWarmup: true,
-    }));
-    setExercises((current) =>
-      current.map((e) =>
-        e.id === exerciseId ? { ...e, sets: [...warmups, ...e.sets] } : e,
-      ),
-    );
-  };
 
   const openPlateMath = (weight: number) => {
     setPlateWeight(weight);
@@ -895,6 +848,18 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
               >
                 View dashboard
               </CTAButton>
+              {savedLog && (
+                <p className="mt-3 text-center text-[12px] text-fg-muted">
+                  This summary lives on your{" "}
+                  <Link
+                    to={`/calendar?day=${localDayParam(savedLog.finished_at)}`}
+                    className="font-semibold text-primary"
+                  >
+                    calendar
+                  </Link>
+                  {" "}— open it any time.
+                </p>
+              )}
             </section>
           </div>
         </div>
@@ -967,19 +932,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
             const allDone =
               exercise.sets.length > 0 && exercise.sets.every((set) => set.completed);
             const tracking = trackingFor(exercise);
-            const progressionHint =
-              tracking === "reps"
-                ? (progressionHints.get(exercise.name.trim().toLowerCase()) ?? null)
-                : null;
             const isWeighted = exercise.kind !== "cardio" && exercise.kind !== "bodyweight";
-            const hasWarmups = exercise.sets.some((set) => set.isWarmup);
-            const workingWeight = isWeighted ? workingWeightFor(exercise) : null;
-            const canAddWarmup =
-              isWeighted &&
-              tracking === "reps" &&
-              !hasWarmups &&
-              workingWeight !== null &&
-              workingWeight > BAR_WEIGHT[weightUnit];
             // Working sets number 1..n; warm-up rows show a W chip instead.
             let workingOrdinal = 0;
             const ordinals = exercise.sets.map((set) =>
@@ -991,60 +944,29 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                 className="relative overflow-hidden rounded-lg border border-border bg-card p-4 md:p-5 animate-reveal-up"
                 style={{ animationDelay: `${exerciseIndex * 60 + 100}ms` }}
               >
-                <div className="mb-2.5 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="mb-1 flex items-center gap-2">
-                      <Dumbbell
-                        className="h-3.5 w-3.5 shrink-0 translate-x-[0.5px] translate-y-[0.5px] text-primary"
-                        strokeWidth={1.9}
-                      />
-                      <span className="caption !text-fg-muted">{exercise.category}</span>
-                      <span aria-hidden className="caption !text-fg-faint">·</span>
-                      {/* Effort mode — planks count time, most lifts count reps.
-                          One tap flips how this exercise logs. */}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setTracking(exercise.id, tracking === "time" ? "reps" : "time")
-                        }
-                        aria-label={`Tracking by ${tracking === "time" ? "time" : "reps"} — switch to ${
-                          tracking === "time" ? "reps" : "time"
-                        }`}
-                        className="caption relative inline-flex items-center gap-1 rounded-full !text-fg-muted transition after:absolute after:-inset-x-1.5 after:-inset-y-3 after:content-[''] hover:!text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                      >
-                        {tracking === "time" ? (
-                          <Timer size={11} strokeWidth={2} />
-                        ) : (
-                          <Repeat size={11} strokeWidth={2} />
-                        )}
-                        {tracking === "time" ? "time" : "reps"}
-                      </button>
-                    </div>
-                    <h2 className="text-base font-semibold leading-snug">{exercise.name}</h2>
-                    {exercise.target && (
-                      <p className="caption mt-0.5 !text-fg-muted">{exercise.target}</p>
+                {/* Header = the exercise name and one Done button. Nothing
+                    advisory lives up here any more (owner: "way too much
+                    info") — the category chip, prescription line, coaching
+                    hint, pinned note and warm-up ramp are gone; the reps⇄time
+                    flip survives as a long-press-free tap on the name for
+                    the few exercises that need it (planks). */}
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      tracking === "time" || TIMED_TOGGLE_HINT.test(exercise.name)
+                        ? setTracking(exercise.id, tracking === "time" ? "reps" : "time")
+                        : undefined
+                    }
+                    className="min-w-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md"
+                  >
+                    <h2 className="truncate text-[17px] font-semibold capitalize leading-snug text-fg">
+                      {exercise.name}
+                    </h2>
+                    {tracking === "time" && (
+                      <p className="caption mt-0.5 !text-fg-muted">timed · tap to switch to reps</p>
                     )}
-                    {progressionHint && (
-                      <p className="caption mt-1 flex items-center gap-1.5">
-                        {progressionHint.kind === "add_weight" && (
-                          <span
-                            aria-hidden
-                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                          />
-                        )}
-                        <span className="min-w-0">{progressionHint.message}</span>
-                      </p>
-                    )}
-                    {exercise.notes && (
-                      <p className="caption mt-1 max-w-sm leading-relaxed">{exercise.notes}</p>
-                    )}
-                    {/* Pinned note — the user's own cue (seat height, grip),
-                        stuck to this exercise's card in every session. */}
-                    <PinnedNote
-                      note={noteFor(exercise.name)}
-                      onSave={(value) => saveNote(exercise.name, value)}
-                    />
-                  </div>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setAllSetsDone(exercise.id, !allDone)}
@@ -1056,26 +978,9 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     )}
                   >
                     <Check size={14} />
-                    {allDone ? "Completed" : "Done"}
+                    {allDone ? "Done" : "All done"}
                   </button>
                 </div>
-
-                {canAddWarmup && (
-                  <button
-                    type="button"
-                    onClick={() => addWarmupRamp(exercise.id)}
-                    className="mb-2 flex min-h-11 w-full items-center gap-1.5 rule-hairline pt-2 text-xs text-fg-muted transition hover:text-fg"
-                  >
-                    <Plus size={13} />
-                    Add warm-up ramp
-                  </button>
-                )}
-
-                {exerciseIndex === 0 && (
-                  <p className="caption mb-2 !text-fg-faint">
-                    Tap a faded number to use it, or type your own.
-                  </p>
-                )}
 
                 <div className="space-y-1">
                   {exercise.sets.map((set, setIndex) => (
@@ -1272,79 +1177,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
 
 // ── Small pieces ────────────────────────────────────────────────────────────
 
-/** Pinned exercise note: persistent cue text shown on this exercise's card in
-    every session. Tap the note (or the quiet "Pin a note" affordance) to edit
-    in place; blur commits, empty text unpins. */
-const PinnedNote = ({
-  note,
-  onSave,
-}: {
-  note: string | null;
-  onSave: (value: string) => void;
-}) => {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-
-  if (editing) {
-    return (
-      <textarea
-        autoFocus
-        value={draft}
-        rows={2}
-        maxLength={2000}
-        placeholder="Seat height, grip width, cues…"
-        aria-label="Pinned note for this exercise"
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => {
-          setEditing(false);
-          if (draft.trim() !== (note ?? "")) onSave(draft);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            event.currentTarget.blur();
-          }
-          if (event.key === "Escape") {
-            setDraft(note ?? "");
-            event.currentTarget.blur();
-          }
-        }}
-        className="mt-1.5 w-full max-w-sm resize-none rounded-md border border-primary/40 bg-secondary/50 p-2 text-xs leading-relaxed text-fg outline-none"
-      />
-    );
-  }
-
-  if (note) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          setDraft(note);
-          setEditing(true);
-        }}
-        aria-label="Edit pinned note"
-        className="relative mt-1.5 flex max-w-sm items-start gap-1.5 rounded-md text-left transition after:absolute after:-inset-1.5 after:content-[''] hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-      >
-        <Pin size={11} strokeWidth={2.2} className="mt-0.5 shrink-0 text-primary" />
-        <span className="caption whitespace-pre-wrap leading-relaxed !text-fg-soft">{note}</span>
-      </button>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        setDraft("");
-        setEditing(true);
-      }}
-      className="relative mt-1.5 inline-flex items-center gap-1.5 rounded-md caption !text-fg-faint transition after:absolute after:-inset-x-1.5 after:-inset-y-2.5 after:content-[''] hover:!text-fg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-    >
-      <Pin size={10} strokeWidth={2.2} />
-      Pin a note
-    </button>
-  );
-};
 
 /** Editorial plate breakdown for the tapped weight — arm's-length numerals. */
 const PlateMathSheet = ({

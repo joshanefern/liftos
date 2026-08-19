@@ -1,4 +1,3 @@
-import { WeekBadgeRow } from "@/components/home/WeekBadgeRow";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { toast } from "@/components/ui/use-toast";
 import { useCapturedSessions } from "@/context/CapturedSessionsProvider";
@@ -13,14 +12,11 @@ import {
   fetchHealthKitWorkouts,
   healthKitSupported,
 } from "@/lib/healthkit";
-import { formatHold } from "@/lib/exerciseTracking";
 import { prStrip } from "@/lib/bigThree";
 import { labelForMuscle } from "@/lib/muscleCoverage";
 import type { Muscle } from "@/lib/muscleMap";
-import { normalizeExerciseName } from "@/lib/prs";
 import { muscleFreshnessFromLogs, trimSessionForRecovery } from "@/lib/recovery";
 import { ACTIVE_WORKOUT_STORAGE_KEY } from "@/lib/startSession";
-import { lastSessionDeltas } from "@/lib/strengthTrend";
 import {
   buildSessionFromStarter,
   buildSessionFromTemplate,
@@ -28,12 +24,14 @@ import {
 } from "@/lib/startSession";
 import { suggestNextWorkout } from "@/lib/suggestion";
 import { isPlaceholderName } from "@/lib/exerciseNames";
-import { getWeeklyStreak, getWeekStats } from "@/lib/workoutStats";
+import { getMonthStats, getWeeklyStreak, getWeekStats, localDayParam } from "@/lib/workoutStats";
 import { useDayKey } from "@/hooks/useDayKey";
 import { useReadiness } from "@/hooks/useReadiness";
 import { RecoverySheet } from "@/components/home/RecoverySheet";
+import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
+import { Switch } from "@/components/ui/switch";
 import type { ActiveSession } from "@/pages/ActiveWorkout";
-import { ArrowRight, ChevronDown, ChevronsRight, RefreshCw } from "lucide-react";
+import { ArrowRight, CalendarDays, ChevronsRight, RefreshCw } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -116,9 +114,8 @@ const Dashboard = () => {
   const weekStats = useMemo(() => getWeekStats(logs), [logs, dayKey]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const weeklyStreak = useMemo(() => getWeeklyStreak(logs), [logs, dayKey]);
-  // Beat-last-time — the readout lifters check before training: last
-  // workout's best sets vs the previous time each lift was done.
-  const deltas = useMemo(() => lastSessionDeltas(logs), [logs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const monthStats = useMemo(() => getMonthStats(logs), [logs, dayKey]);
   // The scoreboard strip: bench / squat / deadlift, backfilled with the
   // heaviest other lifts. Raw best weights, never an index.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,91 +165,91 @@ const Dashboard = () => {
   const freshness = useMemo(() => muscleFreshnessFromLogs(logs), [logs, dayKey]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
 
-  // Without a wearable verdict the line speaks from muscle freshness: the
-  // least-recovered muscle today's pick actually targets.
-  const staleTarget = useMemo(() => {
+  // Without a wearable verdict, recovery is COMPUTED from training history:
+  // the freshness of the muscles today's pick targets (falls back to every
+  // trained muscle on rest days / unknown picks). Shown as a percentage —
+  // it's a real number from real sets, not a vibe.
+  const computedRecovery = useMemo(() => {
     const byMuscle = new Map(freshness.map((f) => [f.muscle, f.freshness]));
+    const targets = suggestion.muscles.length > 0 ? suggestion.muscles : freshness.map((f) => f.muscle);
     let worst: { muscle: Muscle; value: number } | null = null;
-    for (const muscle of suggestion.muscles) {
+    let sum = 0;
+    let n = 0;
+    for (const muscle of targets) {
       const value = byMuscle.get(muscle) ?? 1;
-      if (value < 0.85 && (!worst || value < worst.value)) worst = { muscle, value };
+      sum += value;
+      n += 1;
+      if (!worst || value < worst.value) worst = { muscle, value };
     }
-    return worst;
+    if (n === 0) return null;
+    return { pct: Math.round((sum / n) * 100), worst };
   }, [freshness, suggestion.muscles]);
 
+  // The recovery line names its SOURCE. Apple Watch data (via Health) gives
+  // the overnight verdict; without it the number is computed from the log.
   const recoveryLine = useMemo(():
-    | { word: string; tone: "good" | "neutral" | "warn" }
+    | { word: string; source: string; tone: "good" | "neutral" | "warn" }
     | null => {
-    if (readiness?.state === "primed") return { word: "Primed", tone: "good" };
-    if (readiness?.state === "steady") return { word: "Steady", tone: "neutral" };
-    if (readiness?.state === "run_down") return { word: "Run down", tone: "warn" };
+    if (readiness?.state === "primed") return { word: "Primed", source: "Apple Watch", tone: "good" };
+    if (readiness?.state === "steady") return { word: "Steady", source: "Apple Watch", tone: "neutral" };
+    if (readiness?.state === "run_down") return { word: "Run down", source: "Apple Watch", tone: "warn" };
     if (readiness?.baselineDaysRemaining != null) {
       return {
-        word: `Learning your baseline · ${readiness.baselineDaysRemaining}d`,
+        word: `Learning baseline · ${readiness.baselineDaysRemaining}d`,
+        source: "Apple Watch",
         tone: "neutral",
       };
     }
-    if (logs.length === 0) return null;
-    // Rest-day picks don't get "Fresh for today" cheer — nothing is planned.
-    if (suggestion.kind === "rest") return { word: "Recovered", tone: "neutral" };
-    return staleTarget
-      ? { word: `${labelForMuscle(staleTarget.muscle)} still recovering`, tone: "neutral" }
-      : { word: "Fresh for today", tone: "good" };
-  }, [readiness, staleTarget, logs.length, suggestion.kind]);
+    if (logs.length === 0 || !computedRecovery) return null;
+    const { pct, worst } = computedRecovery;
+    if (pct >= 85) return { word: `${pct}% recovered`, source: "from your training", tone: "good" };
+    return {
+      word: worst && worst.value < 0.85
+        ? `${pct}% recovered · ${labelForMuscle(worst.muscle)} ${Math.round(worst.value * 100)}%`
+        : `${pct}% recovered`,
+      source: "from your training",
+      tone: pct < 60 ? "warn" : "neutral",
+    };
+  }, [readiness, computedRecovery, logs.length]);
 
-  // "To beat today" — the last-time top sets for the SUGGESTED session's
-  // lifts, pre-loaded before the workout starts (the single most-wanted
-  // open-screen data). Falls back to last-vs-previous deltas when the pick
-  // has no history yet.
-  const toBeat = useMemo(() => {
+  // The pick's shape — what you're walking into: how many lifts and sets,
+  // roughly how long, when you last ran this exact session and how it went.
+  // Replaces the per-exercise number rows (owner: "put something meaningful").
+  const sessionShape = useMemo(() => {
     const picked =
       suggestion.kind === "template"
         ? templates.find((t) => t.id === suggestion.id)?.exercises
         : suggestion.kind === "starter"
           ? starterPrograms.find((p) => p.id === suggestion.id)?.exercises
           : undefined;
-    if (!picked) return [];
-    const rows: { name: string; line: string; when: string }[] = [];
-    for (const exercise of picked) {
-      if (rows.length >= 3) break;
-      if (exercise.kind === "cardio" || isPlaceholderName(exercise.name)) continue;
-      const key = normalizeExerciseName(exercise.name);
-      for (const log of logs) {
-        // Longest hold tracks independently of the weight/reps best — timed
-        // sets (weight 0, reps 0) can never win the weight comparison, and
-        // folding duration into it froze on the FIRST hold of the session.
-        let best: { weight: number; reps: number } | null = null;
-        let longestHold = 0;
-        for (const e of log.exercises) {
-          if (normalizeExerciseName(e.name) !== key || e.kind === "cardio") continue;
-          for (const s of e.sets) {
-            if (!s.completed || s.isWarmup) continue;
-            const reps = typeof s.reps === "number" ? s.reps : 0;
-            const rawWeight = typeof s.weight === "number" ? s.weight : 0;
-            const weight = rawWeight > 0 && reps >= 1 ? rawWeight : 0;
-            const duration = typeof s.duration_seconds === "number" ? s.duration_seconds : 0;
-            if (duration > longestHold) longestHold = duration;
-            if (weight <= 0 && duration <= 0 && reps < 1) continue;
-            if (!best || weight > best.weight || (weight === best.weight && reps > best.reps)) {
-              best = { weight, reps };
-            }
+    if (!picked) return null;
+    const lifts = picked.filter((e) => !isPlaceholderName(e.name));
+    const sets = lifts.reduce((n, e) => n + e.sets.length, 0);
+    // ~3 min per working set (set + rest) — a lifter's rule of thumb, rounded
+    // to 5 so it reads as an estimate, not a promise.
+    const minutes = Math.max(10, Math.round((sets * 3) / 5) * 5);
+
+    // Last time THIS session ran — matched by template id first, then by
+    // name so starters and renamed templates still resolve.
+    const key = suggestion.title.trim().toLowerCase();
+    const last = logs.find(
+      (l) =>
+        (suggestion.kind === "template" && l.template_id === suggestion.id) ||
+        l.name.trim().toLowerCase() === key,
+    );
+    return {
+      lifts: lifts.length,
+      sets,
+      minutes,
+      last: last
+        ? {
+            when: fmtAgo(last.finished_at),
+            volume: last.total_volume,
+            // Legacy imports carry bogus 1-min durations — say nothing under 5.
+            minutes: last.duration_minutes && last.duration_minutes >= 5 ? last.duration_minutes : null,
           }
-        }
-        if (!best && longestHold <= 0) continue;
-        rows.push({
-          name: exercise.name,
-          line:
-            longestHold > 0
-              ? formatHold(longestHold)
-              : best && best.weight > 0
-                ? `${best.weight} × ${best.reps}`
-                : `${best?.reps ?? 0} reps`,
-          when: fmtAgo(log.finished_at).toLowerCase(),
-        });
-        break; // newest occurrence only
-      }
-    }
-    return rows;
+        : null,
+    };
   }, [suggestion, templates, logs]);
 
   // One tap starts the named session pre-seeded; rest-day picks, still-loading
@@ -414,53 +411,45 @@ const Dashboard = () => {
               {dataReady ? suggestion.title : "Syncing…"}
             </h2>
 
-            {/* The pick's numbers to beat — last-time top sets, pre-loaded
-                (the #1-praised pattern: progressive overload without a
-                chart). Falls back to last-vs-previous deltas. */}
-            {(toBeat.length > 0 || deltas.length > 0) && (
-              <div className="mt-3 border-t border-background/10 pt-2">
-                {(toBeat.length > 0 ? toBeat : null)?.map((row) => (
-                  <div key={row.name} className="flex items-center justify-between gap-3 py-1">
-                    <span className="min-w-0 truncate text-sm font-medium capitalize text-background/90">
-                      {row.name}
-                    </span>
-                    <span className="shrink-0 text-sm font-semibold tabular-nums text-background/80">
-                      {row.line}
-                    </span>
+            {/* The session's shape — lifts · sets · ~minutes, and how the
+                last run of THIS workout went. What you're walking into. */}
+            {sessionShape && (
+              <div className="mt-3 border-t border-background/10 pt-3">
+                <div className="flex items-baseline gap-5">
+                  <div>
+                    <p className="stat-scoreboard text-[28px] leading-8 text-background">
+                      {sessionShape.lifts}
+                    </p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
+                      {sessionShape.lifts === 1 ? "lift" : "lifts"}
+                    </p>
                   </div>
-                ))}
-                {toBeat.length === 0 &&
-                  deltas.slice(0, 3).map((d) => (
-                    <div key={d.name} className="flex items-center justify-between gap-3 py-1">
-                      <span className="min-w-0 truncate text-sm font-medium text-background/90">
-                        {d.name}
-                      </span>
-                      <span className="shrink-0 text-sm tabular-nums text-background/70">
-                        {d.metric === "time"
-                          ? `${formatHold(d.prev[0])} → ${formatHold(d.last[0])}`
-                          : d.prev[0] <= 0 && d.last[0] <= 0
-                            ? `${d.prev[1]} → ${d.last[1]} reps`
-                            : `${d.prev[0]} × ${d.prev[1]} → ${d.last[0]} × ${d.last[1]}`}
-                        <span
-                          role="img"
-                          aria-label={
-                            d.direction === "up"
-                              ? "improved"
-                              : d.direction === "down"
-                                ? "lower"
-                                : "matched"
-                          }
-                          className={`ml-1.5 ${
-                            d.direction === "up"
-                              ? "text-[hsl(var(--primary-on-inverse))]"
-                              : "text-background/45"
-                          }`}
-                        >
-                          {d.direction === "up" ? "▲" : d.direction === "down" ? "▽" : "—"}
-                        </span>
-                      </span>
-                    </div>
-                  ))}
+                  <div>
+                    <p className="stat-scoreboard text-[28px] leading-8 text-background">
+                      {sessionShape.sets}
+                    </p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
+                      sets
+                    </p>
+                  </div>
+                  <div>
+                    <p className="stat-scoreboard text-[28px] leading-8 text-background">
+                      ~{sessionShape.minutes}
+                    </p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
+                      min
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-2.5 text-[13px] leading-5 text-background/65">
+                  {sessionShape.last
+                    ? `Last time · ${sessionShape.last.when.toLowerCase() === "today" ? "today" : `${sessionShape.last.when} ago`}${
+                        sessionShape.last.volume > 0
+                          ? ` · ${Math.round(sessionShape.last.volume).toLocaleString()} ${units} lifted`
+                          : ""
+                      }${sessionShape.last.minutes ? ` in ${sessionShape.last.minutes} min` : ""}`
+                    : "First time running this one."}
+                </p>
               </div>
             )}
 
@@ -492,6 +481,7 @@ const Dashboard = () => {
                 <span className="text-[13px] font-semibold text-background/85">
                   {recoveryLine.word}
                 </span>
+                <span className="text-[11px] text-background/45">· {recoveryLine.source}</span>
                 <ChevronsRight size={13} className="text-background/50" />
               </button>
             )}
@@ -507,14 +497,7 @@ const Dashboard = () => {
                 {ctaLabel}
                 <ChevronsRight size={16} />
               </button>
-              <button
-                type="button"
-                onClick={() => navigate("/workouts")}
-                aria-label="Choose a different workout"
-                className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-full border border-background/25 text-background/80 transition hover:bg-background/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              >
-                <ChevronDown size={17} />
-              </button>
+
             </div>
           </div>
         </div>
@@ -522,27 +505,51 @@ const Dashboard = () => {
 
       {/* ── Card index ── */}
       <nav aria-label="Dashboard index" className="mt-4 space-y-2.5 animate-reveal-up">
-        {/* PR strip — the three numbers a lifter recites. Raw best
+        {/* Last workout — one tap to the full summary (exercises, top sets,
+            PRs, notes) that the recap showed; it lives on the calendar day. */}
+        {lastLog && (
+          <Link
+            to={`/calendar?day=${localDayParam(lastLog.finished_at)}`}
+            className={ROW_CLASS}
+          >
+            <span className="min-w-0">
+              <RowLabel>Last workout</RowLabel>
+              <span className="mt-0.5 block truncate text-[12px] leading-4 text-fg-muted">
+                {lastLog.name} · {fmtAgo(lastLog.finished_at).toLowerCase() === "today" ? "today" : `${fmtAgo(lastLog.finished_at)} ago`}
+                {lastLog.completed_sets > 0 ? ` · ${lastLog.completed_sets} sets` : ""}
+                {lastLog.total_volume > 0
+                  ? ` · ${Math.round(lastLog.total_volume).toLocaleString()} ${units}`
+                  : ""}
+              </span>
+            </span>
+            <RowEnd />
+          </Link>
+        )}
+
+        {/* Personal records — the three numbers a lifter recites. Raw best
             weights; a record broken in the last 72h lights up. */}
         {records.length > 0 && (
           <Link
             to="/progress"
-            className="group block rounded-[13px] bg-card px-4 py-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] transition-[transform,box-shadow] duration-150 active:scale-[0.99] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="group block rounded-[13px] bg-card px-4 pb-4 pt-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] transition-[transform,box-shadow] duration-150 active:scale-[0.99] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-muted">
-                Records
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
+                Personal records
               </p>
               <ArrowRight
                 size={14}
                 className="shrink-0 text-primary transition-transform duration-200 group-hover:translate-x-0.5"
               />
             </div>
-            <div className="mt-3 grid grid-cols-3 divide-x divide-border">
+            <div className="mt-3 grid grid-cols-3 gap-2">
               {records.map((r) => (
-                <div key={r.label} className="min-w-0 px-4 first:pl-0 last:pr-3">
+                <div
+                  key={r.label}
+                  className="min-w-0 rounded-[10px] bg-foreground/[0.04] px-3 py-2.5"
+                >
                   <p
-                    className={`stat-scoreboard whitespace-nowrap text-[30px] leading-9 tabular-nums ${
+                    className={`stat-scoreboard whitespace-nowrap text-[26px] leading-8 tabular-nums ${
                       r.recent ? "text-primary" : "text-fg"
                     }`}
                   >
@@ -551,7 +558,7 @@ const Dashboard = () => {
                       {units}
                     </span>
                   </p>
-                  <p className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-muted">
+                  <p className="mt-0.5 line-clamp-2 text-[11px] font-medium leading-4 text-fg-soft first-letter:uppercase">
                     {r.label}
                   </p>
                 </div>
@@ -560,28 +567,52 @@ const Dashboard = () => {
           </Link>
         )}
 
-        {/* Consistency — week dots, never a daily streak. Doubles as the
-            mobile route into the calendar. */}
-        <Link
-          to="/calendar"
-          className="group block rounded-[13px] bg-card px-4 py-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] transition-[transform,box-shadow] duration-150 active:scale-[0.99] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        >
+        {/* Training this month — sessions, weekly streak, weight moved —
+            plus the one obvious way into the calendar. */}
+        <div className="rounded-[13px] bg-card px-4 pb-3 pt-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-muted">
-              This week
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
+              This month
             </p>
-            <span className="caption whitespace-nowrap">
-              {weekStats.sessions > 0
-                ? `${weekStats.sessions} session${weekStats.sessions === 1 ? "" : "s"}`
-                : ""}
-              {weeklyStreak > 1 ? ` · ${weeklyStreak}-week streak` : ""}
-              {weekStats.sessions === 0 && weeklyStreak <= 1 ? "Calendar" : ""}
+            {weeklyStreak > 1 && (
+              <span className="caption whitespace-nowrap">{weeklyStreak}-week streak</span>
+            )}
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
+              <p className="stat-scoreboard text-[26px] leading-8 tabular-nums text-fg">
+                {monthStats.count}
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">
+                {monthStats.count === 1 ? "session" : "sessions"}
+              </p>
+            </div>
+            <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
+              <p className="stat-scoreboard text-[26px] leading-8 tabular-nums text-fg">
+                {weekStats.sessions}
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">this week</p>
+            </div>
+            <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
+              <p className="stat-scoreboard whitespace-nowrap text-[26px] leading-8 tabular-nums text-fg">
+                {monthStats.volume >= 1000
+                  ? `${(monthStats.volume / 1000).toFixed(monthStats.volume >= 10_000 ? 0 : 1)}k`
+                  : monthStats.volume}
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">{units} lifted</p>
+            </div>
+          </div>
+          <Link
+            to="/calendar"
+            className="mt-2 flex min-h-11 items-center justify-between rounded-md text-sm font-semibold text-fg transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <span className="flex items-center gap-2">
+              <CalendarDays size={15} className="text-primary" />
+              Calendar
             </span>
-          </div>
-          <div className="mt-2.5">
-            <WeekBadgeRow workedDayIndices={weekStats.workedDayIndices} variant="surface" />
-          </div>
-        </Link>
+            <ArrowRight size={14} className="text-primary" />
+          </Link>
+        </div>
 
         {pendingCount > 0 && newestPending && (
           <Link to={`/workouts/review/${newestPending.id}`} className={ROW_CLASS}>
@@ -597,43 +628,16 @@ const Dashboard = () => {
           </Link>
         )}
 
-        {/* Sync plumbing is settings, not daily-return content — one quiet
-            disclosure. Apple Health is the only connection, so the whole
-            section is iOS-native only. */}
+        {/* Connections — a button that opens the sheet (Apple Health toggle
+            lives there). iOS-native only: the web has nothing to connect. */}
         {healthKitAvailable && (
           <button
             type="button"
-            onClick={() => setConnectionsOpen((v) => !v)}
-            aria-expanded={connectionsOpen}
-            className="flex min-h-11 w-full items-center justify-between rule-hairline px-1 pt-2 text-left"
+            onClick={() => setConnectionsOpen(true)}
+            className={ROW_CLASS}
           >
-            <span className="caption !text-fg-muted">Connections</span>
-            <ChevronDown
-              size={14}
-              className={`text-fg-muted transition-transform ${connectionsOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-        )}
-
-        {/* Native iOS only — the web build never shows Apple Health. Not
-            disabled while busy: the sync handler no-ops on re-entry, and a
-            disabled button would eat the 5-tap seed gesture. */}
-        {connectionsOpen && healthKitAvailable && (
-          <button type="button" onClick={handleHealthKitRow} className={ROW_CLASS}>
-            <RowLabel>Apple Health</RowLabel>
-            {healthKitConnected ? (
-              <RowEnd
-                value={hkBusy ? "Refreshing…" : "Connected"}
-                icon={
-                  <RefreshCw
-                    size={14}
-                    className={`text-fg-muted ${hkBusy ? "animate-spin" : ""}`}
-                  />
-                }
-              />
-            ) : (
-              <RowEnd value={hkBusy ? "Connecting…" : "Not connected"} />
-            )}
+            <RowLabel>Connections</RowLabel>
+            <RowEnd value={healthKitConnected ? "Apple Health on" : "None"} />
           </button>
         )}
       </nav>
@@ -645,6 +649,53 @@ const Dashboard = () => {
         freshness={freshness}
         targetMuscles={suggestion.muscles}
       />
+
+      <Drawer open={connectionsOpen} onOpenChange={setConnectionsOpen}>
+        <DrawerContent className="px-6 pb-8">
+          <p className="eyebrow mt-4 !text-primary">Connections</p>
+          <DrawerTitle className="heading-md mt-2 text-fg">Where your data comes from</DrawerTitle>
+
+          <label className={`${ROW_CLASS} mt-4 cursor-pointer`}>
+            <span className="min-w-0">
+              <RowLabel>Apple Health</RowLabel>
+              <span className="mt-0.5 block text-[12px] leading-4 text-fg-muted">
+                Workouts from your watch, overnight recovery vitals
+              </span>
+            </span>
+            <Switch
+              checked={healthKitConnected}
+              disabled={hkBusy || healthKitConnected}
+              onCheckedChange={(on) => {
+                if (on && !healthKitConnected) void handleHealthKitSync(true);
+              }}
+              aria-label="Connect Apple Health"
+            />
+          </label>
+          {healthKitConnected && (
+            <button
+              type="button"
+              onClick={handleHealthKitRow}
+              className={`${ROW_CLASS} mt-2`}
+            >
+              <RowLabel>Sync now</RowLabel>
+              <RowEnd
+                value={hkBusy ? "Syncing…" : ""}
+                icon={
+                  <RefreshCw
+                    size={14}
+                    className={`text-fg-muted ${hkBusy ? "animate-spin" : ""}`}
+                  />
+                }
+              />
+            </button>
+          )}
+          <p className="mt-3 text-[11px] leading-4 text-fg-muted">
+            {healthKitConnected
+              ? "Read-only. Turn it off any time in iOS Settings → Health → Data Access & Devices."
+              : "Any watch that writes to Apple Health — Apple Watch, Garmin, Whoop, Oura — flows in."}
+          </p>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 };
