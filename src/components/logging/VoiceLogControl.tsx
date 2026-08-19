@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { PluginListenerHandle } from "@capacitor/core";
 import { Mic, Undo2 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
@@ -32,6 +33,10 @@ type Props = {
   onUndo: () => void;
 };
 
+const SILENCE_STOP_MS = 1700; // pause after speech → auto-log
+const EMPTY_CANCEL_MS = 8000; // heard nothing at all → quiet cancel
+const HARD_CAP_MS = 30_000;
+
 type Phase =
   | { at: "idle" }
   | { at: "listening"; partial: string }
@@ -41,10 +46,14 @@ type Phase =
 
 export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) => {
   const [phase, setPhase] = useState<Phase>({ at: "idle" });
-  const holdingRef = useRef(false);
+  const activeRef = useRef(false);
   const listenerRef = useRef<PluginListenerHandle | null>(null);
   const dismissTimer = useRef<number>(0);
-  // The freshest exercises without re-binding pointer handlers every render.
+  const watchdog = useRef<number>(0);
+  const lastChangeAt = useRef(0);
+  const startedAt = useRef(0);
+  const lastTranscript = useRef("");
+  // The freshest exercises without re-binding handlers every render.
   const exercisesRef = useRef(exercises);
   exercisesRef.current = exercises;
 
@@ -52,6 +61,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     () => () => {
       listenerRef.current?.remove();
       window.clearTimeout(dismissTimer.current);
+      window.clearInterval(watchdog.current);
       void cancelListening().catch(() => {});
     },
     [],
@@ -59,14 +69,14 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
 
   if (!speechSupported()) return null;
 
-  const beginHold = async (): Promise<void> => {
-    if (holdingRef.current) return;
-    holdingRef.current = true;
+  const begin = async (): Promise<void> => {
+    if (activeRef.current) return;
+    activeRef.current = true;
     window.clearTimeout(dismissTimer.current);
     tapHaptic();
     const granted = await ensureSpeechPermissions();
     if (!granted) {
-      holdingRef.current = false;
+      activeRef.current = false;
       setPhase({ at: "idle" });
       toast({
         title: "Microphone is off",
@@ -75,27 +85,48 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
       });
       return;
     }
-    // The user may have released during the permission sheet.
-    if (!holdingRef.current) return;
+    if (!activeRef.current) return;
     setPhase({ at: "listening", partial: "" });
+    lastTranscript.current = "";
+    startedAt.current = Date.now();
+    lastChangeAt.current = Date.now();
     listenerRef.current?.remove();
     listenerRef.current = await onSpeechPartial((transcript) => {
+      if (transcript !== lastTranscript.current) {
+        lastTranscript.current = transcript;
+        lastChangeAt.current = Date.now();
+      }
       setPhase((current) =>
         current.at === "listening" ? { at: "listening", partial: transcript } : current,
       );
     });
+    // Hands-free endpoint: a pause after speech logs it; dead air cancels.
+    window.clearInterval(watchdog.current);
+    watchdog.current = window.setInterval(() => {
+      if (!activeRef.current) return;
+      const idle = Date.now() - lastChangeAt.current;
+      const total = Date.now() - startedAt.current;
+      const heard = lastTranscript.current.trim().length >= 3;
+      if ((heard && idle >= SILENCE_STOP_MS) || total >= HARD_CAP_MS) {
+        void finish();
+      } else if (!heard && total >= EMPTY_CANCEL_MS) {
+        cancel();
+      }
+    }, 250);
     try {
       await startListening(exercisesRef.current.map((e) => e.name).slice(0, 60));
     } catch {
-      holdingRef.current = false;
+      activeRef.current = false;
+      window.clearInterval(watchdog.current);
       setPhase({ at: "idle" });
       toast({ title: "Couldn't start listening", variant: "destructive" });
     }
   };
 
-  const endHold = async (): Promise<void> => {
-    if (!holdingRef.current) return;
-    holdingRef.current = false;
+  const finish = async (): Promise<void> => {
+    if (!activeRef.current) return;
+    activeRef.current = false;
+    window.clearInterval(watchdog.current);
     let transcript = "";
     try {
       transcript = (await stopListening()).transcript.trim();
@@ -135,9 +166,10 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     }
   };
 
-  const cancelHold = (): void => {
-    if (!holdingRef.current) return;
-    holdingRef.current = false;
+  const cancel = (): void => {
+    if (!activeRef.current) return;
+    activeRef.current = false;
+    window.clearInterval(watchdog.current);
     void cancelListening().catch(() => {});
     listenerRef.current?.remove();
     listenerRef.current = null;
@@ -151,7 +183,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
 
   const listening = phase.at === "listening";
 
-  return (
+  return createPortal(
     <>
       {/* Live transcript / result layer, above the pill */}
       {phase.at !== "idle" && (
@@ -162,6 +194,9 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
                 <p className="eyebrow !text-primary">Listening…</p>
                 <p className="mt-1.5 min-h-5 text-sm leading-5 text-fg">
                   {phase.partial || "Say it like you'd say it to a friend."}
+                </p>
+                <p className="mt-1 text-[11px] leading-4 text-fg-muted">
+                  Pausing logs it automatically.
                 </p>
               </>
             )}
@@ -213,15 +248,9 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
       <div className="fixed inset-x-0 bottom-[calc(4rem+var(--safe-bottom)+0.75rem)] z-40 flex justify-center">
         <button
           type="button"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            void beginHold();
-          }}
-          onPointerUp={() => void endHold()}
-          onPointerLeave={cancelHold}
-          onPointerCancel={cancelHold}
+          onClick={() => (activeRef.current ? void finish() : void begin())}
           onContextMenu={(e) => e.preventDefault()}
-          aria-label="Hold to log by voice"
+          aria-label={listening ? "Stop and log" : "Log by voice"}
           className={cn(
             "inline-flex min-h-12 select-none items-center gap-2.5 rounded-full px-6 text-[14px] font-semibold shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition-[transform,background-color] duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             listening
@@ -230,9 +259,10 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
           )}
         >
           <Mic size={16} className={listening ? "animate-pulse" : "text-primary"} />
-          {listening ? "Release to log" : "Hold to speak"}
+          {listening ? "Listening — tap when done" : "Tap to speak"}
         </button>
       </div>
-    </>
+    </>,
+    document.body,
   );
 };

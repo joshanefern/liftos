@@ -12,7 +12,7 @@ import { useWorkoutLogs, type WorkoutLog } from "@/hooks/useWorkoutLogs";
 import { formatHold } from "@/lib/exerciseTracking";
 import { getLogsByDay, getStreak } from "@/lib/workoutStats";
 import { sessionToTemplateExercises } from "@/lib/sessionToTemplate";
-import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { TEMPLATE_LIMIT_ERROR, useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
 import { toast } from "@/components/ui/use-toast";
 import { ChevronLeft, ChevronRight, Dumbbell } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -129,8 +129,12 @@ const Calendar = () => {
       await saveTemplate({ id: null, name: log.name, exercises });
       setSavedLogIds((current) => new Set(current).add(log.id));
       toast({ title: `Saved "${log.name}" to your workouts` });
-    } catch {
-      toast({ title: "Could not save workout", variant: "destructive" });
+    } catch (err) {
+      toast(
+        err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR
+          ? { title: "Workout limit reached", description: "You have 7 saved workouts — the max. Delete one in Workouts to make room." }
+          : { title: "Could not save workout", variant: "destructive" },
+      );
     }
   };
   const isMobile = useIsMobile();

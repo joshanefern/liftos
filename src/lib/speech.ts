@@ -23,9 +23,12 @@ type SpeechPluginIface = {
 
 const Speech = registerPlugin<SpeechPluginIface>("Speech");
 
-/** Voice logging is iOS-native only (SFSpeechRecognizer). */
+/** Voice logging is iOS-native only (SFSpeechRecognizer). The DEV escape
+    hatch renders the pill in a browser so layout can be QA'd without a
+    simulator — STT itself still needs the device. */
 export const speechSupported = (): boolean =>
-  Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
+  (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios") ||
+  (import.meta.env.DEV && window.localStorage.getItem("liftos-voice-dev") === "1");
 
 let permissionsGranted: boolean | null = null;
 

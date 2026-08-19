@@ -25,7 +25,7 @@ import type { VoiceApplyResult } from "@/lib/voiceApply";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useWorkoutLogs, type WorkoutLog } from "@/hooks/useWorkoutLogs";
-import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { TEMPLATE_LIMIT_ERROR, useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
 import {
   exerciseListChanged,
   sessionToTemplateExercises,
@@ -290,9 +290,13 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       toast({
         title: mode === "update" ? `Updated "${session.name}"` : `Saved "${session.name}" to your workouts`,
       });
-    } catch {
+    } catch (err) {
       setTemplateSaveState("idle");
-      toast({ title: "Could not save workout", variant: "destructive" });
+      toast(
+        err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR
+          ? { title: "Workout limit reached", description: "You have 7 saved workouts — the max. Delete one in Workouts to make room." }
+          : { title: "Could not save workout", variant: "destructive" },
+      );
     }
   };
 
@@ -1183,7 +1187,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           <div className="rounded-lg border border-border bg-card p-4">
             {exercises.length === 0 && (
               <p className="mb-2 text-sm text-fg-soft">
-                Nothing planned — add an exercise, or hold the mic and say what
+                Nothing planned — add an exercise, or tap the mic and say what
                 you did.
               </p>
             )}

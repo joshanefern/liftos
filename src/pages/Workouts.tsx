@@ -5,13 +5,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CTAButton } from "@/components/GoldButton";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PendingReviewsCard } from "@/components/review/PendingReviewsCard";
 import type { WorkoutExercise } from "@/data/liftosMock";
 import { starterPrograms, type StarterProgram } from "@/data/starterPrograms";
-import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { TEMPLATE_LIMIT_ERROR, MAX_TEMPLATES, useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
 import {
   ACTIVE_WORKOUT_STORAGE_KEY,
   buildBlankSession,
@@ -208,13 +218,24 @@ const Workouts = () => {
     );
   };
 
+  // One session at a time: starting anything while a session is live would
+  // silently erase its progress. The dialog routes back into the live one.
+  const [blockedStart, setBlockedStart] = useState(false);
+  const guardActive = (): boolean => {
+    if (!activeSeed) return false;
+    setBlockedStart(true);
+    return true;
+  };
+
   const startWorkout = (template: { id?: string; name: string; exercises: WorkoutExercise[] }) => {
+    if (guardActive()) return;
     persistWithRecovery(buildSessionFromTemplate(template));
     navigate("/workouts/active");
   };
 
   // Starter programs start without a templateId — see buildSessionFromStarter.
   const startProgram = (program: StarterProgram) => {
+    if (guardActive()) return;
     persistWithRecovery(buildSessionFromStarter(program));
     navigate("/workouts/active");
   };
@@ -226,8 +247,12 @@ const Workouts = () => {
       await save({ id: null, name: program.name, exercises: program.exercises });
       setSavedProgramIds((current) => new Set(current).add(program.id));
       toast({ title: `Saved "${program.name}" to your workouts` });
-    } catch {
-      toast({ title: "Could not save program", variant: "destructive" });
+    } catch (err) {
+      toast(
+        err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR
+          ? { title: "Workout limit reached", description: "You have 7 saved workouts — the max. Delete one in Workouts to make room." }
+          : { title: "Could not save program", variant: "destructive" },
+      );
     } finally {
       setSavingProgramId(null);
     }
@@ -273,8 +298,12 @@ const Workouts = () => {
       await save({ id: editingWorkoutId, name: workoutName.trim(), exercises: exercisesToSave });
       setEditingWorkoutId(null);
       setBuilderOpen(false);
-    } catch {
-      toast({ title: "Could not save workout", variant: "destructive" });
+    } catch (err) {
+      toast(
+        err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR
+          ? { title: "Workout limit reached", description: "You have 7 saved workouts — the max. Delete one in Workouts to make room." }
+          : { title: "Could not save workout", variant: "destructive" },
+      );
     } finally {
       setSaving(false);
     }
@@ -411,6 +440,7 @@ const Workouts = () => {
               whether to keep it as a saved workout. */}
           <CTAButton
             onClick={() => {
+              if (guardActive()) return;
               persistWithRecovery(buildBlankSession());
               navigate("/workouts/active");
             }}
@@ -507,7 +537,7 @@ const Workouts = () => {
                   program={program}
                   saved={savedProgramIds.has(program.id)}
                   saving={savingProgramId === program.id}
-                  saveDisabled={savingProgramId !== null || savedProgramIds.has(program.id)}
+                  saveDisabled={savingProgramId !== null || savedProgramIds.has(program.id) || templates.length >= MAX_TEMPLATES}
                   onSave={() => saveProgramAsTemplate(program)}
                   onStart={() => startProgram(program)}
                 />
@@ -530,7 +560,7 @@ const Workouts = () => {
                 program={program}
                 saved={savedProgramIds.has(program.id)}
                 saving={savingProgramId === program.id}
-                saveDisabled={savingProgramId !== null || savedProgramIds.has(program.id)}
+                saveDisabled={savingProgramId !== null || savedProgramIds.has(program.id) || templates.length >= MAX_TEMPLATES}
                 onSave={() => saveProgramAsTemplate(program)}
                 onStart={() => startProgram(program)}
               />
@@ -541,6 +571,33 @@ const Workouts = () => {
 
       {/* ── Builder — a name, exercise rows, one button. Blank targets mean
           "decide while training"; nothing here needs explaining. ── */}
+      {/* Already mid-workout — block the new start, offer the way back. */}
+      <AlertDialog open={blockedStart} onOpenChange={setBlockedStart}>
+        <AlertDialogContent className="w-[calc(100%-2.5rem)] max-w-sm rounded-[18px] border-border bg-card p-6 text-fg">
+          <AlertDialogHeader className="space-y-2 text-left sm:text-left">
+            <AlertDialogTitle className="text-[20px] font-semibold tracking-[-0.01em] text-fg">
+              A workout is already running
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-[14px] leading-5 text-fg-soft">
+              {activeSeed?.name ? `“${activeSeed.name}” is live.` : "Your session is live."}{" "}
+              Finish or discard it before starting another — its progress would
+              be lost otherwise.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 flex-col gap-2 sm:flex-col sm:space-x-0">
+            <AlertDialogAction
+              onClick={() => navigate("/workouts/active")}
+              className="h-12 w-full rounded-full border-0 bg-foreground text-[14.5px] font-semibold text-background hover:bg-foreground/90"
+            >
+              Back to workout
+            </AlertDialogAction>
+            <AlertDialogCancel className="mt-0 h-12 w-full rounded-full border border-border bg-transparent text-[14.5px] font-semibold text-fg-soft">
+              Cancel
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Builder. Phones get a full-height bottom sheet (keyboard-safe,
           anchored to the bottom edge — a centered dialog floated mid-screen
           and collapsed under the keyboard); desktop keeps the dialog. */}

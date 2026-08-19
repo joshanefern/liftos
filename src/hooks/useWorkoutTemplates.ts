@@ -1,4 +1,9 @@
 import { supabase } from "@/lib/supabase";
+
+/** Saved-workout cap. Quick-start sessions and the calendar log are
+    unlimited — only the SAVED library is bounded. */
+export const MAX_TEMPLATES = 7;
+export const TEMPLATE_LIMIT_ERROR = "TEMPLATE_LIMIT";
 import { useUser } from "@/context/UserContext";
 import type { WorkoutExercise } from "@/data/liftosMock";
 import { createContext, createElement, useCallback, useContext, useEffect, useState } from "react";
@@ -46,6 +51,15 @@ export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNo
   const save = async (template: { id: string | null; name: string; exercises: WorkoutExercise[] }) => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (!authUser) return;
+    if (!template.id) {
+      // Hard cap on SAVED workouts — a library of 100 half-workouts is
+      // noise, and every list in the app assumes a scannable handful.
+      // Updates are always allowed; only net-new saves count.
+      const { count } = await supabase
+        .from("workout_templates")
+        .select("id", { count: "exact", head: true });
+      if ((count ?? 0) >= MAX_TEMPLATES) throw new Error(TEMPLATE_LIMIT_ERROR);
+    }
     if (template.id) {
       const { error } = await supabase
         .from("workout_templates")
