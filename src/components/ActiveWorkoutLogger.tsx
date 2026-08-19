@@ -971,10 +971,10 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     type="button"
                     onClick={() => setAllSetsDone(exercise.id, !allDone)}
                     className={cn(
-                      "relative inline-flex shrink-0 items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition after:absolute after:-inset-1 after:content-[''] focus:outline-none focus:ring-2 focus:ring-primary/40",
+                      "relative inline-flex shrink-0 items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition after:absolute after:-inset-1 after:content-[''] focus:outline-none focus:ring-2 focus:ring-ring/40",
                       allDone
-                        ? "border border-primary/50 bg-primary/10 text-primary"
-                        : "border border-border text-fg-muted hover:border-primary/40 hover:text-fg",
+                        ? "border border-foreground bg-foreground text-background"
+                        : "border border-border text-fg-muted hover:border-fg-soft hover:text-fg",
                     )}
                   >
                     <Check size={14} />
@@ -1125,26 +1125,28 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       {/* Discard confirmation — Finish with zero completed sets routes here
           too. No "save anyway": an empty log has no value. */}
       <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
-        <AlertDialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-lg border-border bg-card">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {stats.completedSets === 0
-                ? "Nothing logged yet"
-                : "Discard this session?"}
+        {/* Portals render outside ForceDarkScope — the `dark` class keeps
+            the sheet on the scoreboard palette instead of a white slab. */}
+        <AlertDialogContent className="dark w-[calc(100%-2.5rem)] max-w-sm rounded-[18px] border-border bg-card p-6 text-fg">
+          <AlertDialogHeader className="space-y-2 text-left sm:text-left">
+            <AlertDialogTitle className="text-[20px] font-semibold tracking-[-0.01em] text-fg">
+              {stats.completedSets === 0 ? "Nothing logged yet" : "Discard this session?"}
             </AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="text-[14px] leading-5 text-fg-soft">
               {stats.completedSets === 0
-                ? "No sets were completed, so there's nothing to save. Discard the session, or keep logging."
+                ? "No sets checked off, so there's nothing to save."
                 : `${stats.completedSets} completed ${
                     stats.completedSets === 1 ? "set" : "sets"
-                  } will be lost — nothing gets saved to your history.`}
+                  } will be lost.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep logging</AlertDialogCancel>
+          <AlertDialogFooter className="mt-5 flex-col gap-2 sm:flex-col sm:space-x-0">
+            <AlertDialogCancel className="mt-0 h-12 w-full rounded-full border-0 bg-foreground text-[14.5px] font-semibold text-background hover:bg-foreground/90">
+              Keep logging
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDiscard}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="h-12 w-full rounded-full border border-border bg-transparent text-[14.5px] font-semibold text-destructive hover:bg-destructive/10"
             >
               Discard session
             </AlertDialogAction>

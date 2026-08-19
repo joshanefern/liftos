@@ -154,7 +154,6 @@ export const SetInputRow = ({
       <div
         className={cn(
           "grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1.2fr)_36px] items-center gap-2 rounded-[0.875rem] py-0.5 transition",
-          done && (isWarmup ? "bg-secondary/60" : "bg-primary/[0.06]"),
         )}
       >
         {isWarmup ? (
@@ -165,9 +164,7 @@ export const SetInputRow = ({
             W
           </span>
         ) : (
-          <span className={cn("text-center text-xs", done ? "text-primary" : "text-fg-muted")}>
-            {idx + 1}
-          </span>
+          <span className="text-center text-xs text-fg-muted">{idx + 1}</span>
         )}
 
         {/* Effort: reps, or hold time ("90" reads as seconds → 1:30) */}
