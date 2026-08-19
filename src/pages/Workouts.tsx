@@ -6,6 +6,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CTAButton } from "@/components/GoldButton";
+import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { PendingReviewsCard } from "@/components/review/PendingReviewsCard";
 import type { WorkoutExercise } from "@/data/liftosMock";
 import { starterPrograms, type StarterProgram } from "@/data/starterPrograms";
@@ -19,7 +21,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { useReadiness } from "@/hooks/useReadiness";
 import { trimSessionForRecovery } from "@/lib/recovery";
-import { Check, ChevronDown, ChevronsRight, Dumbbell, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, ChevronsRight, Dumbbell, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -125,6 +127,7 @@ const Workouts = () => {
   const navigate = useNavigate();
   const { templates, loading, save, remove } = useWorkoutTemplates();
   const readiness = useReadiness();
+  const isMobile = useIsMobile();
   const [builderOpen, setBuilderOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
@@ -275,6 +278,93 @@ const Workouts = () => {
       setSaving(false);
     }
   };
+
+  // The builder's form, shared by the phone sheet and the desktop dialog.
+  const builderBody = (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="px-5 pb-1 md:px-6">
+        <input
+          autoFocus
+          value={workoutName}
+          onChange={(event) => setWorkoutName(event.target.value)}
+          placeholder="Workout name — Push Day, Legs…"
+          aria-label="Workout name"
+          className="mt-1 h-12 w-full rounded-lg border border-border bg-card px-3 text-[15px] font-medium text-fg outline-none transition placeholder:font-normal focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+        />
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 md:px-6">
+        <div className="space-y-4">
+          {exercises.map((exercise, index) => (
+            <div key={exercise.id} className="rule-hairline pt-3 first:border-t-0 first:pt-0">
+              <div className="flex items-center gap-2">
+                <input
+                  value={exercise.name}
+                  onChange={(event) => updateExercise(exercise.id, "name", event.target.value)}
+                  placeholder={index === 0 ? "Exercise — Bench Press, Squat…" : "Exercise"}
+                  aria-label={`Exercise ${index + 1} name`}
+                  className="h-11 w-full min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-sm font-medium text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                />
+                {exercises.length > 1 && (
+                  <button
+                    type="button"
+                    aria-label="Remove exercise"
+                    onClick={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] text-fg-muted transition hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {(
+                  [
+                    ["sets", "Sets", "3", "numeric", integerInput],
+                    ["reps", "Reps", "—", "numeric", integerInput],
+                    ["weight", "Weight", "—", "decimal", decimalInput],
+                  ] as const
+                ).map(([key, label, hint, mode, sanitize]) => (
+                  <label key={key} className="block min-w-0">
+                    <span className="mb-1 block text-[10px] uppercase tracking-widest text-fg-muted">
+                      {label}
+                    </span>
+                    <input
+                      type="text"
+                      inputMode={mode}
+                      value={exercise[key]}
+                      placeholder={hint}
+                      onChange={(event) => updateExercise(exercise.id, key, sanitize(event.target.value))}
+                      className="h-11 w-full rounded-lg border border-border bg-card px-3 text-center text-sm tabular-nums text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={addExercise}
+            className="flex min-h-11 w-full items-center gap-2 rule-hairline pt-3 text-sm font-medium text-fg-muted transition hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            <Plus size={15} />
+            Add exercise
+          </button>
+          <p className="caption !text-fg-faint">
+            Leave reps and weight blank to decide while training.
+          </p>
+        </div>
+      </div>
+
+      {/* Save pinned to the sheet's bottom edge, clear of the home indicator. */}
+      <div className="border-t border-border px-5 pb-[calc(var(--safe-bottom)+1rem)] pt-3 md:px-6 md:pb-4">
+        <CTAButton onClick={saveWorkout} disabled={!canSave || saving} fullWidth>
+          <Check size={15} />
+          {saving ? "Saving…" : "Save workout"}
+        </CTAButton>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
@@ -437,99 +527,51 @@ const Workouts = () => {
 
       {/* ── Builder — a name, exercise rows, one button. Blank targets mean
           "decide while training"; nothing here needs explaining. ── */}
-      <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
-        <DialogContent className="grid h-[min(85dvh,680px)] max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[560px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[18px] border border-border bg-background p-0 sm:w-[calc(100vw-2rem)]">
-          <div className="px-5 pb-1 pt-6 md:px-6">
-            <DialogHeader className="pr-9">
-              <DialogTitle className="text-lg">
+      {/* Builder. Phones get a full-height bottom sheet (keyboard-safe,
+          anchored to the bottom edge — a centered dialog floated mid-screen
+          and collapsed under the keyboard); desktop keeps the dialog. */}
+      {isMobile ? (
+        <Drawer
+          open={builderOpen}
+          onOpenChange={setBuilderOpen}
+          shouldScaleBackground={false}
+          repositionInputs={false}
+        >
+          <DrawerContent className="flex h-[calc(100dvh-var(--safe-top))] max-h-[calc(100dvh-var(--safe-top))] flex-col rounded-t-[22px] border-0 bg-background p-0">
+            <div className="flex items-center justify-between px-5 pb-2 pt-5">
+              <DrawerTitle className="text-[17px] font-semibold text-fg">
                 {editingWorkoutId ? "Edit workout" : "New workout"}
-              </DialogTitle>
-              <DialogDescription className="sr-only">
-                Name the workout and list its exercises. Leave reps and weight
-                blank to decide while training.
-              </DialogDescription>
-            </DialogHeader>
-            <input
-              autoFocus
-              value={workoutName}
-              onChange={(event) => setWorkoutName(event.target.value)}
-              placeholder="Workout name — Push Day, Legs…"
-              aria-label="Workout name"
-              className="mt-3 h-12 w-full rounded-lg border border-border bg-card px-3 text-[15px] font-medium text-fg outline-none transition placeholder:font-normal focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-
-          <div className="min-h-0 overflow-y-auto overscroll-contain px-5 py-4 md:px-6">
-            <div className="space-y-4">
-              {exercises.map((exercise, index) => (
-                <div key={exercise.id} className="rule-hairline pt-3 first:border-t-0 first:pt-0">
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={exercise.name}
-                      onChange={(event) => updateExercise(exercise.id, "name", event.target.value)}
-                      placeholder={index === 0 ? "Exercise — Bench Press, Squat…" : "Exercise"}
-                      aria-label={`Exercise ${index + 1} name`}
-                      className="h-11 w-full min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-sm font-medium text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
-                    />
-                    {exercises.length > 1 && (
-                      <button
-                        type="button"
-                        aria-label="Remove exercise"
-                        onClick={() => setExercises((current) => current.filter((item) => item.id !== exercise.id))}
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] text-fg-muted transition hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    {(
-                      [
-                        ["sets", "Sets", "3", "numeric", integerInput],
-                        ["reps", "Reps", "—", "numeric", integerInput],
-                        ["weight", "Weight", "—", "decimal", decimalInput],
-                      ] as const
-                    ).map(([key, label, hint, mode, sanitize]) => (
-                      <label key={key} className="block min-w-0">
-                        <span className="mb-1 block text-[10px] uppercase tracking-widest text-fg-muted">
-                          {label}
-                        </span>
-                        <input
-                          type="text"
-                          inputMode={mode}
-                          value={exercise[key]}
-                          placeholder={hint}
-                          onChange={(event) => updateExercise(exercise.id, key, sanitize(event.target.value))}
-                          className="h-11 w-full rounded-lg border border-border bg-card px-3 text-center text-sm tabular-nums text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
+              </DrawerTitle>
               <button
                 type="button"
-                onClick={addExercise}
-                className="flex min-h-11 w-full items-center gap-2 rule-hairline pt-3 text-sm font-medium text-fg-muted transition hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                onClick={() => setBuilderOpen(false)}
+                aria-label="Close"
+                className="relative -mr-2 inline-flex h-10 w-10 items-center justify-center rounded-full text-fg-muted transition hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
-                <Plus size={15} />
-                Add exercise
+                <X size={18} />
               </button>
-              <p className="caption !text-fg-faint">
-                Leave reps and weight blank to decide while training.
-              </p>
             </div>
-          </div>
-
-          <div className="border-t border-border px-5 py-4 md:px-6">
-            <CTAButton onClick={saveWorkout} disabled={!canSave || saving} fullWidth>
-              <Check size={15} />
-              {saving ? "Saving…" : "Save workout"}
-            </CTAButton>
-          </div>
-        </DialogContent>
-      </Dialog>
+            {builderBody}
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
+          <DialogContent className="grid h-[min(85dvh,680px)] max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[560px] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-[18px] border border-border bg-background p-0 sm:w-[calc(100vw-2rem)]">
+            <div className="px-5 pb-1 pt-6 md:px-6">
+              <DialogHeader className="pr-9">
+                <DialogTitle className="text-lg">
+                  {editingWorkoutId ? "Edit workout" : "New workout"}
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Name the workout and list its exercises. Leave reps and weight
+                  blank to decide while training.
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+            {builderBody}
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

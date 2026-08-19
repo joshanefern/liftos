@@ -31,7 +31,7 @@ import { RecoverySheet } from "@/components/home/RecoverySheet";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { Switch } from "@/components/ui/switch";
 import type { ActiveSession } from "@/pages/ActiveWorkout";
-import { ArrowRight, CalendarDays, ChevronsRight, RefreshCw } from "lucide-react";
+import { CalendarDays, ChevronsRight, RefreshCw } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -66,15 +66,27 @@ const RowLabel = ({ children }: { children: ReactNode }) => (
   <span className="text-sm font-semibold text-fg">{children}</span>
 );
 
-const RowEnd = ({ value, icon }: { value?: ReactNode; icon?: ReactNode }) => (
+/* The tappable affordance on every card — a small filled pill with a verb,
+   not a lone arrow glyph. Purely visual (the whole card is the link). */
+const OpenPill = ({ label = "Open" }: { label?: string }) => (
+  <span className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-primary px-3 text-[12px] font-semibold text-primary-foreground">
+    {label}
+    <ChevronsRight size={13} />
+  </span>
+);
+
+const RowEnd = ({
+  value,
+  icon,
+  label,
+}: {
+  value?: ReactNode;
+  icon?: ReactNode;
+  label?: string;
+}) => (
   <span className="flex shrink-0 items-center gap-3">
     {value != null && <span className="caption whitespace-nowrap">{value}</span>}
-    {icon ?? (
-      <ArrowRight
-        size={14}
-        className="text-primary transition-transform duration-200 group-hover:translate-x-0.5"
-      />
-    )}
+    {icon ?? <OpenPill label={label} />}
   </span>
 );
 
@@ -297,11 +309,10 @@ const Dashboard = () => {
   const sentence =
     dataReady && readiness?.state === "run_down" ? readiness.summary : null;
 
-  const ctaLabel = activeSeed
-    ? "Resume workout"
-    : dataReady
-      ? suggestion.ctaLabel
-      : "Start a workout";
+  // The banner owns "Resume"; the hero CTA always reads as the pick. (It
+  // still routes into the live session when one exists — see
+  // handleSuggestionStart — so a seed is never silently overwritten.)
+  const ctaLabel = dataReady ? suggestion.ctaLabel : "Start a workout";
 
   const [connectionsOpen, setConnectionsOpen] = useState(false);
 
@@ -522,7 +533,7 @@ const Dashboard = () => {
                   : ""}
               </span>
             </span>
-            <RowEnd />
+            <RowEnd label="View" />
           </Link>
         )}
 
@@ -537,10 +548,7 @@ const Dashboard = () => {
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
                 Personal records
               </p>
-              <ArrowRight
-                size={14}
-                className="shrink-0 text-primary transition-transform duration-200 group-hover:translate-x-0.5"
-              />
+              <OpenPill label="All" />
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {records.map((r) => (
@@ -610,7 +618,7 @@ const Dashboard = () => {
               <CalendarDays size={15} className="text-primary" />
               Calendar
             </span>
-            <ArrowRight size={14} className="text-primary" />
+            <OpenPill />
           </Link>
         </div>
 
@@ -637,7 +645,7 @@ const Dashboard = () => {
             className={ROW_CLASS}
           >
             <RowLabel>Connections</RowLabel>
-            <RowEnd value={healthKitConnected ? "Apple Health on" : "None"} />
+            <RowEnd value={healthKitConnected ? "Apple Health on" : "None"} label="Manage" />
           </button>
         )}
       </nav>
