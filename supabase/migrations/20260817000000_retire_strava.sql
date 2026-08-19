@@ -1,0 +1,21 @@
+-- ============================================================================
+-- Retire the Strava integration.
+--
+-- Strava moved API access behind a paid subscription in 2026; the app's
+-- "LiftOS Dev" API application was deactivated and every Strava call now
+-- returns "Application / Status / Inactive". Workout capture is HealthKit
+-- (already the primary path since 2026-08-09) and posting is the native
+-- share sheet, so the whole Strava surface is removed.
+--
+--   - wearable_integrations is DROPPED. It only ever held Strava OAuth tokens
+--     (encrypted); dead credentials should not sit in prod.
+--   - captured_sessions rows imported from Strava are KEPT — they are the
+--     user's own reviewed/pending sessions and stay valid history. The
+--     provider CHECK keeps 'strava' so those rows remain readable, but no
+--     code path inserts new ones.
+--   - profiles.wearable_connected is left in place (nothing reads it any
+--     more; a follow-up baseline can drop it once the client is confirmed
+--     not to select it).
+-- ============================================================================
+
+DROP TABLE IF EXISTS wearable_integrations;

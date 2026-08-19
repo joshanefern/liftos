@@ -1,5 +1,4 @@
 import AuthLayout from "@/pages/auth/AuthLayout";
-import { ConnectStravaButton } from "@/components/ConnectStravaButton";
 import { CTAButton } from "@/components/GoldButton";
 import { connectHealthKit, healthKitSupported } from "@/lib/healthkit";
 import { useUser } from "@/context/UserContext";
@@ -56,8 +55,11 @@ const Onboarding = () => {
     split: "",
     units: "",
   });
-  const totalSteps = steps.length + 1; // last slot is the optional wearable step
-  const onWearableStep = index === steps.length;
+  // The optional wearable step only exists on iOS — Apple Health is the whole
+  // capture story; the web has nothing to connect.
+  const hasWearableStep = healthKitSupported();
+  const totalSteps = steps.length + (hasWearableStep ? 1 : 0);
+  const onWearableStep = hasWearableStep && index === steps.length;
   const step = onWearableStep ? null : steps[index];
   const progress = useMemo(
     () => Math.round(((index + 1) / totalSteps) * 100),
@@ -137,12 +139,12 @@ const Onboarding = () => {
       {onWearableStep ? (
         <div className="space-y-4">
           <p className="body-sm text-fg-soft">
-            {healthKitSupported()
-              ? "Wear your watch, lift, and confirm later — we pre-fill your review drafts from Apple Health or Strava."
-              : "Strava pulls in Apple Watch, Garmin, Whoop and more — we pre-fill your review drafts, you just confirm."}
+            Wear your watch, lift, and confirm later — Apple Health pre-fills your review
+            drafts with duration and heart rate; you just confirm.
           </p>
-          {/* On iOS, Apple Health is the primary path — no account, no OAuth. */}
-          {healthKitSupported() && (
+          {/* Apple Health — no account, no OAuth. Any watch that writes to
+              Health (Apple Watch, Garmin, Whoop, Oura…) flows through it. */}
+          {(
             <button
               type="button"
               disabled={hkConnecting}
@@ -175,15 +177,6 @@ const Onboarding = () => {
               {hkConnecting ? "Connecting…" : "Connect Apple Health and finish"}
             </button>
           )}
-          <ConnectStravaButton
-            state="onboarding"
-            label="Connect Strava and finish"
-            className={
-              healthKitSupported()
-                ? "inline-flex w-full min-h-12 items-center justify-center gap-2.5 rounded-[14px] border border-border px-5 py-[15px] text-[14.5px] font-semibold text-fg transition-[opacity,transform] duration-150 hover:border-primary/40 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-ring/40"
-                : "inline-flex w-full min-h-12 items-center justify-center gap-2.5 rounded-[14px] bg-foreground px-5 py-[15px] text-[14.5px] font-semibold text-background transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-ring/40"
-            }
-          />
         </div>
       ) : (
       <div className="space-y-2.5">
@@ -230,8 +223,8 @@ const Onboarding = () => {
           Back
         </button>
         {onWearableStep ? (
-          /* Connect Strava (above) is this step's one CTA — skipping is the
-             quiet path out. */
+          /* Connect Apple Health (above) is this step's one CTA — skipping is
+             the quiet path out. */
           <button
             type="button"
             onClick={async () => {
@@ -249,11 +242,14 @@ const Onboarding = () => {
             disabled={!stepHasSelection}
             onClick={async () => {
               if (index === steps.length - 1) {
-                // Finished the multi-choice steps — persist now so the wearable
-                // step's "Connect Strava" can redirect away safely with the
-                // profile already saved.
+                // Finished the multi-choice steps — persist now. On iOS the
+                // wearable step follows; on the web this is the finish line.
                 const ok = await persistProfile();
                 if (!ok) return;
+                if (!hasWearableStep) {
+                  navigate("/dashboard", { state: { firstTime: true } });
+                  return;
+                }
                 setIndex((value) => value + 1);
                 return;
               }

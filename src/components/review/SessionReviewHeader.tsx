@@ -41,8 +41,8 @@ export const SessionReviewHeader = ({
   unitsLabel,
 }: Props) => {
   const sourceLabel = activityType
-    ? `via Strava · ${activityType}`
-    : "via Strava";
+    ? `via Apple Health · ${activityType}`
+    : "via Apple Health";
 
   return (
     <div className="rule-heavy pt-3 animate-reveal-up">

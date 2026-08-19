@@ -29,8 +29,9 @@ const Privacy = () => (
                 and reps you log or confirm in the app.
               </li>
               <li>
-                <span className="text-fg font-medium">Wearable activity</span> — if you connect Strava,
-                the activities LiftOS fetches so it can turn them into reviewable sessions.
+                <span className="text-fg font-medium">Wearable activity</span> — if you connect Apple
+                Health on iOS, the workouts and overnight metrics (heart rate, HRV, sleep) LiftOS
+                reads so it can turn them into reviewable sessions and a recovery readout.
               </li>
             </ul>
           </>
@@ -45,8 +46,9 @@ const Privacy = () => (
               means your records are only readable by your own signed-in account.
             </p>
             <p>
-              Strava access tokens are stored server-side, encrypted, and are never exposed to the
-              browser or to other users. They are used solely to fetch your own activities.
+              Apple Health data is read on your device and only the workout summaries you choose to
+              review are stored in your account. Overnight recovery metrics are processed on-device
+              and never leave your phone.
             </p>
           </>
         ),
@@ -64,17 +66,17 @@ const Privacy = () => (
         ),
       },
       {
-        title: "Strava integration",
+        title: "Apple Health integration",
         body: (
           <>
             <p>
-              The Strava connection is read-only: LiftOS fetches your activities so you can confirm
-              them as workouts. Your Strava data is used only within your own account, is never
-              shared with third parties, and is handled in line with the Strava API Agreement.
+              The Apple Health connection is read-only: LiftOS reads your workouts so you can
+              confirm them as sessions, and your overnight vitals to compute recovery. Nothing is
+              written back to Health, and nothing leaves your account.
             </p>
             <p>
-              You can disconnect at any time from Strava&apos;s settings (revoking LiftOS&apos;s
-              access) or by contacting us — either way we stop fetching immediately.
+              You can revoke access at any time in iOS Settings → Health → Data Access &amp;
+              Devices → LiftOS — reading stops immediately.
             </p>
           </>
         ),

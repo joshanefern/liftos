@@ -1,5 +1,8 @@
 import type { ExerciseKind } from "@/data/liftosMock";
 
+/** "strava" survives only for rows imported before the integration was
+    retired (Strava's API went subscriber-only in 2026); new captures are
+    HealthKit-only. */
 export type CaptureProvider = "strava" | "healthkit";
 
 export type HRSample = {

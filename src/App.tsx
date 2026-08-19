@@ -7,7 +7,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { createContext, lazy, Suspense, useContext, useState } from "react";
 import { UserProvider } from "@/context/UserContext";
 import { HealthKitAutoSync } from "@/hooks/useHealthKitAutoSync";
-import { StravaAutoSync } from "@/hooks/useStravaAutoSync";
 import { ThemeProvider } from "@/context/ThemeContext";
 import {
   CapturedSessionsProvider,
@@ -35,7 +34,6 @@ const CreateAccount = lazy(() => import("@/pages/auth/CreateAccount"));
 const ForgotPassword = lazy(() => import("@/pages/auth/ForgotPassword"));
 const ResetPassword = lazy(() => import("@/pages/auth/ResetPassword"));
 const Onboarding = lazy(() => import("@/pages/auth/Onboarding"));
-const StravaCallback = lazy(() => import("@/pages/auth/StravaCallback"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const Privacy = lazy(() => import("@/pages/Privacy"));
 const Terms = lazy(() => import("@/pages/Terms"));
@@ -116,8 +114,6 @@ const App = () => {
         <Sonner />
         {/* Mount-once: HealthKit observer + catch-up sync (iOS native only). */}
         <HealthKitAutoSync />
-        {/* Mount-once: throttled Strava catch-up sync on app open/foreground. */}
-        <StravaAutoSync />
         <SidebarContext.Provider value={{ collapsed, setCollapsed }}>
           <BrowserRouter>
             <Suspense fallback={<BootSplash />}>
@@ -162,7 +158,6 @@ const App = () => {
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/onboarding" element={<Onboarding />} />
-              <Route path="/auth/strava/callback" element={<StravaCallback />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/terms" element={<Terms />} />
               <Route path="*" element={<NotFound />} />

@@ -395,7 +395,7 @@ const SessionReview = () => {
   // Volume when there is any; otherwise (cardio) the duration carries it.
   const focalIsVolume = volumeEstimate > 0;
   const providerName =
-    captured?.provider === "healthkit" ? "Apple Health" : "Strava";
+    captured?.provider === "healthkit" ? "Apple Health" : "Strava (imported)";
   const sourceLabel = activityType
     ? `via ${providerName} · ${activityType}`
     : `via ${providerName}`;

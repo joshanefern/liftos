@@ -48,13 +48,14 @@ const Terms = () => (
         ),
       },
       {
-        title: "Strava and third-party services",
+        title: "Apple Health and third-party services",
         body: (
           <>
             <p>
-              Connecting Strava is optional and subject to Strava&apos;s own terms. LiftOS uses the
-              connection only to fetch your activities for your own log. We may suspend the
-              integration if Strava&apos;s API or policies require it.
+              Connecting Apple Health is optional and subject to Apple&apos;s own terms. LiftOS uses
+              the connection only to read your workouts and overnight metrics for your own log and
+              recovery readout. Sharing a workout uses your device&apos;s share sheet — whatever app
+              you send it to is governed by that app&apos;s terms.
             </p>
           </>
         ),

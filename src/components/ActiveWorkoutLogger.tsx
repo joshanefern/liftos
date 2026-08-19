@@ -1,4 +1,5 @@
 import { CTAButton } from "@/components/GoldButton";
+import { ShareButton } from "@/components/ShareButton";
 import { RestTimerRing } from "@/components/logging/RestTimerRing";
 import { SetInputRow, formatWeightForDisplay } from "@/components/logging/SetInputRow";
 import { useEnterAdvance } from "@/components/logging/useEnterAdvance";
@@ -17,6 +18,7 @@ import { toast } from "@/components/ui/use-toast";
 import { useUser } from "@/context/UserContext";
 import type { WorkoutExercise } from "@/data/liftosMock";
 import { RollingNumber } from "@/components/motion/RollingNumber";
+import { getMuscleActivation } from "@/lib/muscleMap";
 import { useExerciseNotes } from "@/hooks/useExerciseNotes";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { useWakeLock } from "@/hooks/useWakeLock";
@@ -29,12 +31,6 @@ import {
   type EffortTracking,
 } from "@/lib/exerciseTracking";
 import { successHaptic, tapHaptic } from "@/lib/haptics";
-import { buildStravaAuthorizeUrl, stravaIsConfigured } from "@/lib/strava/auth";
-import {
-  fetchStravaIntegration,
-  postWorkoutToStrava,
-  type StravaPostState,
-} from "@/lib/strava/writeback";
 import { formatPlateMath, plateBreakdown } from "@/lib/plateMath";
 import { suggestProgression, type ProgressionSuggestion } from "@/lib/progression";
 import { detectSessionPRs, type PREvent } from "@/lib/prs";
@@ -232,10 +228,14 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const [saving, setSaving] = useState(false);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [prCelebration, setPrCelebration] = useState<PREvent[] | null>(null);
-  // Strava write-back: null = no row on the recap (not connected / autopost
-  // off); otherwise the row narrates posting → posted / a fix-it state.
-  const [stravaPost, setStravaPost] = useState<"posting" | StravaPostState | null>(null);
-  const savedLogRef = useRef<WorkoutLog | null>(null);
+  // The saved log feeds the recap's share card (first-party replacement for
+  // the retired Strava write-back — Strava's API went subscriber-only).
+  const [savedLog, setSavedLog] = useState<WorkoutLog | null>(null);
+  // Muscle activation for THIS session only — the share card's bar list.
+  const sessionActivations = useMemo(
+    () => (savedLog ? [getMuscleActivation([savedLog], 36_500)] : []),
+    [savedLog],
+  );
 
   // Every edit lands in localStorage so navigating away (tab bar stays
   // visible mid-workout) and coming back through the resume banner restores
@@ -734,15 +734,10 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         captured_session_id: null,
       });
       // The workout is history now — clear the live-session keys HERE, not
-      // on the recap's exit buttons: the recap's Reconnect button leaves for
-      // OAuth via a full page navigation, and a surviving seed would haunt
-      // the Dashboard as a phantom "Resume workout" banner.
+      // on the recap's exit buttons, so a surviving seed can never haunt the
+      // Dashboard as a phantom "Resume workout" banner.
       clearActiveWorkoutStorage();
-      // Fire-and-forget — the save is done; Strava narrates on the recap.
-      if (saved) {
-        savedLogRef.current = saved;
-        void autoPostToStrava(saved);
-      }
+      if (saved) setSavedLog(saved);
       restTimer.skip();
       setSummary({
         durationSeconds,
@@ -760,32 +755,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     } finally {
       setSaving(false);
     }
-  };
-
-  /** Auto-post the saved workout when the user has Strava write-back on.
-      Silent when not connected or autopost is off; otherwise the recap row
-      narrates the outcome. Never blocks or fails the save. */
-  const autoPostToStrava = async (saved: WorkoutLog): Promise<void> => {
-    try {
-      const integration = await fetchStravaIntegration();
-      if (!integration.connected || !integration.autopost) return;
-      if (!integration.canWrite) {
-        setStravaPost("missing_write_scope");
-        return;
-      }
-      setStravaPost("posting");
-      setStravaPost(await postWorkoutToStrava(saved, units));
-    } catch {
-      // Integration lookup failed (offline) — recap simply shows no row.
-    }
-  };
-
-  /** Manual retry from the recap row. */
-  const retryStravaPost = async (): Promise<void> => {
-    const saved = savedLogRef.current;
-    if (!saved || stravaPost === "posting") return;
-    setStravaPost("posting");
-    setStravaPost(await postWorkoutToStrava(saved, units));
   };
 
   /** Abandon the session: same teardown as a successful finish, minus the
@@ -905,50 +874,24 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   No new records today — showing up is the record that compounds.
                 </p>
               )}
-              {/* Strava write-back status — only renders when a post was
-                  attempted; failures offer the one action that fixes them. */}
-              {stravaPost && (
-                <div className="mt-5 flex min-h-[32px] items-center justify-between gap-3">
-                  <span className="caption">
-                    {stravaPost === "posting" && "Posting to Strava…"}
-                    {stravaPost === "posted" && "Posted to Strava ✓"}
-                    {stravaPost === "missing_write_scope" &&
-                      "Strava needs permission to post workouts"}
-                    {(stravaPost === "reconnect_required" ||
-                      stravaPost === "not_connected") &&
-                      "Strava connection expired"}
-                    {stravaPost === "failed" && "Couldn't post to Strava"}
-                  </span>
-                  {stravaPost === "failed" && (
-                    <button
-                      type="button"
-                      onClick={() => void retryStravaPost()}
-                      className="relative shrink-0 text-xs font-semibold text-primary after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                    >
-                      Retry
-                    </button>
-                  )}
-                  {(stravaPost === "missing_write_scope" ||
-                    stravaPost === "reconnect_required" ||
-                    stravaPost === "not_connected") &&
-                    stravaIsConfigured() && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          window.location.href = buildStravaAuthorizeUrl();
-                        }}
-                        className="relative shrink-0 text-xs font-semibold text-primary after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                      >
-                        Reconnect
-                      </button>
-                    )}
+              {/* Share — the recap's outbound moment. A native share card
+                  (numbers + muscle bars) into whatever the user actually posts
+                  to; no third-party API in the loop. */}
+              {savedLog && (
+                <div className="mt-5 flex items-center justify-between gap-3">
+                  <span className="caption">Send this session anywhere</span>
+                  <ShareButton
+                    log={savedLog}
+                    prCount={summary.prs.length}
+                    activations={sessionActivations}
+                  />
                 </div>
               )}
               <CTAButton
                 to="/dashboard"
                 onClick={clearActiveWorkoutStorage}
                 fullWidth
-                className={stravaPost ? "mt-3" : "mt-6"}
+                className={savedLog ? "mt-3" : "mt-6"}
               >
                 View dashboard
               </CTAButton>

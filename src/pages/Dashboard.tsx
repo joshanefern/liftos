@@ -7,14 +7,6 @@ import { starterPrograms } from "@/data/starterPrograms";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
 import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
 import { usePendingReviews } from "@/hooks/usePendingReviews";
-import { fetchStravaActivities } from "@/lib/strava/refresh";
-import { buildStravaAuthorizeUrl, stravaIsConfigured } from "@/lib/strava/auth";
-import {
-  fetchStravaIntegration,
-  setStravaAutopost,
-  type StravaIntegrationState,
-} from "@/lib/strava/writeback";
-import { Switch } from "@/components/ui/switch";
 import {
   connectHealthKit,
   debugSeedHealthKitWorkout,
@@ -314,61 +306,9 @@ const Dashboard = () => {
       ? suggestion.ctaLabel
       : "Start a workout";
 
-  const [syncing, setSyncing] = useState(false);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
-  const wearableConnected = profile?.wearable_connected ?? false;
 
-  // Write-back state (scope + autopost) — loaded when the disclosure opens;
-  // the daily-return path never pays for it.
-  const [stravaIntegration, setStravaIntegration] =
-    useState<StravaIntegrationState | null>(null);
-  useEffect(() => {
-    if (!connectionsOpen || !wearableConnected || stravaIntegration) return;
-    let cancelled = false;
-    fetchStravaIntegration()
-      .then((state) => {
-        if (!cancelled) setStravaIntegration(state);
-      })
-      .catch(() => {
-        /* row simply doesn't render the toggle */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [connectionsOpen, wearableConnected, stravaIntegration]);
-
-  const handleAutopostToggle = (enabled: boolean): void => {
-    if (!stravaIntegration) return;
-    const prev = stravaIntegration;
-    setStravaIntegration({ ...prev, autopost: enabled });
-    setStravaAutopost(enabled).catch(() => {
-      setStravaIntegration(prev);
-      toast({ title: "Couldn't update the setting", variant: "destructive" });
-    });
-  };
-
-  const handleStravaRefresh = async (): Promise<void> => {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      const result = await fetchStravaActivities();
-      await refreshCapturedSessions();
-      toast({
-        title:
-          result.inserted > 0
-            ? `Imported ${result.inserted} new session${result.inserted === 1 ? "" : "s"}`
-            : "No new sessions",
-      });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Could not refresh from Strava";
-      toast({ title: "Refresh failed", description: message, variant: "destructive" });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  // Apple Health — iOS-native only; same toast contract as the Strava row.
+  // Apple Health — iOS-native only.
   const healthKitAvailable = healthKitSupported();
   const healthKitConnected = profile?.healthkit_connected ?? false;
   const [hkBusy, setHkBusy] = useState(false);
@@ -415,18 +355,6 @@ const Dashboard = () => {
       return;
     }
     void handleHealthKitSync(!healthKitConnected);
-  };
-
-  const handleStravaConnect = (): void => {
-    if (!stravaIsConfigured()) {
-      toast({
-        title: "Strava not configured",
-        description: "VITE_STRAVA_CLIENT_ID is missing from this build.",
-        variant: "destructive",
-      });
-      return;
-    }
-    window.location.href = buildStravaAuthorizeUrl();
   };
 
   const newestPending = pendingSessions[0] ?? null;
@@ -670,80 +598,22 @@ const Dashboard = () => {
         )}
 
         {/* Sync plumbing is settings, not daily-return content — one quiet
-            disclosure instead of two always-on rows. */}
-        <button
-          type="button"
-          onClick={() => setConnectionsOpen((v) => !v)}
-          aria-expanded={connectionsOpen}
-          className="flex min-h-11 w-full items-center justify-between rule-hairline px-1 pt-2 text-left"
-        >
-          <span className="caption !text-fg-muted">Connections</span>
-          <ChevronDown
-            size={14}
-            className={`text-fg-muted transition-transform ${connectionsOpen ? "rotate-180" : ""}`}
-          />
-        </button>
-
-        {connectionsOpen &&
-          (wearableConnected ? (
-            <>
-              <button
-                type="button"
-                onClick={handleStravaRefresh}
-                disabled={syncing}
-                className={`${ROW_CLASS} disabled:cursor-not-allowed`}
-              >
-                <RowLabel>Strava</RowLabel>
-                <RowEnd
-                  value={syncing ? "Refreshing…" : "Connected"}
-                  icon={
-                    <RefreshCw
-                      size={14}
-                      className={`text-fg-muted ${syncing ? "animate-spin" : ""}`}
-                    />
-                  }
-                />
-              </button>
-
-              {/* Write-back — a setting, not a daily action. Tokens from
-                  before the write-back release lack activity:write; the row
-                  routes those through one more consent screen. */}
-              {stravaIntegration &&
-                (stravaIntegration.canWrite ? (
-                  <div className="space-y-1.5">
-                    <label className={`${ROW_CLASS} cursor-pointer`}>
-                      <RowLabel>Post workouts to Strava</RowLabel>
-                      <Switch
-                        checked={stravaIntegration.autopost}
-                        onCheckedChange={handleAutopostToggle}
-                        aria-label="Post workouts to Strava"
-                      />
-                    </label>
-                    {stravaIntegration.autopost && (
-                      <p className="px-4 text-[11px] leading-4 text-fg-muted">
-                        Posts use your Strava default visibility. If another app
-                        already sends your workouts to Strava, pick one source —
-                        both will double-post.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleStravaConnect}
-                    className={ROW_CLASS}
-                  >
-                    <RowLabel>Post workouts to Strava</RowLabel>
-                    <RowEnd value="Reconnect to enable" />
-                  </button>
-                ))}
-            </>
-          ) : (
-            <button type="button" onClick={handleStravaConnect} className={ROW_CLASS}>
-              <RowLabel>Strava</RowLabel>
-              <RowEnd value="Not connected" />
-            </button>
-          ))}
+            disclosure. Apple Health is the only connection, so the whole
+            section is iOS-native only. */}
+        {healthKitAvailable && (
+          <button
+            type="button"
+            onClick={() => setConnectionsOpen((v) => !v)}
+            aria-expanded={connectionsOpen}
+            className="flex min-h-11 w-full items-center justify-between rule-hairline px-1 pt-2 text-left"
+          >
+            <span className="caption !text-fg-muted">Connections</span>
+            <ChevronDown
+              size={14}
+              className={`text-fg-muted transition-transform ${connectionsOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+        )}
 
         {/* Native iOS only — the web build never shows Apple Health. Not
             disabled while busy: the sync handler no-ops on re-entry, and a

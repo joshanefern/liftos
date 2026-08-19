@@ -4,12 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.liftos.app',
   appName: 'LiftOS',
   webDir: 'dist',
-  server: {
-    // Strava OAuth must navigate IN-WEBVIEW: the consent redirect targets the
-    // webview origin (capacitor://localhost/auth/strava/callback), which a
-    // system-Safari sheet can never hand back to the app.
-    allowNavigation: ['strava.com', '*.strava.com'],
-  },
   ios: {
     contentInset: 'never',
     backgroundColor: '#0e1420',

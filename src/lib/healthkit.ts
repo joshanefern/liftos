@@ -7,12 +7,12 @@ import type { HRSample, SessionAggregates } from "@/lib/capture/types";
 import type { RecoveryMetrics } from "@/lib/recovery";
 import { supabase } from "@/lib/supabase";
 
-/* ── HealthKit capture — the Strava-killer path. The iOS app reads finished
+/* ── HealthKit capture — THE capture path. The iOS app reads finished
      workouts (Apple Watch or iPhone) straight from HealthKit via the in-app
      HealthKitPlugin and inserts captured_sessions rows itself: RLS already
      lets a user insert their own rows, so there is no edge function, no
-     OAuth, no tokens. Rows land in the same pending-review pipeline Strava
-     feeds. ── */
+     OAuth, no tokens. Rows land in the pending-review pipeline; any watch
+     that writes to Health (Apple Watch, Garmin, Whoop, Oura…) flows in. ── */
 
 /** What the Swift plugin returns per workout (see ios/App/App/HealthKitPlugin.swift). */
 export type HealthKitWorkout = {
@@ -58,7 +58,7 @@ const HealthKit = registerPlugin<HealthKitPluginIface>("HealthKit");
 export const healthKitSupported = (): boolean =>
   Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
 
-/* HKWorkoutActivityType raw values → the Strava-normalized strings
+/* HKWorkoutActivityType raw values → the normalized activity strings
    inferReviewMode already understands (CARDIO_ACTIVITY_TYPES,
    "WeightTraining", "Workout", "Crossfit"). Anything unmapped becomes
    "Workout", the generic bucket whose review mode falls back to signals
@@ -89,8 +89,8 @@ const HK_ACTIVITY_TYPES: Record<number, string> = {
 export const activityTypeFromHK = (raw: number): string =>
   HK_ACTIVITY_TYPES[raw] ?? "Workout";
 
-/** The captured_sessions insert row — mirrors the Strava edge function's
-    shape field for field (strava-fetch-activities/index.ts) so everything
+/** The captured_sessions insert row — the canonical shape (inherited from
+    the retired Strava importer) so everything
     downstream (detection, review modes, SessionReview) is provider-blind. */
 export type CapturedSessionInsert = {
   user_id: string;
@@ -162,7 +162,7 @@ export const isSettled = (workout: HealthKitWorkout, nowMs: number): boolean =>
   nowMs - new Date(workout.endDate).getTime() >= SETTLE_MS;
 
 /** Pull recent HealthKit workouts into captured_sessions. Mirrors
-    fetchStravaActivities' return shape so the Dashboard toast code is shared. */
+    the historical importer's return shape so the Dashboard toast code is shared. */
 export const fetchHealthKitWorkouts = async (): Promise<{
   inserted: number;
   total_seen: number;
