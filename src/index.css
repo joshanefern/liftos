@@ -81,57 +81,62 @@
   .dark {
     color-scheme: dark;
 
-    --background: 240 17% 6%;        /* #0C0C11 warm near-black */
-    --foreground: 225 13% 95%;       /* #F0F1F4 off-white (and hero) */
+    /* Dark = the light theme's warmth at night, not a black void. Warm
+       charcoal canvas, cards that VISIBLY lift (+6% L, the same relation
+       light has), hairlines you can actually see, off-white text with a
+       touch of the sandstone hue, raspberry a step less neon so it reads as
+       an accent rather than a warning light. */
+    --background: 30 8% 9%;          /* #1A1714 warm charcoal */
+    --foreground: 36 20% 94%;        /* #F3EEE7 warm off-white */
 
-    --card: 240 15% 9%;              /* #14141B raised — luminance, not shadow */
-    --card-foreground: 225 13% 93%;
+    --card: 30 8% 14%;               /* #272320 raised — visible lift */
+    --card-foreground: 36 20% 94%;
 
-    --popover: 240 14% 11%;
-    --popover-foreground: 225 13% 93%;
+    --popover: 30 8% 15%;
+    --popover-foreground: 36 20% 94%;
 
-    --primary: 341 100% 59%;         /* #FF2D6E electric raspberry */
-    --primary-foreground: 340 60% 8%;
+    --primary: 341 88% 62%;          /* #F43F7A raspberry, tamed from neon */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 13% 10%;
-    --secondary-foreground: 227 8% 76%;
+    --secondary: 30 7% 18%;          /* chip / inset */
+    --secondary-foreground: 36 12% 78%;
 
-    --muted: 240 13% 10%;
-    --muted-foreground: 227 6% 62%;  /* ≥4.5:1 on near-black */
+    --muted: 30 7% 18%;
+    --muted-foreground: 34 8% 66%;   /* ≥4.5:1 on charcoal */
 
-    --accent: 341 100% 59%;
-    --accent-foreground: 340 60% 8%;
+    --accent: 341 88% 62%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 62% 52%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive: 0 70% 60%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 240 8% 15%;            /* white-at-8% hairline */
-    --input: 240 8% 15%;
-    --ring: 341 100% 59%;
+    --border: 30 7% 22%;             /* #3B3631 — a hairline you can see */
+    --input: 30 7% 22%;
+    --ring: 341 88% 62%;
 
-    --sidebar-background: 240 18% 5%;
-    --sidebar-foreground: 227 6% 62%;
-    --sidebar-primary: 341 100% 59%;
-    --sidebar-primary-foreground: 340 60% 8%;
-    --sidebar-accent: 240 13% 10%;
-    --sidebar-accent-foreground: 225 13% 93%;
-    --sidebar-border: 240 8% 13%;
-    --sidebar-ring: 341 100% 59%;
+    --sidebar-background: 30 9% 8%;
+    --sidebar-foreground: 34 8% 66%;
+    --sidebar-primary: 341 88% 62%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 30 7% 16%;
+    --sidebar-accent-foreground: 36 20% 94%;
+    --sidebar-border: 30 7% 18%;
+    --sidebar-ring: 341 88% 62%;
 
-    --gold: 341 100% 59%;
-    --gold-dim: 341 60% 45%;
-    --gold-glow: 341 100% 59%;
-    --surface-1: 240 15% 9%;
-    --surface-2: 240 14% 12%;
-    --surface-3: 240 13% 14%;
-    --text-primary: 225 13% 93%;
-    --text-secondary: 227 8% 72%;
-    --text-tertiary: 227 6% 62%;
-    --chart-line: 341 100% 59%;
-    /* Inverted panel is porcelain in dark — borrow the light raspberry. */
+    --gold: 341 88% 62%;
+    --gold-dim: 341 60% 48%;
+    --gold-glow: 341 88% 62%;
+    --surface-1: 30 8% 14%;
+    --surface-2: 30 7% 18%;
+    --surface-3: 30 7% 22%;
+    --text-primary: 36 20% 94%;
+    --text-secondary: 34 10% 76%;
+    --text-tertiary: 34 8% 66%;
+    --chart-line: 341 88% 62%;
+    /* Inverted panel is warm off-white in dark — borrow the light raspberry. */
     --primary-on-inverse: 338 71% 40%;
-    --success: 154 70% 55%;
-    --warning: 39 100% 56%;
+    --success: 154 60% 52%;
+    --warning: 39 95% 58%;
   }
 }
 
@@ -498,16 +503,22 @@
    prefers-reduced-motion so the app stays calm for those who ask. ── */
 @media (prefers-reduced-motion: no-preference) {
   /* Rolling odometer digits */
+  /* The window and every cell share ONE em-box (line-height 1, no
+     inherited leading) — otherwise the 1em viewport and the 1em cell stride
+     drift apart and neighbouring digits peek through ("7̌,68A"). */
   .roll-digit {
     display: inline-block;
     height: 1em;
-    overflow: hidden;
-    vertical-align: baseline;
+    line-height: 1;
+    overflow: clip;
+    vertical-align: -0.08em;
   }
   .roll-strip {
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
+    line-height: 1;
     transition: transform 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+    will-change: transform;
   }
   .roll-cell {
     height: 1em;
@@ -547,7 +558,7 @@
 /* Reduced motion: digits render statically (no strip offset needed beyond
    the transform, which still applies instantly without transition). */
 @media (prefers-reduced-motion: reduce) {
-  .roll-digit { display: inline-block; height: 1em; overflow: hidden; }
-  .roll-strip { display: inline-flex; flex-direction: column; }
+  .roll-digit { display: inline-block; height: 1em; line-height: 1; overflow: clip; vertical-align: -0.08em; }
+  .roll-strip { display: flex; flex-direction: column; line-height: 1; }
   .roll-cell { height: 1em; line-height: 1; display: block; }
 }
