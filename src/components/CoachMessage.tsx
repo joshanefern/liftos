@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import { Sparkles } from "lucide-react";
 
@@ -39,7 +40,26 @@ const CoachMessage = ({ role, content, streaming = false }: CoachMessageProps) =
         )}
       >
         <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
           components={{
+            // Compact plan/comparison tables — the coach's "diagrams".
+            table: ({ children }) => (
+              <div className="mb-3 overflow-x-auto rounded-[10px] border border-border last:mb-0">
+                <table className="w-full min-w-[280px] border-collapse text-[13px] leading-5">
+                  {children}
+                </table>
+              </div>
+            ),
+            th: ({ children }) => (
+              <th className="border-b border-border bg-foreground/[0.04] px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+                {children}
+              </th>
+            ),
+            td: ({ children }) => (
+              <td className="border-b border-border/40 px-3 py-2 tabular-nums last:border-b-0 [tr:last-child_&]:border-b-0">
+                {children}
+              </td>
+            ),
             p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
             strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
             ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,

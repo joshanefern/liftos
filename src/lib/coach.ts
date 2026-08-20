@@ -232,6 +232,37 @@ export const buildCoachContext = (
   };
 };
 
+/* ── Coach tone — a per-device preference, sent with every request. The
+   edge function turns it into a different voice for the same grounded
+   data (like switching models in a chat app, but for personality). ── */
+
+export type CoachTone = "direct" | "encouraging" | "technical";
+
+export const COACH_TONES: { value: CoachTone; label: string; blurb: string }[] = [
+  { value: "direct", label: "Direct", blurb: "Straight talk, zero filler" },
+  { value: "encouraging", label: "Encouraging", blurb: "Wins first, then the work" },
+  { value: "technical", label: "Technical", blurb: "Numbers, RPE, no pep talk" },
+];
+
+const COACH_TONE_KEY = "liftos-coach-tone";
+
+export const getCoachTone = (): CoachTone => {
+  try {
+    const raw = window.localStorage.getItem(COACH_TONE_KEY);
+    return raw === "encouraging" || raw === "technical" ? raw : "direct";
+  } catch {
+    return "direct";
+  }
+};
+
+export const setCoachTone = (tone: CoachTone): void => {
+  try {
+    window.localStorage.setItem(COACH_TONE_KEY, tone);
+  } catch {
+    /* storage unavailable — tone just stays session-default */
+  }
+};
+
 // Derive the functions base the same way src/lib/supabase.ts derives the
 // client — supabase-js's functions.invoke targets `${url}/functions/v1/<name>`.
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -266,7 +297,7 @@ export const streamCoach = async (
     res = await fetch(COACH_URL, {
       method: "POST",
       headers: await authHeaders(),
-      body: JSON.stringify({ mode: "chat", messages, context }),
+      body: JSON.stringify({ mode: "chat", messages, context, tone: getCoachTone() }),
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
@@ -378,7 +409,7 @@ export const fetchDailyInsight = async (
     res = await fetch(COACH_URL, {
       method: "POST",
       headers: await authHeaders(),
-      body: JSON.stringify({ mode: "insight", context }),
+      body: JSON.stringify({ mode: "insight", context, tone: getCoachTone() }),
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

@@ -9,16 +9,28 @@ import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
 import { suggestNextWorkout } from "@/lib/suggestion";
 import {
   buildCoachContext,
+  COACH_TONES,
   CoachOfflineError,
+  getCoachTone,
+  setCoachTone,
   streamCoach,
   type ChatMessage,
   type CoachContext,
+  type CoachTone,
 } from "@/lib/coach";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Muscle } from "@/lib/muscleMap";
 import {
   Activity,
   ArrowUp,
   BarChart3,
+  Check,
+  ChevronDown,
   CloudOff,
   History,
   Sparkles,
@@ -129,6 +141,8 @@ const Coach = () => {
   // ChatGPT/Claude organization: every chat is a resumable conversation.
   const [conversationId, setConversationId] = useState<string>(newConversationId);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Mirrors the persisted preference so the header pill re-renders on change.
+  const [tone, setTone] = useState<CoachTone>(() => getCoachTone());
   const [history, setHistory] = useState<CoachConversation[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -321,6 +335,40 @@ const Coach = () => {
       <header className="flex shrink-0 items-center justify-between px-5 pt-3 pb-2 md:px-10 md:pt-6 lg:px-12">
         <p className="eyebrow !text-fg">Coach</p>
         <div className="flex items-center gap-1">
+          {/* Tone picker — same coach, different voice. Applies from the
+              next message; stored per device. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Coach tone"
+                className="relative mr-1 flex h-9 items-center gap-1 rounded-full border border-border px-3 text-[12px] font-semibold text-fg-soft transition hover:border-fg-soft hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                {COACH_TONES.find((t) => t.value === tone)?.label}
+                <ChevronDown size={12} className="text-fg-muted" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 rounded-[14px] border-border bg-card p-1.5">
+              {COACH_TONES.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => {
+                    setCoachTone(option.value);
+                    setTone(option.value);
+                  }}
+                  className="flex items-start gap-2.5 rounded-[10px] px-2.5 py-2"
+                >
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center pt-0.5">
+                    {tone === option.value && <Check size={13} className="text-fg" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-semibold text-fg">{option.label}</span>
+                    <span className="block text-[11.5px] leading-4 text-fg-muted">{option.blurb}</span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             type="button"
             onClick={openHistory}
