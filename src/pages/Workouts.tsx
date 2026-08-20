@@ -32,7 +32,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { useReadiness } from "@/hooks/useReadiness";
 import { trimSessionForRecovery } from "@/lib/recovery";
-import { Check, ChevronDown, ChevronsRight, Dumbbell, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -239,6 +239,8 @@ const Workouts = () => {
   // One session at a time: starting anything while a session is live would
   // silently erase its progress. The dialog routes back into the live one.
   const [blockedStart, setBlockedStart] = useState(false);
+  // Trash tap arms this; the actual delete only runs from the confirm dialog.
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const guardActive = (): boolean => {
     if (!activeSeed) return false;
     setBlockedStart(true);
@@ -577,8 +579,16 @@ const Workouts = () => {
                   <div className="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
+                      aria-label={`Edit ${template.name}`}
+                      onClick={() => editWorkout(template)}
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-fg-muted transition hover:bg-foreground/[0.06] hover:text-fg focus:outline-none focus:ring-2 focus:ring-ring/40"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
                       aria-label={`Delete ${template.name}`}
-                      onClick={() => removeWorkout(template.id)}
+                      onClick={() => setDeleteTarget({ id: template.id, name: template.name })}
                       className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-fg-muted transition hover:bg-destructive/10 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
                     >
                       <Trash2 size={14} />
@@ -677,6 +687,36 @@ const Workouts = () => {
               className="h-12 w-full rounded-full border-0 bg-foreground text-[14.5px] font-semibold text-background hover:bg-foreground/90"
             >
               Back to workout
+            </AlertDialogAction>
+            <AlertDialogCancel className="mt-0 h-12 w-full rounded-full border border-border bg-transparent text-[14.5px] font-semibold text-fg-soft">
+              Cancel
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete confirmation — a saved workout is a curated thing; one
+          mis-tap on the trash shouldn't erase it. History is unaffected. */}
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent className="w-[calc(100%-2.5rem)] max-w-sm rounded-[18px] border-border bg-card p-6 text-fg">
+          <AlertDialogHeader className="space-y-2 text-left sm:text-left">
+            <AlertDialogTitle className="text-[20px] font-semibold tracking-[-0.01em] text-fg">
+              Delete “{deleteTarget?.name}”?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-[14px] leading-5 text-fg-soft">
+              This removes the saved workout from your library. Workouts you
+              already logged with it stay in your history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 flex-col gap-2 sm:flex-col sm:space-x-0">
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteTarget) void removeWorkout(deleteTarget.id);
+                setDeleteTarget(null);
+              }}
+              className="h-12 w-full rounded-full border-0 bg-destructive text-[14.5px] font-semibold text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete workout
             </AlertDialogAction>
             <AlertDialogCancel className="mt-0 h-12 w-full rounded-full border border-border bg-transparent text-[14.5px] font-semibold text-fg-soft">
               Cancel
