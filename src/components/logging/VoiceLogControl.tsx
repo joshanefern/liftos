@@ -172,6 +172,13 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
         })),
         units,
       );
+      // Low-confidence interpretations don't auto-apply — a garbled
+      // half-sentence writing sets into the log is worse than a re-ask.
+      if ((intent.confidence ?? 1) < 0.5) {
+        setPhase({ at: "missed", transcript });
+        scheduleDismiss(6000);
+        return;
+      }
       const result = applyVoiceIntent(exercisesRef.current, intent);
       if (result.empty) {
         setPhase({ at: "missed", transcript });

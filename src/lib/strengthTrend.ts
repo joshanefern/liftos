@@ -57,7 +57,11 @@ export const getLiftTrends = (
       let bestDuration = 0;
       for (const set of exercise.sets) {
         if (!set.completed || set.isWarmup) continue;
-        if (typeof set.weight === "number" && set.weight > bestWeight) bestWeight = set.weight;
+        // A weight with zero reps is a failed/aborted lift, not a best set.
+        const reps = typeof set.reps === "number" ? set.reps : 0;
+        if (typeof set.weight === "number" && reps >= 1 && set.weight > bestWeight) {
+          bestWeight = set.weight;
+        }
         const isDistance = typeof set.distance_m === "number" && set.distance_m > 0;
         if (
           !isCardio &&

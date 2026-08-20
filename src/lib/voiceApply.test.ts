@@ -75,7 +75,9 @@ describe("applyVoiceIntent — the owner's exact utterances", () => {
     expect(planks.name).toBe("Planks");
     expect(planks.tracking).toBe("time");
     expect(planks.sets).toHaveLength(3);
-    expect(planks.sets.every((s) => s.completed && s.reps === "40")).toBe(true);
+    // m:ss form — a bare "40" was fine but "120" re-parsed as 1:20, so
+    // holds always store colon format now.
+    expect(planks.sets.every((s) => s.completed && s.reps === "0:40")).toBe(true);
     expect(result.addedExercises).toEqual(["Planks"]);
     expect(result.summary[0]).toContain("Planks (added)");
   });
@@ -211,6 +213,6 @@ describe("applyVoiceIntent — guards", () => {
     };
     const result = applyVoiceIntent(session(), intent);
     expect(result.exercises[0].tracking).toBe("time");
-    expect(result.exercises[0].sets[0]).toMatchObject({ reps: "30", completed: true });
+    expect(result.exercises[0].sets[0]).toMatchObject({ reps: "0:30", completed: true });
   });
 });

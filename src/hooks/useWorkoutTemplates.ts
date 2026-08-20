@@ -34,7 +34,9 @@ export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNo
       .from("workout_templates")
       .select("id, name, exercises, created_at")
       .order("created_at", { ascending: false });
-    setTemplates((data as SupabaseTemplate[]) ?? []);
+    // A failed reload keeps the stale cache — blanking the library to the
+    // "No saved workouts yet" state on a network hiccup reads as data loss.
+    if (data) setTemplates(data as SupabaseTemplate[]);
     setLoading(false);
   }, []);
 
@@ -49,8 +51,11 @@ export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNo
   }, [user, load]);
 
   const save = async (template: { id: string | null; name: string; exercises: WorkoutExercise[] }) => {
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) return;
+    // Cached session + throw on absence — a silent return here made offline
+    // saves toast success while writing nothing.
+    const { data: { session } } = await supabase.auth.getSession();
+    const authUser = session?.user;
+    if (!authUser) throw new Error("no authenticated session");
     if (!template.id) {
       // Hard cap on SAVED workouts — a library of 100 half-workouts is
       // noise, and every list in the app assumes a scannable handful.
@@ -76,7 +81,10 @@ export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNo
   };
 
   const remove = async (id: string) => {
-    await supabase.from("workout_templates").delete().eq("id", id);
+    // Throw on failure BEFORE touching local state — otherwise the row
+    // vanishes from the UI and resurrects on next launch.
+    const { error } = await supabase.from("workout_templates").delete().eq("id", id);
+    if (error) throw error;
     setTemplates((prev) => prev.filter((t) => t.id !== id));
   };
 

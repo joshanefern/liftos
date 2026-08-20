@@ -8,6 +8,8 @@
    The logger's own types stay in the component; we type structurally
    against the exact shape it holds so state passes straight through. */
 
+import { formatHoldInput } from "@/lib/exerciseTracking";
+
 export type VoiceLoggedSet = {
   id: string;
   reps: string;
@@ -121,10 +123,11 @@ const writeSet = (
   const seconds = sane(spoken.seconds, MAX_SECONDS);
   return {
     ...row,
-    // Timed rows keep the hold in the effort column (bare digits = seconds).
+    // Timed rows keep the hold in the effort column as m:ss — a bare "120"
+    // would re-parse as 1:20, silently corrupting a 2-minute hold at save.
     reps: timed
       ? seconds !== null
-        ? String(Math.round(seconds))
+        ? formatHoldInput(Math.round(seconds))
         : row.reps
       : reps !== null
         ? String(Math.round(reps))
@@ -201,12 +204,16 @@ export const applyVoiceIntent = (
         setsLogged += 1;
         lines.push(describeSet(spoken, timed));
       }
+      // Flip an exercise to time-tracking only when nothing rep-based has
+      // been logged on it — retroactively reinterpreting completed rep rows
+      // as N-second holds rewrote history.
+      const hadCompletedRows = existing.sets.some((r) => r.completed && !r.isWarmup);
       next = next.map((e) =>
         e.id === existing.id
           ? {
               ...e,
               sets: rows,
-              ...(timed && (e.tracking ?? "reps") !== "time"
+              ...(timed && !hadCompletedRows && (e.tracking ?? "reps") !== "time"
                 ? { tracking: "time" as const }
                 : {}),
             }

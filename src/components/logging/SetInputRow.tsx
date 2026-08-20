@@ -1,7 +1,7 @@
 import { formatCardioInput, formatHoldInput, sanitizeHold } from "@/lib/exerciseTracking";
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
-import { forwardRef, type KeyboardEvent, type MouseEvent } from "react";
+import { forwardRef, useRef, type KeyboardEvent, type MouseEvent } from "react";
 
 /**
  * Shared set-entry row used by both the session-review screen and the live
@@ -119,12 +119,20 @@ export const SetInputRow = ({
   };
 
   /** Mousedown (fires before focus) so plate math opens without popping the
-      keyboard. Only intercepts a filled, unfocused value — see prop docs. */
+      keyboard. Only intercepts a filled, unfocused value — see prop docs.
+      Taps ALTERNATE: first opens plate math, the next edits the value —
+      an always-intercepting tap made a filled weight uneditable by touch. */
+  const plateTapArmed = useRef(true);
   const handleWeightMouseDown = (e: MouseEvent<HTMLInputElement>) => {
     if (!onWeightValueTap || weightEmpty) return;
     if (document.activeElement === e.currentTarget) return;
     const parsed = parseFloat(weight);
     if (!Number.isFinite(parsed) || parsed <= 0) return;
+    if (!plateTapArmed.current) {
+      plateTapArmed.current = true;
+      return; // fall through to normal focus → keyboard edit
+    }
+    plateTapArmed.current = false;
     e.preventDefault();
     onWeightValueTap(parsed);
   };

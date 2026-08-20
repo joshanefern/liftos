@@ -31,6 +31,7 @@ import {
   sessionToTemplateExercises,
 } from "@/lib/sessionToTemplate";
 import {
+  formatCardioInput,
   formatHold,
   formatHoldInput,
   parseCardioSeconds,
@@ -248,10 +249,16 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   // ── Voice logging: apply results from the hold-to-talk control and keep
   // one level of undo (state + notes snapshot from just before the apply).
   const voiceUndoRef = useRef<{ exercises: LoggedExercise[]; notes: string } | null>(null);
+  // Snapshot sources that dodge the async closure: edits made while the
+  // voice call was in flight must survive an Undo.
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
 
   const handleVoiceApply = (result: VoiceApplyResult): void => {
-    voiceUndoRef.current = { exercises, notes };
-    setExercises(result.exercises as LoggedExercise[]);
+    setExercises((current) => {
+      voiceUndoRef.current = { exercises: current, notes: notesRef.current };
+      return result.exercises as LoggedExercise[];
+    });
     if (result.note) {
       setNotes((current) => (current.trim() ? `${current}\n${result.note}` : result.note!));
     }
@@ -483,10 +490,17 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     return map;
   }, [logs]);
 
-  /** The effort column's entered value in numeric form (reps, or hold seconds). */
-  const effortValue = (raw: string, tracking: EffortTracking): number | null => {
+  /** Effort discriminator for a row: cardio thinks in minutes ("30" = 30:00),
+      holds in seconds ("30" = 0:30) — parsing them alike corrupted hints. */
+  type EffortMode = "reps" | "time" | "cardio";
+  const effortModeFor = (exercise: LoggedExercise): EffortMode =>
+    exercise.kind === "cardio" ? "cardio" : trackingFor(exercise);
+
+  /** The effort column's entered value in numeric form (reps, or seconds). */
+  const effortValue = (raw: string, mode: EffortMode): number | null => {
     if (raw.trim() === "") return null;
-    if (tracking === "time") return parseHoldSeconds(raw);
+    if (mode === "cardio") return parseCardioSeconds(raw);
+    if (mode === "time") return parseHoldSeconds(raw);
     const n = Number(raw);
     return Number.isFinite(n) && n > 0 ? n : null;
   };
@@ -509,7 +523,9 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       if (exercise.sets[i].isWarmup) continue; // ramp values are not working hints
       const raw = exercise.sets[i][field];
       const n =
-        field === "weight" ? (Number(raw) > 0 ? Number(raw) : null) : effortValue(raw, tracking);
+        field === "weight"
+          ? (Number(raw) > 0 ? Number(raw) : null)
+          : effortValue(raw, effortModeFor(exercise));
       if (raw.trim() !== "" && n !== null) return n;
     }
     const target = targetOf(set);
@@ -521,8 +537,12 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   };
 
   /** Format an effort hint the way it should land in the input. */
-  const commitEffortHint = (hint: number, tracking: EffortTracking): string =>
-    tracking === "time" ? formatHoldInput(hint) : String(hint);
+  const commitEffortHint = (hint: number, mode: EffortMode): string =>
+    mode === "cardio"
+      ? formatCardioInput(hint)
+      : mode === "time"
+        ? formatHoldInput(hint)
+        : String(hint);
 
   // Double-progression hints from the last session containing each exercise.
   // ── Derived stats (working sets only — warm-ups never count) ──
@@ -585,10 +605,10 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     let reps = set.reps;
     let weight = set.weight;
     if (becomingDone) {
-      const tracking = trackingFor(exercise);
+      const mode = effortModeFor(exercise);
       if (reps.trim() === "") {
         const hint = hintFor(exercise, index, "reps");
-        if (hint !== null) reps = commitEffortHint(hint, tracking);
+        if (hint !== null) reps = commitEffortHint(hint, mode);
       }
       if (weight.trim() === "") {
         const hint = hintFor(exercise, index, "weight");
@@ -636,6 +656,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
 
     const tracking = trackingFor(exercise);
     const timed = tracking === "time";
+    const mode = effortModeFor(exercise);
     const hist = historyFor.get(exercise.name.trim().toLowerCase());
     const histEffort = timed ? hist?.duration : hist?.reps;
     let prevReps: string | null = null;
@@ -647,7 +668,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       if (set.isWarmup) {
         const reps =
           set.reps.trim() === "" && targetEffort !== null && targetEffort > 0
-            ? commitEffortHint(targetEffort, tracking)
+            ? commitEffortHint(targetEffort, mode)
             : set.reps;
         const weight =
           set.weight.trim() === "" && set.targetWeight !== null && set.targetWeight > 0
@@ -660,9 +681,9 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       if (reps.trim() === "") {
         if (prevReps !== null) reps = prevReps;
         else if (targetEffort !== null && targetEffort > 0)
-          reps = commitEffortHint(targetEffort, tracking);
+          reps = commitEffortHint(targetEffort, mode);
         else if (histEffort != null && histEffort > 0)
-          reps = commitEffortHint(histEffort, tracking);
+          reps = commitEffortHint(histEffort, mode);
       }
       if (weight.trim() === "") {
         if (prevWeight !== null) weight = prevWeight;

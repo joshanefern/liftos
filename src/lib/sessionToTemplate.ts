@@ -1,4 +1,5 @@
 import type { WorkoutExercise, WorkoutSet } from "@/data/liftosMock";
+import { parseCardioSeconds, parseHoldSeconds, trackingFor } from "@/lib/exerciseTracking";
 
 /* ── "Save what I actually did as a workout." Turns a finished session's
    exercises (live logger state or a saved log row) into template
@@ -27,6 +28,19 @@ const num = (v: number | string | null | undefined): number => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
+/** Duration for a timed set. Live logger sets carry the typed TEXT in the
+    reps field ("1:30", "90", cardio "30") — Number() on those zeroed hold
+    targets in saved templates. Parse with the same rules the logger uses. */
+const effortSeconds = (s: DoneSetLike, cardio: boolean): number => {
+  if (typeof s.duration_seconds === "number" && s.duration_seconds > 0) {
+    return Math.round(s.duration_seconds);
+  }
+  if (typeof s.reps === "string") {
+    return (cardio ? parseCardioSeconds(s.reps) : parseHoldSeconds(s.reps)) ?? 0;
+  }
+  return Math.round(num(s.reps));
+};
+
 let idCounter = 0;
 const freshId = (prefix: string): string =>
   `${prefix}-${Date.now()}-${idCounter++}`;
@@ -41,19 +55,15 @@ export const sessionToTemplateExercises = (
   for (const exercise of exercises) {
     const done = exercise.sets.filter((s) => s.completed && !s.isWarmup);
     if (done.length === 0) continue;
-    const timed = exercise.tracking === "time";
+    // trackingFor, not the raw field: a "Plank" added mid-session has no
+    // explicit tracking and must still save as a timed exercise.
+    const timed = trackingFor(exercise) === "time";
+    const cardio = exercise.kind === "cardio";
     const sets: WorkoutSet[] = done.map((s) => ({
       id: freshId("set"),
       reps: timed ? 0 : Math.round(num(s.reps)),
       weight: num(s.weight),
-      ...(timed
-        ? {
-            duration_seconds:
-              typeof s.duration_seconds === "number" && s.duration_seconds > 0
-                ? Math.round(s.duration_seconds)
-                : Math.round(num(s.reps)), // logger keeps holds in the reps field as seconds
-          }
-        : {}),
+      ...(timed ? { duration_seconds: effortSeconds(s, cardio) } : {}),
     }));
     out.push({
       id: freshId("exercise"),

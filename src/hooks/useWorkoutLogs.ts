@@ -61,8 +61,13 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
   }, [user, load]);
 
   const save = async (log: NewWorkoutLog) => {
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) return null;
+    // Cached session, no network round-trip — and THROW when it's absent.
+    // Returning null here once made a gym-dead-spot finish read as success:
+    // the logger cleared its local backup and the whole workout vanished.
+    // Throwing routes into the caller's catch (toast + progress preserved).
+    const { data: { session } } = await supabase.auth.getSession();
+    const authUser = session?.user;
+    if (!authUser) throw new Error("no authenticated session");
     const { data, error } = await supabase
       .from("workout_logs")
       .insert({ ...log, user_id: authUser.id })

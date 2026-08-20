@@ -47,6 +47,13 @@ type ExerciseDraft = {
   weight: string;
   minutes: string;
   decideLater: boolean;
+  /** The template exercise this draft came from, passed through VERBATIM on
+      save while the row is untouched — the draft fields flatten pyramids,
+      holds, and multi-block cardio, so rebuilding an unedited row from them
+      silently destroyed that data. */
+  original?: WorkoutExercise;
+  /** True once any non-name field changes — only then is the row rebuilt. */
+  dirty: boolean;
 };
 
 const createExerciseDraft = (overrides?: Partial<ExerciseDraft>): ExerciseDraft => ({
@@ -60,6 +67,7 @@ const createExerciseDraft = (overrides?: Partial<ExerciseDraft>): ExerciseDraft 
   weight: "",
   minutes: "",
   decideLater: false,
+  dirty: false,
   ...overrides,
 });
 
@@ -84,6 +92,7 @@ const createExerciseDraftFromTemplate = (exercise: WorkoutExercise): ExerciseDra
       name: exercise.name,
       mode: "cardio",
       minutes: seconds > 0 ? String(Math.round(seconds / 60)) : "",
+      original: exercise,
     });
   }
 
@@ -99,6 +108,7 @@ const createExerciseDraftFromTemplate = (exercise: WorkoutExercise): ExerciseDra
     reps: decideLater ? "" : String(reps),
     weight: decideLater || weight === 0 ? "" : String(weight),
     decideLater,
+    original: exercise,
   });
 };
 
@@ -284,7 +294,13 @@ const Workouts = () => {
 
   const updateExercise = <K extends keyof ExerciseDraft>(id: string, key: K, value: ExerciseDraft[K]) => {
     setExercises((current) =>
-      current.map((exercise) => (exercise.id === id ? { ...exercise, [key]: value } : exercise)),
+      current.map((exercise) =>
+        exercise.id === id
+          ? // Name edits alone keep the original sets verbatim; touching any
+            // number/mode rebuilds the row from the visible fields.
+            { ...exercise, [key]: value, ...(key === "name" ? {} : { dirty: true }) }
+          : exercise,
+      ),
     );
   };
 
@@ -293,11 +309,22 @@ const Workouts = () => {
     setSaving(true);
 
     const exercisesToSave: WorkoutExercise[] = completedExercises.map((exercise) => {
+      // Untouched rows from an edited template pass through verbatim —
+      // pyramid sets, holds, and multi-block cardio survive a rename-only
+      // or neighbor-only edit.
+      if (exercise.original && !exercise.dirty) {
+        return {
+          ...exercise.original,
+          name: exercise.name.trim(),
+          category: workoutName.trim(),
+        };
+      }
+
       // Cardio saves as one duration block: kind "cardio" keeps it out of
       // hold-PR and strength-trend math; tracking "time" gives it the
       // duration column in the logger. Blank minutes = decide during.
       if (exercise.mode === "cardio") {
-        const minutes = toInteger(exercise.minutes, 0);
+        const minutes = Math.min(toInteger(exercise.minutes, 0), 600);
         return {
           id: exercise.id,
           name: exercise.name.trim(),
@@ -317,8 +344,10 @@ const Workouts = () => {
       }
 
       // Blank targets = decide during the session. No toggle, no ceremony.
+      // Sets clamp: a fat-fingered "999" would render a thousand rows and
+      // freeze the logger.
       const decideLater = exercise.reps.trim() === "" && exercise.weight.trim() === "";
-      const targetSets = toInteger(exercise.sets, 3);
+      const targetSets = Math.min(toInteger(exercise.sets, 3), 20);
       const targetReps = toInteger(exercise.reps, 0);
       const targetWeight = toDecimal(exercise.weight);
 
@@ -329,7 +358,7 @@ const Workouts = () => {
         target: decideLater
           ? ""
           : `${targetSets} × ${targetReps}${targetWeight > 0 ? ` @ ${targetWeight}` : ""}`,
-        sets: Array.from({ length: decideLater ? toInteger(exercise.sets, 1) : targetSets }, (_, index) => ({
+        sets: Array.from({ length: decideLater ? Math.min(toInteger(exercise.sets, 1), 20) : targetSets }, (_, index) => ({
           id: `${exercise.id}-set-${index + 1}`,
           reps: decideLater ? 0 : targetReps,
           weight: decideLater ? 0 : targetWeight,
