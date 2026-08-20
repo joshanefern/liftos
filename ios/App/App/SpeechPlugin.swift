@@ -74,6 +74,23 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    #if DEBUG && targetEnvironment(simulator)
+    /// One-shot QA transcript (Library/liftos-voice-script.txt, seeded by
+    /// scripts/sim-say) — deleted the moment it's read so each seed fires
+    /// exactly once. A file, NOT UserDefaults: sim cfprefsd resurrects
+    /// externally-written keys under a running app, which made the first
+    /// version of this hook replay its seed forever.
+    private func consumeScriptedTranscript() -> String? {
+        guard let library = FileManager.default.urls(
+            for: .libraryDirectory, in: .userDomainMask).first else { return nil }
+        let url = library.appendingPathComponent("liftos-voice-script.txt")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        try? FileManager.default.removeItem(at: url)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+    #endif
+
     private func beginSession(call: CAPPluginCall, contextual: [String]) {
         generation += 1
         teardown(cancelTask: true)
@@ -81,15 +98,10 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         #if DEBUG && targetEnvironment(simulator)
         // Simulators have no speech model assets (localspeechreco dies in
         // ~700ms) and often no host mic path, so real dictation can never
-        // work there. QA hook, same pattern as debugSeedWorkout:
-        //   xcrun simctl spawn booted defaults write com.liftos.app \
-        //     liftos-voice-script "I did 1 set of recline curls for 8 reps"
-        // The next tap streams that string as live partials — everything
-        // downstream (silence endpoint, edge fn, apply, undo) runs for real.
-        let defaults = UserDefaults.standard
-        if let scripted = defaults.string(forKey: "liftos-voice-script"),
-           !scripted.isEmpty {
-            defaults.removeObject(forKey: "liftos-voice-script")
+        // work there. A seeded transcript streams as live partials instead —
+        // everything downstream (silence endpoint, edge fn, apply, undo)
+        // runs for real.
+        if let scripted = consumeScriptedTranscript() {
             latestTranscript = ""
             finished = false
             let words = scripted.split(separator: " ").map(String.init)
@@ -208,7 +220,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             generation += 1
             task?.cancel()
             task = nil
-            self.request = nil
+            request = nil
             launchTask(onDevice: false)
             return
         }
@@ -224,8 +236,9 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc public func stopListening(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            // Session already over (task error beat the stop) — hand back
-            // what was heard instead of waiting on a dead recognizer.
+            // Session already over (task error beat the stop, or a scripted
+            // run) — hand back what was heard instead of waiting on a dead
+            // recognizer.
             if self.finished || self.task == nil {
                 call.resolve(["transcript": self.latestTranscript])
                 return

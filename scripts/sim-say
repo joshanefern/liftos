@@ -1,0 +1,15 @@
+#!/bin/sh
+# Seed the LiftOS simulator voice QA hook, then tap the mic pill in the app.
+# The seed fires exactly once (the app deletes the file when it reads it).
+#
+#   scripts/sim-say "3 sets of 8 at 185 on bench"
+#
+# Debug simulator builds only — real devices use the actual microphone.
+set -e
+if [ -z "$1" ]; then
+  echo "usage: scripts/sim-say \"<sentence to speak>\"" >&2
+  exit 1
+fi
+container="$(xcrun simctl get_app_container booted com.liftos.app data)"
+printf '%s' "$1" > "$container/Library/liftos-voice-script.txt"
+echo "Seeded — tap the mic pill in the sim (one shot)."
