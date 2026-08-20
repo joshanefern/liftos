@@ -6,6 +6,7 @@ import { toast } from "@/components/ui/use-toast";
 import {
   cancelListening,
   ensureSpeechPermissions,
+  onSpeechError,
   onSpeechPartial,
   speechSupported,
   startListening,
@@ -20,11 +21,12 @@ import {
 } from "@/lib/voiceApply";
 import { cn } from "@/lib/utils";
 
-/* ── Hold-to-talk voice logging.
-   Hold the pill → live transcript streams into the overlay. Release →
-   interpret → apply → confirmation card with Undo (8s). Slide-away or a
-   sub-2-char transcript cancels quietly. All row mutations run through
-   lib/voiceApply — the model never touches state directly. ── */
+/* ── Tap-to-speak voice logging.
+   Tap the pill → live transcript streams into the overlay. A pause after
+   speech (or a second tap) → interpret → apply → confirmation card with
+   Undo (8s). Hearing nothing, or the recognizer dying mid-listen, always
+   ends in a visible card — never a silent vanish. All row mutations run
+   through lib/voiceApply — the model never touches state directly. ── */
 
 type Props = {
   exercises: VoiceLoggedExercise[];
@@ -48,6 +50,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
   const [phase, setPhase] = useState<Phase>({ at: "idle" });
   const activeRef = useRef(false);
   const listenerRef = useRef<PluginListenerHandle | null>(null);
+  const errorListenerRef = useRef<PluginListenerHandle | null>(null);
   const dismissTimer = useRef<number>(0);
   const watchdog = useRef<number>(0);
   const lastChangeAt = useRef(0);
@@ -60,6 +63,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
   useEffect(
     () => () => {
       listenerRef.current?.remove();
+      errorListenerRef.current?.remove();
       window.clearTimeout(dismissTimer.current);
       window.clearInterval(watchdog.current);
       void cancelListening().catch(() => {});
@@ -100,7 +104,21 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
         current.at === "listening" ? { at: "listening", partial: transcript } : current,
       );
     });
-    // Hands-free endpoint: a pause after speech logs it; dead air cancels.
+    // Recognizer died mid-listen (native emits instead of going silent):
+    // keep whatever was heard, otherwise say so and reset.
+    errorListenerRef.current?.remove();
+    errorListenerRef.current = await onSpeechError(() => {
+      if (!activeRef.current) return;
+      if (lastTranscript.current.trim().length >= 3) {
+        void finish();
+      } else {
+        cancel();
+        setPhase({ at: "missed", transcript: "" });
+        scheduleDismiss(6000);
+      }
+    });
+    // Hands-free endpoint: a pause after speech logs it; dead air ends in
+    // a visible "didn't hear anything" card, never a quiet vanish.
     window.clearInterval(watchdog.current);
     watchdog.current = window.setInterval(() => {
       if (!activeRef.current) return;
@@ -111,6 +129,8 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
         void finish();
       } else if (!heard && total >= EMPTY_CANCEL_MS) {
         cancel();
+        setPhase({ at: "missed", transcript: "" });
+        scheduleDismiss(6000);
       }
     }, 250);
     try {
@@ -135,6 +155,8 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     }
     listenerRef.current?.remove();
     listenerRef.current = null;
+    errorListenerRef.current?.remove();
+    errorListenerRef.current = null;
 
     if (transcript.length < 3) {
       setPhase({ at: "idle" });
@@ -173,6 +195,8 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     void cancelListening().catch(() => {});
     listenerRef.current?.remove();
     listenerRef.current = null;
+    errorListenerRef.current?.remove();
+    errorListenerRef.current = null;
     setPhase({ at: "idle" });
   };
 
@@ -233,11 +257,21 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
             )}
             {phase.at === "missed" && (
               <>
-                <p className="eyebrow !text-fg-muted">Didn't catch that</p>
-                <p className="mt-1.5 text-sm leading-5 text-fg-soft">“{phase.transcript}”</p>
-                <p className="mt-1 text-[12px] leading-4 text-fg-muted">
-                  Try “3 sets of 8 at 185 on bench” or “note: shoulder felt tight”.
+                <p className="eyebrow !text-fg-muted">
+                  {phase.transcript ? "Didn't catch that" : "Didn't hear anything"}
                 </p>
+                {phase.transcript ? (
+                  <>
+                    <p className="mt-1.5 text-sm leading-5 text-fg-soft">“{phase.transcript}”</p>
+                    <p className="mt-1 text-[12px] leading-4 text-fg-muted">
+                      Try “3 sets of 8 at 185 on bench” or “note: shoulder felt tight”.
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-1.5 text-sm leading-5 text-fg-soft">
+                    Check the mic is on, then tap and try again.
+                  </p>
+                )}
               </>
             )}
           </div>

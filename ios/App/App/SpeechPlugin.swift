@@ -2,14 +2,20 @@ import Capacitor
 import Speech
 import AVFoundation
 
-/// Press-and-hold dictation for the active-workout logger. In-app plugin,
+/// Tap-to-speak dictation for the active-workout logger. In-app plugin,
 /// registered manually by LiftOSBridgeViewController (Capacitor 8 auto-
 /// discovery never scans the App target). JS side: src/lib/speech.ts
 /// registers "Speech" and mirrors these signatures.
 ///
 /// Design points:
 /// - SFSpeechRecognizer with on-device recognition when the locale supports
-///   it (gym privacy + no 1-minute server cap); falls back to server.
+///   it (gym privacy + no 1-minute server cap). The SIMULATOR claims
+///   on-device support but ships no local model — requiring it kills the
+///   task within milliseconds — so the sim always goes server-side.
+/// - A task that errors before anything was heard retries once without the
+///   on-device requirement (devices that haven't downloaded the local model
+///   yet); an unrecoverable death emits "speechError" to JS — a listening
+///   session must never end silently.
 /// - contextualStrings biased with the session's exercise names so
 ///   "incline curl" beats "in klein girl".
 /// - Partial results stream to JS ("speechPartial") for the live overlay;
@@ -35,6 +41,12 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
     private var latestTranscript = ""
     private var stopCall: CAPPluginCall?
     private var finished = false
+    private var contextual: [String] = []
+    private var onDeviceRequested = false
+    private var triedServerFallback = false
+    // Stale-task guard: bumped on begin/cancel/fallback so a dying task's
+    // trailing callback can never touch the session that replaced it.
+    private var generation = 0
 
     @objc public func isAvailable(_ call: CAPPluginCall) {
         let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en_US"))
@@ -63,7 +75,37 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func beginSession(call: CAPPluginCall, contextual: [String]) {
+        generation += 1
         teardown(cancelTask: true)
+
+        #if DEBUG && targetEnvironment(simulator)
+        // Simulators have no speech model assets (localspeechreco dies in
+        // ~700ms) and often no host mic path, so real dictation can never
+        // work there. QA hook, same pattern as debugSeedWorkout:
+        //   xcrun simctl spawn booted defaults write com.liftos.app \
+        //     liftos-voice-script "I did 1 set of recline curls for 8 reps"
+        // The next tap streams that string as live partials — everything
+        // downstream (silence endpoint, edge fn, apply, undo) runs for real.
+        let defaults = UserDefaults.standard
+        if let scripted = defaults.string(forKey: "liftos-voice-script"),
+           !scripted.isEmpty {
+            defaults.removeObject(forKey: "liftos-voice-script")
+            latestTranscript = ""
+            finished = false
+            let words = scripted.split(separator: " ").map(String.init)
+            let gen = generation
+            for (index, word) in words.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4 + Double(index) * 0.18) { [weak self] in
+                    guard let self, gen == self.generation, !self.finished else { return }
+                    self.latestTranscript = self.latestTranscript.isEmpty
+                        ? word : self.latestTranscript + " " + word
+                    self.notifyListeners("speechPartial", data: ["transcript": self.latestTranscript])
+                }
+            }
+            call.resolve(["started": true])
+            return
+        }
+        #endif
 
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
             call.reject("speech_not_authorized")
@@ -75,6 +117,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         self.recognizer = recognizer
+        self.contextual = contextual
 
         let session = AVAudioSession.sharedInstance()
         do {
@@ -86,19 +129,14 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        request.taskHint = .dictation
-        if #available(iOS 16.0, *) { request.addsPunctuation = true }
-        if recognizer.supportsOnDeviceRecognition {
-            request.requiresOnDeviceRecognition = true
-        }
-        if !contextual.isEmpty {
-            request.contextualStrings = contextual
-        }
-        self.request = request
-        self.latestTranscript = ""
-        self.finished = false
+        #if targetEnvironment(simulator)
+        onDeviceRequested = false
+        #else
+        onDeviceRequested = recognizer.supportsOnDeviceRecognition
+        #endif
+        triedServerFallback = false
+        latestTranscript = ""
+        finished = false
 
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
@@ -106,36 +144,92 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("no_input_device")
             return
         }
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            request.append(buffer)
-        }
+        launchTask(onDevice: onDeviceRequested)
         audioEngine.prepare()
         do {
             try audioEngine.start()
         } catch {
-            input.removeTap(onBus: 0)
+            teardown(cancelTask: true)
             call.reject("audio_engine_failed: \(error.localizedDescription)")
             return
-        }
-
-        task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self else { return }
-            if let result {
-                self.latestTranscript = result.bestTranscription.formattedString
-                self.notifyListeners("speechPartial", data: ["transcript": self.latestTranscript])
-                if result.isFinal { self.resolveStop() }
-            }
-            if error != nil { self.resolveStop() }
         }
 
         call.resolve(["started": true])
     }
 
-    /// Release of the hold: end audio, wait for the recognizer to finalize
+    /// Create the recognition request + task against the running input node.
+    /// Reused by the server fallback, which swaps the pipeline mid-listen.
+    private func launchTask(onDevice: Bool) {
+        guard let recognizer else { return }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        request.taskHint = .dictation
+        if #available(iOS 16.0, *) { request.addsPunctuation = true }
+        request.requiresOnDeviceRecognition = onDevice
+        if !contextual.isEmpty {
+            request.contextualStrings = contextual
+        }
+        self.request = request
+
+        let input = audioEngine.inputNode
+        input.removeTap(onBus: 0)
+        let format = input.outputFormat(forBus: 0)
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
+        }
+
+        let gen = generation
+        task = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            DispatchQueue.main.async {
+                guard let self, gen == self.generation else { return }
+                if let result {
+                    self.latestTranscript = result.bestTranscription.formattedString
+                    self.notifyListeners("speechPartial", data: ["transcript": self.latestTranscript])
+                    if result.isFinal { self.resolveStop() }
+                }
+                if error != nil { self.handleTaskError() }
+            }
+        }
+    }
+
+    /// Runs on main with the generation already validated.
+    private func handleTaskError() {
+        guard !finished else { return }
+        // A stop is already in flight — finalize with whatever was heard.
+        if stopCall != nil {
+            resolveStop()
+            return
+        }
+        // On-device model died before any speech landed — retry via server.
+        if onDeviceRequested && !triedServerFallback && latestTranscript.isEmpty
+            && audioEngine.isRunning {
+            triedServerFallback = true
+            onDeviceRequested = false
+            generation += 1
+            task?.cancel()
+            task = nil
+            self.request = nil
+            launchTask(onDevice: false)
+            return
+        }
+        // Unrecoverable mid-listen death: tell JS — never go quiet while the
+        // overlay says "Listening…".
+        finished = true
+        teardown(cancelTask: true)
+        notifyListeners("speechError", data: ["message": "recognition_failed"])
+    }
+
+    /// End of a tap-to-stop: end audio, wait for the recognizer to finalize
     /// (or time out fast) and resolve with everything heard.
     @objc public func stopListening(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            // Session already over (task error beat the stop) — hand back
+            // what was heard instead of waiting on a dead recognizer.
+            if self.finished || self.task == nil {
+                call.resolve(["transcript": self.latestTranscript])
+                return
+            }
             self.stopCall = call
             self.audioEngine.stop()
             self.audioEngine.inputNode.removeTap(onBus: 0)
@@ -150,7 +244,9 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc public func cancelListening(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
-            self?.teardown(cancelTask: true)
+            guard let self else { return }
+            self.generation += 1
+            self.teardown(cancelTask: true)
             call.resolve()
         }
     }

@@ -5,11 +5,12 @@ import {
 } from "@capacitor/core";
 
 /* ── Native dictation bridge (ios/App/App/SpeechPlugin.swift).
-   Press-and-hold: startListening on pointer-down, stopListening on
-   release resolves with the final transcript; partials stream via the
-   "speechPartial" event for the live overlay. ── */
+   Tap-to-speak: startListening begins a session, stopListening resolves
+   with the final transcript; partials stream via "speechPartial" for the
+   live overlay, and a recognizer that dies mid-listen emits "speechError"
+   instead of going silent. ── */
 
-type SpeechPluginIface = {
+interface SpeechPluginIface {
   isAvailable(): Promise<{ available: boolean; onDevice: boolean }>;
   requestSpeechPermissions(): Promise<{ speech: boolean; microphone: boolean }>;
   startListening(options: { contextualStrings?: string[] }): Promise<{ started: boolean }>;
@@ -19,7 +20,11 @@ type SpeechPluginIface = {
     eventName: "speechPartial",
     listener: (data: { transcript: string }) => void,
   ): Promise<PluginListenerHandle>;
-};
+  addListener(
+    eventName: "speechError",
+    listener: (data: { message: string }) => void,
+  ): Promise<PluginListenerHandle>;
+}
 
 const Speech = registerPlugin<SpeechPluginIface>("Speech");
 
@@ -56,3 +61,8 @@ export const onSpeechPartial = (
   listener: (transcript: string) => void,
 ): Promise<PluginListenerHandle> =>
   Speech.addListener("speechPartial", (data) => listener(data.transcript ?? ""));
+
+export const onSpeechError = (
+  listener: (message: string) => void,
+): Promise<PluginListenerHandle> =>
+  Speech.addListener("speechError", (data) => listener(data.message ?? ""));
