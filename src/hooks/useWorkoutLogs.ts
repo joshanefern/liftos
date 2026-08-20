@@ -39,14 +39,32 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const { data } = await supabase
-      .from("workout_logs")
-      .select("*")
-      .order("finished_at", { ascending: false })
-      .limit(200);
-    // A failed reload keeps the stale cache — blanking every screen to the
-    // empty state on a network hiccup would read as data loss.
-    if (data) setLogs(data as WorkoutLog[]);
+    // Page through EVERYTHING: all-time PRs and trends computed over a
+    // "newest 200" window silently regress records once history outgrows
+    // it. Pages of 500, with a 10k-log sanity ceiling (~50 years of daily
+    // training) so a runaway account can't hang the boot.
+    const PAGE = 500;
+    const MAX_LOGS = 10_000;
+    const all: WorkoutLog[] = [];
+    for (let from = 0; from < MAX_LOGS; from += PAGE) {
+      const { data, error } = await supabase
+        .from("workout_logs")
+        .select("*")
+        .order("finished_at", { ascending: false })
+        .range(from, from + PAGE - 1);
+      // A failed page keeps the stale cache — blanking every screen to the
+      // empty state on a network hiccup would read as data loss.
+      if (error || !data) {
+        if (all.length === 0) {
+          setLoading(false);
+          return;
+        }
+        break;
+      }
+      all.push(...(data as WorkoutLog[]));
+      if (data.length < PAGE) break;
+    }
+    setLogs(all);
     setLoading(false);
   }, []);
 

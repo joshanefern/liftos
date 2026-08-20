@@ -17,7 +17,7 @@ const AuthLayout = ({ eyebrow, title, children }: { eyebrow: string; title: stri
       className="relative mx-auto flex min-h-screen max-w-6xl flex-col px-6 pb-6"
       style={{ paddingTop: "calc(4rem + var(--safe-top))" }}
     >
-      <main className="grid flex-1 items-start gap-8 py-4 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-10 lg:py-10">
+      <main className="grid flex-1 items-center gap-8 py-4 lg:grid-cols-[0.9fr_1.1fr] lg:gap-10 lg:py-10">
         <section className="hidden lg:block">
           <p className="label-xs mb-4">{eyebrow}</p>
           <h1 className="max-w-xl text-5xl font-semibold tracking-tight leading-[1.05]">{title}</h1>

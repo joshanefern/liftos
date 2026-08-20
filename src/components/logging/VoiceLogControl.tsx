@@ -49,6 +49,11 @@ type Phase =
 export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) => {
   const [phase, setPhase] = useState<Phase>({ at: "idle" });
   const activeRef = useRef(false);
+  // Bumped on every begin/cancel: a finish() that awaited a slow interpret
+  // call checks it afterwards and drops its result if a newer session
+  // started — otherwise the stale card clobbers the live listening UI and
+  // background chatter gets auto-logged.
+  const sessionGen = useRef(0);
   const listenerRef = useRef<PluginListenerHandle | null>(null);
   const errorListenerRef = useRef<PluginListenerHandle | null>(null);
   const dismissTimer = useRef<number>(0);
@@ -76,6 +81,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
   const begin = async (): Promise<void> => {
     if (activeRef.current) return;
     activeRef.current = true;
+    sessionGen.current += 1;
     window.clearTimeout(dismissTimer.current);
     tapHaptic();
     const granted = await ensureSpeechPermissions();
@@ -146,6 +152,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
   const finish = async (): Promise<void> => {
     if (!activeRef.current) return;
     activeRef.current = false;
+    const gen = sessionGen.current;
     window.clearInterval(watchdog.current);
     let transcript = "";
     try {
@@ -153,6 +160,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     } catch {
       /* fell through — treated as empty */
     }
+    if (gen !== sessionGen.current) return; // a newer session took over
     listenerRef.current?.remove();
     listenerRef.current = null;
     errorListenerRef.current?.remove();
@@ -164,14 +172,22 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     }
     setPhase({ at: "thinking", transcript });
     try {
-      const intent = await interpretUtterance(
-        transcript,
-        exercisesRef.current.map((e) => ({
-          name: e.name,
-          tracking: (e.tracking ?? "reps") as "reps" | "time",
-        })),
-        units,
-      );
+      // Hard ceiling so "Logging…" always resolves to a visible card even
+      // when the edge function hangs.
+      const intent = await Promise.race([
+        interpretUtterance(
+          transcript,
+          exercisesRef.current.map((e) => ({
+            name: e.name,
+            tracking: (e.tracking ?? "reps") as "reps" | "time",
+          })),
+          units,
+        ),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(() => reject(new Error("voice interpret timeout")), 15_000),
+        ),
+      ]);
+      if (gen !== sessionGen.current) return; // user re-tapped mid-interpret
       // Low-confidence interpretations don't auto-apply — a garbled
       // half-sentence writing sets into the log is worse than a re-ask.
       if ((intent.confidence ?? 1) < 0.5) {
@@ -190,6 +206,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
       setPhase({ at: "applied", result });
       scheduleDismiss(8000);
     } catch {
+      if (gen !== sessionGen.current) return;
       setPhase({ at: "missed", transcript });
       scheduleDismiss(6000);
     }
@@ -198,6 +215,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
   const cancel = (): void => {
     if (!activeRef.current) return;
     activeRef.current = false;
+    sessionGen.current += 1;
     window.clearInterval(watchdog.current);
     void cancelListening().catch(() => {});
     listenerRef.current?.remove();
