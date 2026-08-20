@@ -88,3 +88,28 @@ export const parseHoldSeconds = (raw: string): number | null => {
   }
   return total > 0 ? total : null;
 };
+
+/**
+ * Parse a typed cardio duration into seconds. Cardio thinks in minutes —
+ * the treadmill mental model, opposite of holds:
+ *
+ *   "30"    → 30:00      "5"     → 5:00
+ *   "30:30" → 30m 30s    ":45"   → 45s
+ *
+ * Returns null for empty/unparseable input.
+ */
+export const parseCardioSeconds = (raw: string): number | null => {
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  if (trimmed.includes(":")) return parseHoldSeconds(trimmed);
+  if (!/^\d+$/.test(trimmed)) return null;
+  const minutes = parseInt(trimmed, 10);
+  return minutes > 0 ? minutes * 60 : null;
+};
+
+/** Cardio hint/prefill form: whole minutes as a bare number ("30"), odd
+    remainders as m:ss so nothing is silently rounded away. */
+export const formatCardioInput = (totalSeconds: number): string => {
+  const s = Math.max(0, Math.round(totalSeconds));
+  return s % 60 === 0 ? String(s / 60) : formatHoldInput(s);
+};

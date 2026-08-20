@@ -1,4 +1,4 @@
-import { formatHoldInput, sanitizeHold } from "@/lib/exerciseTracking";
+import { formatCardioInput, formatHoldInput, sanitizeHold } from "@/lib/exerciseTracking";
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
 import { forwardRef, type KeyboardEvent, type MouseEvent } from "react";
@@ -35,8 +35,9 @@ export const formatWeightForDisplay = (n: number): string => {
 export type SetInputRowProps = {
   idx: number;
   showLabels: boolean;
-  /** "reps" (default) or "time" — which effort column this row shows. */
-  effort?: "reps" | "time";
+  /** "reps" (default), "time" (holds — bare digits are seconds), or
+      "cardio" (bare digits are minutes) — which effort column this row shows. */
+  effort?: "reps" | "time" | "cardio";
   /** Workout-mode register: larger condensed numerals, taller rows —
       arm's-length legibility on the black scoreboard. */
   scoreboard?: boolean;
@@ -92,12 +93,14 @@ export const SetInputRow = ({
   onWeightEnter,
   onWeightValueTap,
 }: SetInputRowProps) => {
-  const isTimed = effort === "time";
+  const isTimed = effort !== "reps";
+  const isCardio = effort === "cardio";
   const repsEmpty = reps === "";
   const weightEmpty = weight === "";
-  // In time mode the "reps" channel carries the hold text — hints are seconds.
+  // In time mode the "reps" channel carries the duration text — hints are
+  // seconds; cardio shows them as minutes, holds as m:ss.
   const formatEffortHint = (n: number): string =>
-    isTimed ? formatHoldInput(n) : String(n);
+    isCardio ? formatCardioInput(n) : isTimed ? formatHoldInput(n) : String(n);
   const sanitizeEffort = isTimed ? sanitizeHold : sanitizeReps;
 
   const handleRepsClick = (e: MouseEvent<HTMLInputElement>) => {
@@ -146,7 +149,7 @@ export const SetInputRow = ({
       {showLabels && (
         <div className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1.2fr)_36px] items-end gap-2 px-1 text-[10px] uppercase tracking-widest text-fg-muted">
           <span>Set</span>
-          <span>{isTimed ? "Time" : "Reps"}</span>
+          <span>{isCardio ? "Min" : isTimed ? "Time" : "Reps"}</span>
           <span>Weight</span>
           <span />
         </div>
@@ -194,7 +197,7 @@ export const SetInputRow = ({
           scoreboard={scoreboard}
           value={weight}
           hint={weightHint}
-          emptyPlaceholder={isTimed ? "BW" : undefined}
+          emptyPlaceholder={isTimed && !isCardio ? "BW" : undefined}
           onChange={(v) => onWeightChange(sanitizeWeight(v))}
           onClickEmpty={handleWeightClick}
           onMouseDown={handleWeightMouseDown}

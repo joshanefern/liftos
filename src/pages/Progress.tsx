@@ -10,10 +10,8 @@ import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
 import { isPlaceholderName, placeholderNames } from "@/lib/exerciseNames";
 import { formatHold, inferTracking } from "@/lib/exerciseTracking";
 import { allTimePRs, bestWeight, type WeightRecord } from "@/lib/prs";
-import {
-  featuredLift,
-  getLiftTrends,
-} from "@/lib/strengthTrend";
+import { buildProgressHero } from "@/lib/progressHero";
+import { getLiftTrends } from "@/lib/strengthTrend";
 import {
   getPrevWeekSessions,
   getTopLifts,
@@ -120,7 +118,10 @@ const Progress = () => {
   const junkNames = useMemo(() => placeholderNames(logs), [logs]);
 
   const trends = useMemo(() => getLiftTrends(logs, 84, TREND_MIN_SESSIONS), [logs]);
-  const hero = useMemo(() => featuredLift(trends), [trends]);
+  const heroStat = useMemo(
+    () => buildProgressHero(logs, profile?.goal ?? null, units),
+    [logs, profile?.goal, units],
+  );
   const keyLifts = useMemo(() => trends.slice(0, 4), [trends]);
 
   // Records, most recently improved first — real names only.
@@ -218,26 +219,22 @@ const Progress = () => {
         <p className="eyebrow !text-fg">Progress</p>
       </header>
 
-      {/* ── HERO — one interpreted headline, never an invented number ── */}
+      {/* ── HERO — one goal-angled, positively-framed overall number. The
+          math never invents a gain: when nothing is genuinely up, it
+          headlines consistency instead (lib/progressHero). ── */}
       <section className="mt-10 md:mt-14 animate-reveal-up" style={{ animationDelay: "60ms" }}>
-        {hero ? (
+        {heroStat ? (
           <>
             <p className="stat-hero !text-6xl md:!text-7xl whitespace-nowrap">
-              {hero.metric === "time" ? formatHold(hero.first) : hero.first}
-              <span className="mx-2 align-middle text-2xl font-extralight text-fg-muted">→</span>
-              {hero.metric === "time" ? formatHold(hero.last) : hero.last}
-              <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-primary">
-                {hero.metric === "time" ? "hold" : units}
+              {heroStat.value}
+              <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
+                {heroStat.label}
               </span>
             </p>
-            <p className="eyebrow mt-4">{hero.name}</p>
+            <p className="eyebrow mt-4">{heroStat.eyebrow}</p>
             <p className="body-sm mt-4 max-w-sm">
-              {hero.delta > 0
-                ? `${hero.name} is climbing — up ${hero.metric === "time" ? formatHold(hero.delta) : `${hero.delta} ${units}`}${liftPct(hero) !== null && liftPct(hero)! > 0 ? ` (+${liftPct(hero)}%)` : ""} across ${hero.sessions} sessions.`
-                : hero.delta === 0
-                  ? `Holding steady across ${hero.sessions} sessions — your most-trained lift.`
-                  : `Down ${hero.metric === "time" ? formatHold(Math.abs(hero.delta)) : `${Math.abs(hero.delta)} ${units}`} across ${hero.sessions} sessions — worth asking the coach.`}
-              <span className="text-fg-faint"> Last 12 weeks.</span>
+              {heroStat.detail}
+              <span className="text-fg-faint"> Tap a lift below for detail.</span>
             </p>
           </>
         ) : bestNamedLift || bestNamedHold || bestNamedReps ? (
@@ -248,21 +245,21 @@ const Progress = () => {
               {bestNamedLift ? (
                 <>
                   {bestNamedLift.weight}
-                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-primary">
+                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
                     {units}
                   </span>
                 </>
               ) : bestNamedHold ? (
                 <>
                   {formatHold(bestNamedHold.maxDuration!)}
-                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-primary">
+                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
                     hold
                   </span>
                 </>
               ) : (
                 <>
                   {bestNamedReps!.maxReps}
-                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-primary">
+                  <span className="ml-2.5 text-xl md:text-2xl font-light tracking-normal text-fg-muted">
                     reps
                   </span>
                 </>
@@ -312,7 +309,7 @@ const Progress = () => {
           baseline exists, muscle-group freshness always. ── */}
       {logs.length > 0 && (
         <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "90ms" }}>
-          <p className="eyebrow mb-3 !text-primary">Recovery</p>
+          <p className="eyebrow mb-3">Recovery</p>
           <div className="flex items-center gap-2.5">
             <span
               aria-hidden
@@ -355,17 +352,25 @@ const Progress = () => {
             </div>
           )}
           {soreMuscles.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {soreMuscles.map((f) => (
-                <span
-                  key={f.muscle}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 text-[12px] font-semibold text-primary"
-                >
-                  {labelForMuscle(f.muscle)}
-                  <span className="opacity-70">{Math.round(f.freshness * 100)}%</span>
-                </span>
-              ))}
-            </div>
+            <>
+              <p className="caption mt-2 max-w-sm">
+                How recharged each muscle is from recent training — 100% means
+                ready to hit hard again.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {soreMuscles.map((f) => (
+                  <span
+                    key={f.muscle}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-foreground/[0.06] px-3 py-1.5 text-[12px] font-semibold text-fg"
+                  >
+                    {labelForMuscle(f.muscle)}
+                    <span className="font-medium text-fg-muted">
+                      {Math.round(f.freshness * 100)}% back
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </>
           ) : (
             <p className="caption mt-2">All trained muscle groups are recovered.</p>
           )}
@@ -375,7 +380,7 @@ const Progress = () => {
       {/* ── Card 1 · STRENGTH TRENDS — never silently missing ── */}
       {keyLifts.length > 0 && (
         <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
-          <p className="eyebrow mb-1 !text-primary">Strength trends</p>
+          <p className="eyebrow mb-1">Strength trends</p>
           <p className="caption mb-3">Best set per session · last 12 weeks. Tap a lift for detail.</p>
 
           {/* Beat-last-time — the readout lifters actually check */}
@@ -430,9 +435,9 @@ const Progress = () => {
       {(prs.length > 0 || junkNames.length > 0) && (
         <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "180ms" }}>
           <div className="mb-3 flex items-baseline justify-between gap-3">
-            <p className="eyebrow !text-primary">Your records</p>
+            <p className="eyebrow">Your records</p>
             {newPrCount > 0 && (
-              <p className="caption !text-primary">
+              <p className="caption">
                 {newPrCount} new in the last 7 days
               </p>
             )}
@@ -514,7 +519,7 @@ const Progress = () => {
               onClick={() => setRenameOpen(true)}
               className="mt-1 flex min-h-11 w-full items-center gap-2 rule-hairline pt-2 text-left transition hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             >
-              <PenLine size={13} className="shrink-0 text-primary" />
+              <PenLine size={13} className="shrink-0 text-fg-muted" />
               <span className="caption !text-fg-soft">
                 {junkNames.length} imported exercise{junkNames.length === 1 ? "" : "s"} need
                 {junkNames.length === 1 ? "s" : ""} a name — tap to name{" "}
@@ -530,7 +535,7 @@ const Progress = () => {
       {logs.length > 0 && (
         <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "240ms" }}>
           <div className="flex items-baseline justify-between gap-3">
-            <p className="eyebrow !text-primary">This week</p>
+            <p className="eyebrow">This week</p>
             {weeklyStreak > 1 && (
               <p className="caption">{weeklyStreak} weeks in a row</p>
             )}
@@ -545,7 +550,7 @@ const Progress = () => {
             className="mt-2 flex min-h-11 items-center justify-between text-sm font-semibold text-fg transition hover:opacity-80"
           >
             Training calendar
-            <ArrowRight size={14} className="text-primary" />
+            <ArrowRight size={14} className="text-fg-muted" />
           </Link>
         </section>
       )}

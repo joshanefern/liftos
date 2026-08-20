@@ -481,7 +481,7 @@ const Dashboard = () => {
               >
                 <span
                   aria-hidden
-                  className={`h-2 w-2 rounded-full ${
+                  className={`h-2 w-2 shrink-0 rounded-full ${
                     recoveryLine.tone === "good"
                       ? "bg-[hsl(var(--primary-on-inverse))]"
                       : recoveryLine.tone === "warn"
@@ -489,11 +489,15 @@ const Dashboard = () => {
                         : "bg-background/40"
                   }`}
                 />
-                <span className="text-[13px] font-semibold text-background/85">
-                  {recoveryLine.word}
+                {/* One flowing span: the word and source wrap as a sentence,
+                    never as two side-by-side squeezed columns. */}
+                <span className="min-w-0 text-[13px] font-semibold leading-5 text-background/85">
+                  {recoveryLine.word}{" "}
+                  <span className="whitespace-nowrap text-[11px] font-normal text-background/45">
+                    · {recoveryLine.source}
+                  </span>
                 </span>
-                <span className="text-[11px] text-background/45">· {recoveryLine.source}</span>
-                <ChevronsRight size={13} className="text-background/50" />
+                <ChevronsRight size={13} className="shrink-0 text-background/50" />
               </button>
             )}
 
@@ -556,11 +560,7 @@ const Dashboard = () => {
                   key={r.label}
                   className="min-w-0 rounded-[10px] bg-foreground/[0.04] px-3 py-2.5"
                 >
-                  <p
-                    className={`stat-scoreboard whitespace-nowrap text-[26px] leading-8 tabular-nums ${
-                      r.recent ? "text-primary" : "text-fg"
-                    }`}
-                  >
+                  <p className="stat-scoreboard whitespace-nowrap text-[26px] leading-8 tabular-nums text-fg">
                     {r.weight}
                     <span className="ml-1 text-[11px] font-medium tracking-normal text-fg-muted">
                       {units}

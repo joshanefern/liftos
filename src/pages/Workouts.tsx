@@ -39,20 +39,26 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 type ExerciseDraft = {
   id: string;
   name: string;
+  /** "lift" = sets × reps × weight; "cardio" = one duration block
+      (stairmaster, bike, treadmill) logged in minutes. */
+  mode: "lift" | "cardio";
   sets: string;
   reps: string;
   weight: string;
+  minutes: string;
   decideLater: boolean;
 };
 
 const createExerciseDraft = (overrides?: Partial<ExerciseDraft>): ExerciseDraft => ({
   id: `exercise-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   name: "",
+  mode: "lift",
   sets: "3",
   // Targets are opt-in: blank reps/weight = decide while training, so the
   // fastest path is name → Save.
   reps: "",
   weight: "",
+  minutes: "",
   decideLater: false,
   ...overrides,
 });
@@ -69,6 +75,18 @@ const toInteger = (value: string, fallback: number) => Number.parseInt(value, 10
 const toDecimal = (value: string) => Number.parseFloat(value) || 0;
 
 const createExerciseDraftFromTemplate = (exercise: WorkoutExercise): ExerciseDraft => {
+  // Cardio round-trips as a duration block — without this, editing a
+  // template would silently flatten a 30-min ride into 0-rep sets.
+  if (exercise.kind === "cardio") {
+    const seconds = exercise.sets[0]?.duration_seconds ?? 0;
+    return createExerciseDraft({
+      id: exercise.id,
+      name: exercise.name,
+      mode: "cardio",
+      minutes: seconds > 0 ? String(Math.round(seconds / 60)) : "",
+    });
+  }
+
   const sets = exercise.sets.length;
   const reps = exercise.sets[0]?.reps ?? 0;
   const weight = exercise.sets[0]?.weight ?? 0;
@@ -273,6 +291,29 @@ const Workouts = () => {
     setSaving(true);
 
     const exercisesToSave: WorkoutExercise[] = completedExercises.map((exercise) => {
+      // Cardio saves as one duration block: kind "cardio" keeps it out of
+      // hold-PR and strength-trend math; tracking "time" gives it the
+      // duration column in the logger. Blank minutes = decide during.
+      if (exercise.mode === "cardio") {
+        const minutes = toInteger(exercise.minutes, 0);
+        return {
+          id: exercise.id,
+          name: exercise.name.trim(),
+          category: workoutName.trim(),
+          kind: "cardio" as const,
+          tracking: "time" as const,
+          target: minutes > 0 ? `${minutes} min` : "",
+          sets: [
+            {
+              id: `${exercise.id}-set-1`,
+              reps: 0,
+              weight: 0,
+              ...(minutes > 0 ? { duration_seconds: minutes * 60 } : {}),
+            },
+          ],
+        };
+      }
+
       // Blank targets = decide during the session. No toggle, no ceremony.
       const decideLater = exercise.reps.trim() === "" && exercise.weight.trim() === "";
       const targetSets = toInteger(exercise.sets, 3);
@@ -314,7 +355,9 @@ const Workouts = () => {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="px-5 pb-1 md:px-6">
         <input
-          autoFocus
+          // No autofocus on phones: the keyboard popping on open makes iOS
+          // pan the sheet up under the status bar. Tap to name it instead.
+          autoFocus={!isMobile}
           value={workoutName}
           onChange={(event) => setWorkoutName(event.target.value)}
           placeholder="Workout name — Push Day, Legs…"
@@ -331,10 +374,34 @@ const Workouts = () => {
                 <input
                   value={exercise.name}
                   onChange={(event) => updateExercise(exercise.id, "name", event.target.value)}
-                  placeholder={index === 0 ? "Exercise — Bench Press, Squat…" : "Exercise"}
+                  placeholder={
+                    exercise.mode === "cardio"
+                      ? "Stairmaster, bike, treadmill…"
+                      : index === 0
+                        ? "Exercise — Bench Press, Squat…"
+                        : "Exercise"
+                  }
                   aria-label={`Exercise ${index + 1} name`}
                   className="h-11 w-full min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-sm font-medium text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                 />
+                {/* Lift ⇄ Cardio — cardio swaps the target grid for minutes. */}
+                <div className="inline-flex shrink-0 rounded-full border border-border p-0.5">
+                  {(["lift", "cardio"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => updateExercise(exercise.id, "mode", mode)}
+                      aria-pressed={exercise.mode === mode}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                        exercise.mode === mode
+                          ? "bg-foreground text-background"
+                          : "text-fg-muted hover:text-fg"
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
                 {exercises.length > 1 && (
                   <button
                     type="button"
@@ -346,29 +413,49 @@ const Workouts = () => {
                   </button>
                 )}
               </div>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {(
-                  [
-                    ["sets", "Sets", "3", "numeric", integerInput],
-                    ["reps", "Reps", "—", "numeric", integerInput],
-                    ["weight", "Weight", "—", "decimal", decimalInput],
-                  ] as const
-                ).map(([key, label, hint, mode, sanitize]) => (
-                  <label key={key} className="block min-w-0">
+              {exercise.mode === "cardio" ? (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <label className="block min-w-0">
                     <span className="mb-1 block text-[10px] uppercase tracking-widest text-fg-muted">
-                      {label}
+                      Minutes
                     </span>
                     <input
                       type="text"
-                      inputMode={mode}
-                      value={exercise[key]}
-                      placeholder={hint}
-                      onChange={(event) => updateExercise(exercise.id, key, sanitize(event.target.value))}
+                      inputMode="numeric"
+                      value={exercise.minutes}
+                      placeholder="30"
+                      onChange={(event) =>
+                        updateExercise(exercise.id, "minutes", integerInput(event.target.value))
+                      }
                       className="h-11 w-full rounded-lg border border-border bg-card px-3 text-center text-sm tabular-nums text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                     />
                   </label>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      ["sets", "Sets", "3", "numeric", integerInput],
+                      ["reps", "Reps", "—", "numeric", integerInput],
+                      ["weight", "Weight", "—", "decimal", decimalInput],
+                    ] as const
+                  ).map(([key, label, hint, mode, sanitize]) => (
+                    <label key={key} className="block min-w-0">
+                      <span className="mb-1 block text-[10px] uppercase tracking-widest text-fg-muted">
+                        {label}
+                      </span>
+                      <input
+                        type="text"
+                        inputMode={mode}
+                        value={exercise[key]}
+                        placeholder={hint}
+                        onChange={(event) => updateExercise(exercise.id, key, sanitize(event.target.value))}
+                        className="h-11 w-full rounded-lg border border-border bg-card px-3 text-center text-sm tabular-nums text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
 
@@ -608,8 +695,8 @@ const Workouts = () => {
           shouldScaleBackground={false}
           repositionInputs={false}
         >
-          <DrawerContent className="flex h-[calc(100dvh-var(--safe-top))] max-h-[calc(100dvh-var(--safe-top))] flex-col rounded-t-[22px] border-0 bg-background p-0">
-            <div className="flex items-center justify-between px-5 pb-2 pt-5">
+          <DrawerContent className="flex h-[calc(100dvh-var(--safe-top)-10px)] max-h-[calc(100dvh-var(--safe-top)-10px)] flex-col rounded-t-[22px] border-0 bg-background p-0">
+            <div className="flex items-center justify-between px-5 pb-2 pt-4">
               <DrawerTitle className="text-[17px] font-semibold text-fg">
                 {editingWorkoutId ? "Edit workout" : "New workout"}
               </DrawerTitle>

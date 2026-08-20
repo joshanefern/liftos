@@ -33,6 +33,7 @@ import {
 import {
   formatHold,
   formatHoldInput,
+  parseCardioSeconds,
   parseHoldSeconds,
   trackingFor,
   type EffortTracking,
@@ -176,6 +177,8 @@ const computePrs = (
 
   const prs: SessionSummary["prs"] = [];
   for (const exercise of exercises) {
+    // Cardio rides are neither holds nor lifts — no "longest stairmaster".
+    if (exercise.kind === "cardio") continue;
     const key = exercise.name.trim().toLowerCase();
     if (trackingFor(exercise) === "time") {
       let best: { duration: number; weight: number } | null = null;
@@ -408,6 +411,8 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     weightText: string,
     effortText: string,
   ) => {
+    // Cardio never fires hold-record banners (mirrors historyBests exclusion).
+    if (exercise.kind === "cardio") return;
     const key = exercise.name.trim().toLowerCase();
     const timed = trackingFor(exercise) === "time";
     const value = timed ? (parseHoldSeconds(effortText) ?? 0) : Number(weightText) || 0;
@@ -750,7 +755,13 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           reps: tracking === "time" ? 0 : Number(set.reps) || 0,
           weight: Number(set.weight) || 0,
           ...(tracking === "time"
-            ? { duration_seconds: parseHoldSeconds(set.reps) ?? 0 }
+            ? {
+                // Cardio reads bare digits as minutes; holds read seconds.
+                duration_seconds:
+                  (exercise.kind === "cardio"
+                    ? parseCardioSeconds(set.reps)
+                    : parseHoldSeconds(set.reps)) ?? 0,
+              }
             : {}),
           completed: set.completed,
           ...(set.isWarmup ? { isWarmup: true } : {}),
@@ -1098,7 +1109,8 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   <button
                     type="button"
                     onClick={() =>
-                      tracking === "time" || TIMED_TOGGLE_HINT.test(exercise.name)
+                      exercise.kind !== "cardio" &&
+                      (tracking === "time" || TIMED_TOGGLE_HINT.test(exercise.name))
                         ? setTracking(exercise.id, tracking === "time" ? "reps" : "time")
                         : undefined
                     }
@@ -1107,8 +1119,12 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     <h2 className="truncate text-[17px] font-semibold capitalize leading-snug text-fg">
                       {exercise.name}
                     </h2>
-                    {tracking === "time" && (
-                      <p className="caption mt-0.5 !text-fg-muted">timed · tap to switch to reps</p>
+                    {exercise.kind === "cardio" ? (
+                      <p className="caption mt-0.5 !text-fg-muted">cardio · minutes</p>
+                    ) : (
+                      tracking === "time" && (
+                        <p className="caption mt-0.5 !text-fg-muted">timed · tap to switch to reps</p>
+                      )
                     )}
                   </button>
                   <button
@@ -1133,7 +1149,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       idx={ordinals[setIndex]}
                       showLabels={setIndex === 0}
                       scoreboard
-                      effort={tracking}
+                      effort={exercise.kind === "cardio" ? "cardio" : tracking}
                       reps={set.reps}
                       weight={set.weight}
                       done={set.completed}
