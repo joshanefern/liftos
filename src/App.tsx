@@ -4,7 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { createContext, lazy, Suspense, useContext, useState } from "react";
+import { createContext, lazy, Suspense, useContext, useEffect, useState } from "react";
 import { UserProvider } from "@/context/UserContext";
 import { HealthKitAutoSync } from "@/hooks/useHealthKitAutoSync";
 import { ThemeProvider } from "@/context/ThemeContext";
@@ -96,6 +96,17 @@ const AppShell = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
+/* WKWebView keeps the window's scroll offset across route swaps, so a page
+   opened from a scrolled screen started mid-scroll instead of at the top.
+   Native apps open every screen at the top — match that. */
+const ScrollToTop = () => {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+};
+
 /* On the native iOS app, boot into the product, not the marketing site. */
 const isNative = Capacitor.isNativePlatform();
 
@@ -116,6 +127,7 @@ const App = () => {
         <HealthKitAutoSync />
         <SidebarContext.Provider value={{ collapsed, setCollapsed }}>
           <BrowserRouter>
+            <ScrollToTop />
             <Suspense fallback={<BootSplash />}>
             <Routes>
               <Route
