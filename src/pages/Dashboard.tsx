@@ -237,6 +237,10 @@ const Dashboard = () => {
     if (!picked) return null;
     const lifts = picked.filter((e) => !isPlaceholderName(e.name));
     const sets = lifts.reduce((n, e) => n + e.sets.length, 0);
+    const reps = lifts.reduce(
+      (n, e) => n + e.sets.reduce((r, s) => r + (typeof s.reps === "number" ? s.reps : 0), 0),
+      0,
+    );
     // ~3 min per working set (set + rest) — a lifter's rule of thumb, rounded
     // to 5 so it reads as an estimate, not a promise.
     const minutes = Math.max(10, Math.round((sets * 3) / 5) * 5);
@@ -252,6 +256,7 @@ const Dashboard = () => {
     return {
       lifts: lifts.length,
       sets,
+      reps,
       minutes,
       last: last
         ? {
@@ -422,19 +427,11 @@ const Dashboard = () => {
               {dataReady ? suggestion.title : "Syncing…"}
             </h2>
 
-            {/* The session's shape — lifts · sets · ~minutes, and how the
-                last run of THIS workout went. What you're walking into. */}
+            {/* The session's shape — sets · reps · minutes. What you're
+                walking into, no estimates dressed up as promises. */}
             {sessionShape && (
               <div className="mt-3 border-t border-background/10 pt-3">
                 <div className="flex items-baseline gap-5">
-                  <div>
-                    <p className="stat-scoreboard text-[28px] leading-8 text-background">
-                      {sessionShape.lifts}
-                    </p>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
-                      {sessionShape.lifts === 1 ? "lift" : "lifts"}
-                    </p>
-                  </div>
                   <div>
                     <p className="stat-scoreboard text-[28px] leading-8 text-background">
                       {sessionShape.sets}
@@ -445,22 +442,21 @@ const Dashboard = () => {
                   </div>
                   <div>
                     <p className="stat-scoreboard text-[28px] leading-8 text-background">
-                      ~{sessionShape.minutes}
+                      {sessionShape.reps}
+                    </p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
+                      reps
+                    </p>
+                  </div>
+                  <div>
+                    <p className="stat-scoreboard text-[28px] leading-8 text-background">
+                      {sessionShape.minutes}
                     </p>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
                       min
                     </p>
                   </div>
                 </div>
-                <p className="mt-2.5 text-[13px] leading-5 text-background/65">
-                  {sessionShape.last
-                    ? `Last time · ${sessionShape.last.when.toLowerCase() === "today" ? "today" : `${sessionShape.last.when} ago`}${
-                        sessionShape.last.volume > 0
-                          ? ` · ${Math.round(sessionShape.last.volume).toLocaleString()} ${units} lifted`
-                          : ""
-                      }${sessionShape.last.minutes ? ` in ${sessionShape.last.minutes} min` : ""}`
-                    : "First time running this one."}
-                </p>
               </div>
             )}
 
@@ -549,7 +545,7 @@ const Dashboard = () => {
             className="group block rounded-[13px] bg-card px-4 pb-4 pt-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] transition-[transform,box-shadow] duration-150 active:scale-[0.99] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg">
                 Personal records
               </p>
               <OpenPill label="All" />
@@ -579,7 +575,7 @@ const Dashboard = () => {
             plus the one obvious way into the calendar. */}
         <div className="rounded-[13px] bg-card px-4 pb-3 pt-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg">
               This month
             </p>
             {weeklyStreak > 1 && (

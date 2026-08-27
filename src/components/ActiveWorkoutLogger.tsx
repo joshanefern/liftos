@@ -91,7 +91,11 @@ type LoggedExercise = Omit<WorkoutExercise, "sets"> & { sets: LoggedSet[] };
 
 type SessionPR =
   | { name: string; kind: "weight"; weight: number; reps: number; isFirst: boolean }
-  | { name: string; kind: "hold"; duration: number; weight: number; isFirst: boolean };
+  | { name: string; kind: "hold"; duration: number; weight: number; isFirst: boolean }
+  // Bodyweight rep records (push-ups, pull-ups) — weight stays 0 for the
+  // shared weight-first sort. Keeps the recap consistent with the live
+  // PR banner, which has always celebrated these.
+  | { name: string; kind: "reps"; reps: number; weight: number; isFirst: boolean };
 
 type SessionSummary = {
   durationSeconds: number;
@@ -160,6 +164,7 @@ const computePrs = (
 ): SessionSummary["prs"] => {
   const bestWeightByName = new Map<string, number>();
   const bestHoldByName = new Map<string, number>();
+  const bestBodyRepsByName = new Map<string, number>();
   for (const log of history) {
     for (const exercise of log.exercises) {
       const key = exercise.name.trim().toLowerCase();
@@ -167,6 +172,9 @@ const computePrs = (
         if (set.isWarmup || !set.completed) continue;
         if (set.weight && set.weight > 0) {
           bestWeightByName.set(key, Math.max(bestWeightByName.get(key) ?? 0, set.weight));
+        } else if (exercise.kind !== "cardio" && typeof set.reps === "number" && set.reps >= 1) {
+          // Bodyweight tier — rep records for push-ups and friends.
+          bestBodyRepsByName.set(key, Math.max(bestBodyRepsByName.get(key) ?? 0, set.reps));
         }
         // Cardio durations are not holds.
         if (exercise.kind !== "cardio" && set.duration_seconds && set.duration_seconds > 0) {
@@ -201,19 +209,33 @@ const computePrs = (
     }
 
     let best: { weight: number; reps: number } | null = null;
+    let bestBodyReps = 0;
     for (const set of exercise.sets) {
       if (set.isWarmup || !set.completed) continue;
       const weight = Number(set.weight) || 0;
+      const reps = Number(set.reps) || 0;
       if (weight > 0 && (best === null || weight > best.weight)) {
-        best = { weight, reps: Number(set.reps) || 0 };
+        best = { weight, reps };
+      } else if (weight === 0 && reps > bestBodyReps) {
+        bestBodyReps = reps;
       }
     }
-    if (!best) continue;
-    const prior = bestWeightByName.get(key);
-    if (prior === undefined) {
-      prs.push({ name: exercise.name, kind: "weight", ...best, isFirst: true });
-    } else if (best.weight > prior) {
-      prs.push({ name: exercise.name, kind: "weight", ...best, isFirst: false });
+    if (best) {
+      const prior = bestWeightByName.get(key);
+      if (prior === undefined) {
+        prs.push({ name: exercise.name, kind: "weight", ...best, isFirst: true });
+      } else if (best.weight > prior) {
+        prs.push({ name: exercise.name, kind: "weight", ...best, isFirst: false });
+      }
+      continue;
+    }
+    // Bodyweight-only exercise: rep records, mirroring the live banner.
+    if (bestBodyReps < 1) continue;
+    const priorReps = bestBodyRepsByName.get(key);
+    if (priorReps === undefined) {
+      prs.push({ name: exercise.name, kind: "reps", reps: bestBodyReps, weight: 0, isFirst: true });
+    } else if (bestBodyReps > priorReps) {
+      prs.push({ name: exercise.name, kind: "reps", reps: bestBodyReps, weight: 0, isFirst: false });
     }
   }
   return prs.sort((a, b) => b.weight - a.weight);
@@ -943,7 +965,9 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                           ? pr.weight > 0
                             ? `${formatHold(pr.duration)} at ${formatWeightForDisplay(pr.weight)} ${units}`
                             : `${formatHold(pr.duration)} hold`
-                          : `${formatWeightForDisplay(pr.weight)} ${units} × ${pr.reps}`}
+                          : pr.kind === "reps"
+                            ? `${pr.reps} reps`
+                            : `${formatWeightForDisplay(pr.weight)} ${units} × ${pr.reps}`}
                       </span>
                     </div>
                   ))}
@@ -977,7 +1001,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     type="button"
                     disabled={templateSaveState === "saving"}
                     onClick={() => void handleSaveAsTemplate("new")}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-foreground bg-foreground text-[13.5px] font-semibold text-background transition hover:opacity-90 disabled:opacity-60"
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full bg-primary text-[13.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-60"
                   >
                     {templateSaveState === "saving" ? "Saving…" : "Save as workout"}
                   </button>
@@ -987,7 +1011,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       type="button"
                       disabled={templateSaveState === "saving"}
                       onClick={() => void handleSaveAsTemplate("update")}
-                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-foreground bg-foreground px-3 text-[13px] font-semibold text-background transition hover:opacity-90 disabled:opacity-60"
+                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-primary px-3 text-[13px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-60"
                     >
                       Update “{session.name}”
                     </button>
@@ -995,7 +1019,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       type="button"
                       disabled={templateSaveState === "saving"}
                       onClick={() => void handleSaveAsTemplate("new")}
-                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-border px-3 text-[13px] font-semibold text-fg-soft transition hover:border-fg-soft disabled:opacity-60"
+                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-primary px-3 text-[13px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-60"
                     >
                       Save as new
                     </button>

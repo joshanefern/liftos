@@ -16,7 +16,7 @@ import { TEMPLATE_LIMIT_ERROR, useWorkoutTemplates } from "@/hooks/useWorkoutTem
 import { toast } from "@/components/ui/use-toast";
 import { ChevronLeft, ChevronRight, Dumbbell } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 /* Sunday-start weeks (US convention). */
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -146,6 +146,7 @@ const Calendar = () => {
   // Deep link: /calendar?day=YYYY-MM-DD opens straight onto that day's
   // sessions — the recap and the home "Last workout" card land here.
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const linkedDay = useMemo(() => {
     const raw = searchParams.get("day");
     if (!raw) return null;
@@ -548,14 +549,25 @@ const Calendar = () => {
                       </p>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => void saveLogAsTemplate(log)}
-                      disabled={savedLogIds.has(log.id)}
-                      className="mt-3 inline-flex min-h-10 items-center gap-1.5 rounded-full border border-primary/45 px-3.5 text-[12.5px] font-semibold text-primary transition hover:bg-primary/10 disabled:border-border disabled:text-fg-muted"
-                    >
-                      {savedLogIds.has(log.id) ? "Saved to workouts ✓" : "Save as workout"}
-                    </button>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void saveLogAsTemplate(log)}
+                        disabled={savedLogIds.has(log.id)}
+                        className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:bg-secondary disabled:text-fg-muted"
+                      >
+                        {savedLogIds.has(log.id) ? "Saved to workouts ✓" : "Save as workout"}
+                      </button>
+                      {/* Every historical log opens its full review — share
+                          and delete live there, not just for the newest. */}
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/workouts/review/${log.id}`)}
+                        className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-border px-3.5 text-[12.5px] font-semibold text-fg-soft transition hover:border-fg-soft hover:text-fg"
+                      >
+                        View details
+                      </button>
+                    </div>
 
                     <div className="mt-3 divide-y divide-border border-t border-border">
                       {(log.exercises ?? []).map((exercise) => {

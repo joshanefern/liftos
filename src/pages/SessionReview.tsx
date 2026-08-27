@@ -42,7 +42,17 @@ import {
 import { getMuscleActivation } from "@/lib/muscleMap";
 import { detectSessionPRs } from "@/lib/prs";
 import { supabase } from "@/lib/supabase";
-import { Activity, ChevronLeft, Dumbbell, Plus } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Activity, ChevronLeft, Dumbbell, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -84,7 +94,10 @@ const SessionReview = () => {
   const { profile } = useUser();
   const { sessions, loading: sessionsLoading, markReviewed, markDismissed } =
     useCapturedSessions();
-  const { logs, loading: logsLoading, save: saveLog } = useWorkoutLogs();
+  const { logs, loading: logsLoading, save: saveLog, remove: removeLog } = useWorkoutLogs();
+  // Delete-a-log flow: trash arms the dialog; only the dialog deletes.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // The provider list carries light summaries only (no hr_samples /
   // motion_samples / raw_payload) — the review screen needs the samples to run
@@ -419,17 +432,70 @@ const SessionReview = () => {
           {/* Quiet secondary, right: the ShareButton for saved logs (it
               renders the SAVED log, so unsaved edits don't leak into the
               card); the capture source otherwise. */}
-          {mode === "log" && existingLog && shareActivation ? (
-            <ShareButton
-              log={existingLog}
-              activations={[shareActivation]}
-              prCount={sharePRCount}
-              className="min-h-11 shrink-0"
-            />
+          {mode === "log" && existingLog ? (
+            <span className="flex shrink-0 items-center gap-1">
+              {shareActivation && (
+                <ShareButton
+                  log={existingLog}
+                  activations={[shareActivation]}
+                  prCount={sharePRCount}
+                  className="min-h-11 shrink-0"
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => setDeleteOpen(true)}
+                aria-label="Delete workout"
+                className="relative flex h-9 w-9 items-center justify-center rounded-full text-fg-muted transition after:absolute after:-inset-1 after:content-[''] hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/30"
+              >
+                <Trash2 size={15} />
+              </button>
+            </span>
           ) : (
             <span className="caption shrink-0">{sourceLabel}</span>
           )}
         </div>
+
+        {/* Deleting a log is the one truly destructive act in the app —
+            records, streaks, and recovery all recompute without it. */}
+        <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <AlertDialogContent className="w-[calc(100%-2.5rem)] max-w-sm rounded-[18px] border-border bg-card p-6 text-fg">
+            <AlertDialogHeader className="space-y-2 text-left sm:text-left">
+              <AlertDialogTitle className="text-[20px] font-semibold tracking-[-0.01em] text-fg">
+                Delete this workout?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-[14px] leading-5 text-fg-soft">
+                This permanently removes it from your history. Records, streaks,
+                and recovery recompute without it. This can’t be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="mt-5 flex-col gap-2 sm:flex-col sm:space-x-0">
+              <AlertDialogAction
+                disabled={deleting}
+                onClick={async () => {
+                  if (!existingLog || deleting) return;
+                  setDeleting(true);
+                  try {
+                    await removeLog(existingLog.id);
+                    toast({ title: "Workout deleted" });
+                    navigate(-1);
+                  } catch {
+                    toast({ title: "Could not delete workout", variant: "destructive" });
+                  } finally {
+                    setDeleting(false);
+                    setDeleteOpen(false);
+                  }
+                }}
+                className="h-12 w-full rounded-full border-0 bg-destructive text-[14.5px] font-semibold text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deleting ? "Deleting…" : "Delete workout"}
+              </AlertDialogAction>
+              <AlertDialogCancel className="mt-0 h-12 w-full rounded-full border border-border bg-transparent text-[14.5px] font-semibold text-fg-soft">
+                Cancel
+              </AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <p className="stat-hero mt-6 whitespace-nowrap !text-6xl md:!text-7xl">
           {focalIsVolume

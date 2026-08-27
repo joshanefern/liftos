@@ -28,6 +28,7 @@ type WorkoutLogsContextValue = {
   logs: WorkoutLog[];
   loading: boolean;
   save: (log: NewWorkoutLog) => Promise<WorkoutLog | null>;
+  remove: (id: string) => Promise<void>;
   reload: () => Promise<void>;
 };
 
@@ -98,9 +99,17 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
     return data as WorkoutLog;
   };
 
+  const remove = async (id: string) => {
+    // Throw BEFORE touching local state so a failed delete never fakes
+    // success — the row stays visible and the caller toasts.
+    const { error } = await supabase.from("workout_logs").delete().eq("id", id);
+    if (error) throw error;
+    setLogs((prev) => prev.filter((log) => log.id !== id));
+  };
+
   return createElement(
     WorkoutLogsContext.Provider,
-    { value: { logs, loading, save, reload: load } },
+    { value: { logs, loading, save, remove, reload: load } },
     children,
   );
 };

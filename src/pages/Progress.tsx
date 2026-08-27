@@ -1,35 +1,25 @@
 import { CTAButton } from "@/components/GoldButton";
 import { LiftDetailSheet, type LiftRef } from "@/components/progress/LiftDetailSheet";
 import { RenameExercisesSheet } from "@/components/progress/RenameExercisesSheet";
-import { WeekBadgeRow } from "@/components/home/WeekBadgeRow";
 import { useUser } from "@/context/UserContext";
-import { useReadiness } from "@/hooks/useReadiness";
-import { labelForMuscle } from "@/lib/muscleCoverage";
-import { muscleFreshnessFromLogs } from "@/lib/recovery";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
 import { isPlaceholderName, placeholderNames } from "@/lib/exerciseNames";
 import { formatHold, inferTracking } from "@/lib/exerciseTracking";
 import { allTimePRs, bestWeight, type WeightRecord } from "@/lib/prs";
+import { buildCoachContext, streamCoach } from "@/lib/coach";
 import { buildProgressHero } from "@/lib/progressHero";
+import {
+  cacheInsight,
+  INSIGHT_PROMPT,
+  loadCachedInsight,
+  recentChatExcerpts,
+} from "@/lib/progressInsight";
 import { getLiftTrends } from "@/lib/strengthTrend";
-import {
-  getPrevWeekSessions,
-  getTopLifts,
-  getVolumeTrend,
-  getWeeklyStreak,
-  getWeekStats,
-} from "@/lib/workoutStats";
+import { getTopLifts } from "@/lib/workoutStats";
 import { ArrowRight, ChevronDown, Dumbbell, PenLine } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  Area,
-  AreaChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import ReactMarkdown from "react-markdown";
 
 /* ── Progress — answers ONE question: "am I getting stronger?" — and reads
      top-to-bottom like a spoken summary (research round 2, Aug 2026):
@@ -69,28 +59,6 @@ const sparkPoints = (values: number[], w = 100, h = 28, pad = 3): string => {
     .join(" ");
 };
 
-/** Rotating real-world scale for total weight lifted — tonnage is a
-    share-toy, so give it a grin instead of more math. Input in the user's
-    units; ladder is in lb. */
-const tonnageEquivalence = (total: number, units: string): string | null => {
-  const lb = units === "lb" ? total : total * 2.20462;
-  const ladder: [number, string, string][] = [
-    [970_000, "jumbo jet", "jumbo jets"],
-    [25_000, "school bus", "school buses"],
-    [13_000, "elephant", "elephants"],
-    [750, "grand piano", "grand pianos"],
-    [160, "beer keg", "beer kegs"],
-  ];
-  for (const [weight, one, many] of ladder) {
-    const n = lb / weight;
-    if (n >= 1) {
-      const rounded = n >= 10 ? Math.round(n) : Math.round(n * 10) / 10;
-      return `that's about ${rounded} ${rounded === 1 ? one : many}`;
-    }
-  }
-  return null;
-};
-
 const CARD_CLASS =
   "rounded-[14px] bg-card p-4 shadow-[0_4px_12px_rgba(16,22,35,0.08)] " +
   "dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]";
@@ -109,7 +77,6 @@ const Progress = () => {
   const { logs, reload } = useWorkoutLogs();
   const units = profile?.units ?? "lb";
   const [showAllRecords, setShowAllRecords] = useState(false);
-  const [showLifted, setShowLifted] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [detailLift, setDetailLift] = useState<LiftRef | null>(null);
 
@@ -145,21 +112,43 @@ const Progress = () => {
     [prs],
   );
 
-  const weekStats = useMemo(() => getWeekStats(logs), [logs]);
-  const readiness = useReadiness();
-  // Least-recovered trained muscles — the chips on the recovery card.
-  const soreMuscles = useMemo(
-    () =>
-      muscleFreshnessFromLogs(logs)
-        .filter((f) => f.freshness < 0.85)
-        .sort((a, b) => a.freshness - b.freshness)
-        .slice(0, 4),
-    [logs],
-  );
-  const prevWeekSessions = useMemo(() => getPrevWeekSessions(logs), [logs]);
-  const weeklyStreak = useMemo(() => getWeeklyStreak(logs), [logs]);
-  const volumeTrend = useMemo(() => getVolumeTrend(logs), [logs]);
   const lastLog = logs[0] ?? null;
+
+  // ── Coach insight: one AI read on the whole picture, angled at the goal
+  // and informed by recent coach chats. Daily-cached; a newly logged
+  // session invalidates. ──
+  const [insight, setInsight] = useState("");
+  const [insightLoading, setInsightLoading] = useState(false);
+  useEffect(() => {
+    if (logs.length === 0) return;
+    const cached = loadCachedInsight(logs.length);
+    if (cached) {
+      setInsight(cached);
+      return;
+    }
+    let cancelled = false;
+    setInsight("");
+    setInsightLoading(true);
+    const context = {
+      ...buildCoachContext(logs, profile),
+      recent_conversations: recentChatExcerpts(),
+    } as ReturnType<typeof buildCoachContext>;
+    streamCoach([{ role: "user", content: INSIGHT_PROMPT }], context, (delta) => {
+      if (!cancelled) setInsight((current) => current + delta);
+    })
+      .then((full) => {
+        if (!cancelled && full.trim().length > 0) cacheInsight(logs.length, full);
+      })
+      .catch(() => {
+        if (!cancelled) setInsight("");
+      })
+      .finally(() => {
+        if (!cancelled) setInsightLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [logs, profile]);
 
   // Hero fallback material: the best real (named) lift, preserved forever.
   // getTopLifts is uncapped here so a heavy junk import can't crowd out a
@@ -188,29 +177,6 @@ const Progress = () => {
     const pr = prs.find((p) => p.exerciseName === name);
     setDetailLift({ name, timed: pr ? isTimedPr(pr, name) : inferTracking(name) === "time" });
   };
-
-  const weekLine =
-    weekStats.sessions > 0
-      ? `${weekStats.sessions} session${weekStats.sessions === 1 ? "" : "s"} this week` +
-        (prevWeekSessions === weekStats.sessions
-          ? " · same as last week"
-          : prevWeekSessions === 0
-            ? ""
-            : weekStats.sessions > prevWeekSessions
-              ? ` · ${weekStats.sessions - prevWeekSessions} more than last week`
-              : ` · ${prevWeekSessions - weekStats.sessions} fewer than last week`)
-      : lastLog
-        ? Date.now() - Date.parse(lastLog.finished_at) < 2 * DAY_MS
-          ? // A Monday after a Sunday session must not read "no sessions" —
-            // that's a calendar technicality, not a lapse.
-            `Fresh week — last workout ${relativeDay(lastLog.finished_at)}`
-          : `No sessions yet this week · last workout ${relativeDay(lastLog.finished_at)}`
-        : "No sessions yet this week";
-
-  const expandedTonnage = useMemo(
-    () => tonnageEquivalence(volumeTrend.reduce((s, p) => s + p.volume, 0), units),
-    [volumeTrend, units],
-  );
 
   return (
     <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
@@ -304,78 +270,6 @@ const Progress = () => {
           </>
         )}
       </section>
-
-      {/* ── Card 0 · RECOVERY — the overnight verdict when a wearable
-          baseline exists, muscle-group freshness always. ── */}
-      {logs.length > 0 && (
-        <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "90ms" }}>
-          <p className="eyebrow mb-3">Recovery</p>
-          <div className="flex items-center gap-2.5">
-            <span
-              aria-hidden
-              className={`h-2.5 w-2.5 rounded-full ${
-                readiness?.state === "run_down"
-                  ? "border-2 border-primary bg-transparent"
-                  : readiness?.state === "steady"
-                    ? "bg-fg-muted"
-                    : "bg-primary"
-              }`}
-            />
-            <p className="text-2xl font-semibold text-fg">
-              {readiness?.state === "primed"
-                ? "Primed"
-                : readiness?.state === "steady"
-                  ? "Steady"
-                  : readiness?.state === "run_down"
-                    ? "Run down"
-                    : readiness?.baselineDaysRemaining != null
-                      ? "Learning your baseline"
-                      : soreMuscles.length > 0
-                        ? "Recovering"
-                        : "Recovered"}
-            </p>
-          </div>
-          {readiness?.state === "run_down" && readiness.summary && (
-            <p className="body-sm mt-2 max-w-sm">{readiness.summary}</p>
-          )}
-          {readiness && readiness.flags.length > 0 && (
-            <div className="mt-3 space-y-1.5">
-              {readiness.flags.map((flag) => (
-                <div
-                  key={flag.metric}
-                  className="flex items-baseline justify-between gap-3 rounded-[11px] bg-foreground/[0.04] px-3.5 py-2"
-                >
-                  <span className="text-sm font-semibold text-fg">{flag.label}</span>
-                  <span className="text-sm tabular-nums text-fg-soft">{flag.detail}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {soreMuscles.length > 0 ? (
-            <>
-              <p className="caption mt-2 max-w-sm">
-                How recharged each muscle is from recent training — 100% means
-                ready to hit hard again.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {soreMuscles.map((f) => (
-                  <span
-                    key={f.muscle}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-foreground/[0.06] px-3 py-1.5 text-[12px] font-semibold text-fg"
-                  >
-                    {labelForMuscle(f.muscle)}
-                    <span className="font-medium text-fg-muted">
-                      {Math.round(f.freshness * 100)}% back
-                    </span>
-                  </span>
-                ))}
-              </div>
-            </>
-          ) : (
-            <p className="caption mt-2">All trained muscle groups are recovered.</p>
-          )}
-        </section>
-      )}
 
       {/* ── Card 1 · STRENGTH TRENDS — never silently missing ── */}
       {keyLifts.length > 0 && (
@@ -530,92 +424,47 @@ const Progress = () => {
         </section>
       )}
 
-      {/* ── Card 3 · THIS WEEK — one line and the calendar; nothing to read,
-          nothing to grade. ── */}
+      {/* ── Card 3 · COACH INSIGHT — the AI reads your training (and your
+          recent coach chats) and says what's working and what to push next.
+          Cached for the day; refreshes when a new session lands. ── */}
       {logs.length > 0 && (
         <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "240ms" }}>
           <div className="flex items-baseline justify-between gap-3">
-            <p className="eyebrow">This week</p>
-            {weeklyStreak > 1 && (
-              <p className="caption">{weeklyStreak} weeks in a row</p>
-            )}
+            <p className="eyebrow">Coach insight</p>
+            <Link to="/coach" className="caption transition hover:text-fg">
+              Ask the coach →
+            </Link>
           </div>
-          <p className="mt-2 text-base font-medium text-fg">{weekLine}</p>
-          <div className="mt-3">
-            <WeekBadgeRow workedDayIndices={weekStats.workedDayIndices} variant="surface" />
-          </div>
-
+          {insight || insightLoading ? (
+            <div className="mt-2 text-sm leading-6 text-fg">
+              <ReactMarkdown
+                components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                  ul: ({ children }) => <ul className="mb-2 list-disc space-y-1.5 pl-5 last:mb-0">{children}</ul>,
+                  ol: ({ children }) => <ol className="mb-2 list-decimal space-y-1.5 pl-5 last:mb-0">{children}</ol>,
+                  li: ({ children }) => <li className="marker:text-fg-muted">{children}</li>,
+                }}
+              >
+                {insight}
+              </ReactMarkdown>
+              {insightLoading && (
+                <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-[3px] animate-pulse rounded-full bg-primary" />
+              )}
+            </div>
+          ) : (
+            <p className="body-sm mt-2 text-fg-muted">
+              Insights build from your training and coach chats — they'll appear
+              here once the coach can reach the network.
+            </p>
+          )}
           <Link
             to="/calendar"
-            className="mt-2 flex min-h-11 items-center justify-between text-sm font-semibold text-fg transition hover:opacity-80"
+            className="mt-4 flex min-h-11 items-center justify-between rule-hairline pt-3 text-sm font-semibold text-fg transition hover:opacity-80"
           >
             Training calendar
             <ArrowRight size={14} className="text-fg-muted" />
           </Link>
-        </section>
-      )}
-
-      {/* ── Demoted: total weight lifted (chart behind a tap) ── */}
-      {volumeTrend.length > 0 && (
-        <section className="mt-8 animate-reveal-up" style={{ animationDelay: "300ms" }}>
-          <button
-            type="button"
-            onClick={() => setShowLifted((v) => !v)}
-            aria-expanded={showLifted}
-            className="flex min-h-11 w-full items-center justify-between rule-hairline pt-3 text-left"
-          >
-            <span className="eyebrow">Total weight lifted</span>
-            <ChevronDown
-              size={15}
-              className={`text-fg-muted transition-transform ${showLifted ? "rotate-180" : ""}`}
-            />
-          </button>
-          {showLifted && (
-            <div className="animate-fade-in">
-              <div className="mt-3 h-[170px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={volumeTrend} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
-                    <XAxis
-                      dataKey="week"
-                      tick={{ fontSize: 10, fill: "hsl(var(--text-tertiary))" }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: "hsl(var(--text-tertiary))" }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip
-                      formatter={(v) => [`${Number(v).toLocaleString()} ${units}`, "Lifted"]}
-                      contentStyle={{
-                        background: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: 10,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="volume"
-                      stroke="hsl(var(--chart-line))"
-                      strokeWidth={1.5}
-                      fill="hsl(var(--chart-line) / 0.12)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="caption mt-2">
-                Weekly totals, last 8 weeks
-                {expandedTonnage ? (
-                  <span className="text-fg-faint"> — {expandedTonnage}.</span>
-                ) : (
-                  "."
-                )}
-              </p>
-            </div>
-          )}
         </section>
       )}
 
