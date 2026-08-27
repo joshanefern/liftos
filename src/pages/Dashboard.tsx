@@ -560,7 +560,7 @@ const Dashboard = () => {
             className="group block rounded-[13px] bg-card px-4 pb-4 pt-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] transition-[transform,box-shadow] duration-150 active:scale-[0.99] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[hsl(35,25%,45%)] dark:text-[hsl(38,32%,72%)]">
                 Personal records
               </p>
               <OpenPill label="All" />
@@ -590,7 +590,7 @@ const Dashboard = () => {
             plus the one obvious way into the calendar. */}
         <div className="rounded-[13px] bg-card px-4 pb-3 pt-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[hsl(35,25%,45%)] dark:text-[hsl(38,32%,72%)]">
               This month
             </p>
             {weeklyStreak > 1 && (

@@ -36,7 +36,8 @@ export type SetInputRowProps = {
   idx: number;
   showLabels: boolean;
   /** "reps" (default), "time" (holds — bare digits are seconds), or
-      "cardio" (bare digits are minutes) — which effort column this row shows. */
+      "cardio" (bare digits are minutes; the weight column becomes
+      distance in the unitsLabel unit). */
   effort?: "reps" | "time" | "cardio";
   /** Workout-mode register: larger condensed numerals, taller rows —
       arm's-length legibility on the black scoreboard. */
@@ -158,7 +159,7 @@ export const SetInputRow = ({
         <div className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1.2fr)_36px] items-end gap-2 px-1 text-[10px] uppercase tracking-widest text-fg-muted">
           <span>Set</span>
           <span>{isCardio ? "Min" : isTimed ? "Time" : "Reps"}</span>
-          <span>Weight</span>
+          <span>{isCardio ? "Dist" : "Weight"}</span>
           <span />
         </div>
       )}

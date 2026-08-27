@@ -10,14 +10,14 @@ import { listConversations } from "@/lib/coachStore";
    session refreshes it; revisiting the tab does not re-bill the API. ── */
 
 export const INSIGHT_PROMPT =
-  "Progress-page insight: in at most 3 short bullets (under 60 words total), " +
-  "tell me (1) the clearest real improvement in my recent training, " +
-  "(2) the single highest-leverage next move for my goal, and " +
-  "(3) one thing to watch out for. If recent_conversations in the data " +
-  "mention injuries, constraints, or focuses, factor them in. " +
-  "No preamble, no headings — just the bullets.";
+  "One glanceable insight for my Progress page. " +
+  "Line 1: a single plain sentence, maximum 16 words — the most important " +
+  "true thing about my training right now, angled at my goal. " +
+  "Line 2, on its own line: 'Next: <the single move>' in maximum 8 words. " +
+  "Factor recent_conversations in if relevant. " +
+  "No bullets, no bold, no headings, nothing else.";
 
-const KEY = "liftos-progress-insight";
+const KEY = "liftos-progress-insight-v2";
 
 type CachedInsight = { day: string; logCount: number; text: string };
 

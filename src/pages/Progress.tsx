@@ -267,11 +267,6 @@ const Progress = () => {
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-fg">{lift.name}</p>
-                  <p className="caption mt-0.5">
-                    {lift.metric === "time"
-                      ? `${formatHold(lift.first)} → ${formatHold(lift.last)}`
-                      : `${lift.first} → ${lift.last} ${units}`}
-                  </p>
                 </div>
                 <svg viewBox="0 0 100 28" aria-hidden className="h-7 w-24 shrink-0">
                   <polyline
@@ -336,37 +331,38 @@ const Progress = () => {
                       )}
                       <span className="truncate">{pr.exerciseName}</span>
                     </p>
-                    <p className="caption mt-0.5">
-                      {pr.maxDuration !== null
-                        ? `Longest hold ${formatHold(pr.maxDuration)}`
-                        : holdNamed && best !== null
-                          ? // Rep-shaped legacy log of a hold exercise — state it
-                            // plainly, claim no rep record.
-                            `Logged ${best.weight} ${units} × ${best.reps}`
-                          : best !== null
-                            ? `Best ${best.weight} ${units} × ${best.reps}`
-                            : pr.maxReps !== null
-                              ? `Best ${pr.maxReps} reps`
-                              : "Logged"}
-                      <span className="text-fg-faint"> · {relativeDay(pr.lastImproved)}</span>
-                    </p>
                   </div>
-                  {timed || holdNamed ? (
-                    pr.maxDuration !== null && (
-                      <div className="shrink-0 text-right">
-                        <p className="stat-scoreboard whitespace-nowrap text-[24px] leading-7 text-fg">
-                          {formatHold(pr.maxDuration)}
-                        </p>
-                        <p className="caption !text-fg-muted">Hold</p>
-                      </div>
-                    )
-                  ) : pr.maxE1RM !== null ? (
+                  {/* One big stat per row, no sublines — every record shows
+                      its number on the right, whatever kind it is. */}
+                  {pr.maxDuration !== null ? (
+                    <div className="shrink-0 text-right">
+                      <p className="stat-scoreboard whitespace-nowrap text-[24px] leading-7 text-fg">
+                        {formatHold(pr.maxDuration)}
+                      </p>
+                      <p className="caption !text-fg-muted">Hold</p>
+                    </div>
+                  ) : !timed && !holdNamed && pr.maxE1RM !== null ? (
                     <div className="shrink-0 text-right">
                       <p className="stat-scoreboard whitespace-nowrap text-[24px] leading-7 text-fg">
                         {Math.round(pr.maxE1RM)}
                         <span className="ml-1 text-[12px] font-medium text-fg-muted">{units}</span>
                       </p>
                       <p className="caption !text-fg-muted">Est. best single</p>
+                    </div>
+                  ) : best !== null ? (
+                    <div className="shrink-0 text-right">
+                      <p className="stat-scoreboard whitespace-nowrap text-[24px] leading-7 text-fg">
+                        {best.weight}
+                        <span className="ml-1 text-[12px] font-medium text-fg-muted">{units}</span>
+                      </p>
+                      <p className="caption !text-fg-muted">× {best.reps}</p>
+                    </div>
+                  ) : pr.maxReps !== null ? (
+                    <div className="shrink-0 text-right">
+                      <p className="stat-scoreboard whitespace-nowrap text-[24px] leading-7 text-fg">
+                        {pr.maxReps}
+                      </p>
+                      <p className="caption !text-fg-muted">reps</p>
                     </div>
                   ) : null}
                 </button>
@@ -413,14 +409,13 @@ const Progress = () => {
             </Link>
           </div>
           {insight || insightLoading ? (
-            <div className="mt-2 text-sm leading-6 text-fg">
+            /* Two lines max by design: one sentence, then "Next: <move>". */
+            <div className="mt-2 [&_p:first-child]:text-[15px] [&_p:first-child]:font-medium [&_p:first-child]:leading-6 [&_p:first-child]:text-fg [&_p:not(:first-child)]:mt-1.5 [&_p:not(:first-child)]:text-[13px] [&_p:not(:first-child)]:leading-5 [&_p:not(:first-child)]:text-fg-soft">
               <ReactMarkdown
                 components={{
-                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
                   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                  ul: ({ children }) => <ul className="mb-2 list-disc space-y-1.5 pl-5 last:mb-0">{children}</ul>,
-                  ol: ({ children }) => <ol className="mb-2 list-decimal space-y-1.5 pl-5 last:mb-0">{children}</ol>,
-                  li: ({ children }) => <li className="marker:text-fg-muted">{children}</li>,
+                  ul: ({ children }) => <>{children}</>,
+                  li: ({ children }) => <p>{children}</p>,
                 }}
               >
                 {insight}

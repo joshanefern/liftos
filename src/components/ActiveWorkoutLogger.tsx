@@ -793,22 +793,29 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         category: exercise.category,
         target: exercise.target,
         notes: exercise.notes,
-        sets: exercise.sets.map((set) => ({
-          id: set.id,
-          reps: tracking === "time" ? 0 : Number(set.reps) || 0,
-          weight: Number(set.weight) || 0,
-          ...(tracking === "time"
-            ? {
-                // Cardio reads bare digits as minutes; holds read seconds.
-                duration_seconds:
-                  (exercise.kind === "cardio"
-                    ? parseCardioSeconds(set.reps)
-                    : parseHoldSeconds(set.reps)) ?? 0,
-              }
-            : {}),
-          completed: set.completed,
-          ...(set.isWarmup ? { isWarmup: true } : {}),
-        })),
+        sets: exercise.sets.map((set) => {
+          // Cardio rows repurpose the weight field as DISTANCE (mi/km) —
+          // save it as meters, never as a phantom 3.1 lb set.
+          const cardio = exercise.kind === "cardio";
+          const distance = cardio ? parseFloat(set.weight) : NaN;
+          return {
+            id: set.id,
+            reps: tracking === "time" ? 0 : Number(set.reps) || 0,
+            weight: cardio ? 0 : Number(set.weight) || 0,
+            ...(tracking === "time"
+              ? {
+                  // Cardio reads bare digits as minutes; holds read seconds.
+                  duration_seconds:
+                    (cardio ? parseCardioSeconds(set.reps) : parseHoldSeconds(set.reps)) ?? 0,
+                }
+              : {}),
+            ...(cardio && Number.isFinite(distance) && distance > 0
+              ? { distance_m: Math.round(distance * (isMetric ? 1000 : 1609.34)) }
+              : {}),
+            completed: set.completed,
+            ...(set.isWarmup ? { isWarmup: true } : {}),
+          };
+        }),
       };
     });
 
@@ -1198,7 +1205,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       reps={set.reps}
                       weight={set.weight}
                       done={set.completed}
-                      unitsLabel={units}
+                      unitsLabel={exercise.kind === "cardio" ? (isMetric ? "km" : "mi") : units}
                       repsHint={hintFor(exercise, setIndex, "reps")}
                       weightHint={hintFor(exercise, setIndex, "weight")}
                       isWarmup={set.isWarmup === true}
