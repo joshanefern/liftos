@@ -51,7 +51,7 @@ export type VoiceIntent = {
   kind: "sets" | "note" | "both" | "unclear";
   note?: string | null;
   actions?: VoiceAction[] | null;
-  /** 0..1 from the interpreter; the UI previews instead of applying <0.6. */
+  /** 0..1 from the interpreter; the UI re-asks instead of applying <0.5. */
   confidence?: number | null;
 };
 
@@ -179,13 +179,31 @@ export const applyVoiceIntent = (
     const existing = action.isNew ? null : findExercise(next, action.exercise);
 
     if (existing) {
-      const timed =
+      // Decide the exercise's FINAL tracking before writing anything, so the
+      // stored format always matches how the save path will parse it. A flip
+      // to time is blocked when completed rep rows exist (retroactive
+      // reinterpretation rewrote history), and a blocked flip means timed
+      // writes are unrepresentable — those spoken sets are skipped, not
+      // wedged into a reps-parsed column as m:ss.
+      const alreadyTimed = (existing.tracking ?? "reps") === "time";
+      const wantsTimed =
         (action.tracking ?? existing.tracking ?? "reps") === "time" ||
         spokenSets.every((s) => sane(s.seconds, MAX_SECONDS) !== null && s.reps == null);
+      const hadCompletedRows = existing.sets.some((r) => r.completed && !r.isWarmup);
+      const timed = alreadyTimed || (wantsTimed && !hadCompletedRows);
+      // Drop spoken sets whose content can't land in the final mode: a
+      // seconds-only set on a reps exercise, or a reps-only set on a timed
+      // one, would mark rows completed while writing nothing.
+      const writableSets = spokenSets.filter((s) =>
+        timed
+          ? sane(s.seconds, MAX_SECONDS) !== null || sane(s.weight, MAX_WEIGHT) !== null
+          : sane(s.reps, MAX_REPS) !== null || sane(s.weight, MAX_WEIGHT) !== null,
+      );
+      if (writableSets.length === 0) continue;
       let rows = [...existing.sets];
       // Sequential fill pointer: first non-warmup, not-completed row.
       const lines: string[] = [];
-      for (const spoken of spokenSets) {
+      for (const spoken of writableSets) {
         const ordinal = sane(spoken.ordinal, 200);
         let index: number;
         if (ordinal !== null) {
@@ -204,18 +222,12 @@ export const applyVoiceIntent = (
         setsLogged += 1;
         lines.push(describeSet(spoken, timed));
       }
-      // Flip an exercise to time-tracking only when nothing rep-based has
-      // been logged on it — retroactively reinterpreting completed rep rows
-      // as N-second holds rewrote history.
-      const hadCompletedRows = existing.sets.some((r) => r.completed && !r.isWarmup);
       next = next.map((e) =>
         e.id === existing.id
           ? {
               ...e,
               sets: rows,
-              ...(timed && !hadCompletedRows && (e.tracking ?? "reps") !== "time"
-                ? { tracking: "time" as const }
-                : {}),
+              ...(timed && !alreadyTimed ? { tracking: "time" as const } : {}),
             }
           : e,
       );

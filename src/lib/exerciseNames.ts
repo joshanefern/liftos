@@ -53,6 +53,9 @@ export const renameExercisesInLogs = async (
     const { data, error } = await supabase
       .from("workout_logs")
       .select("id, exercises")
+      // Postgres guarantees no row order without ORDER BY — unordered pages
+      // can repeat or skip rows, leaving some names silently un-renamed.
+      .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
     if (error) throw error;
     rows.push(...((data as LogRow[]) ?? []));

@@ -216,3 +216,22 @@ describe("applyVoiceIntent — guards", () => {
     expect(result.exercises[0].sets[0]).toMatchObject({ reps: "0:30", completed: true });
   });
 });
+
+describe("applyVoiceIntent — blocked tracking flip", () => {
+  it("skips a spoken duration for a reps exercise with completed sets instead of writing m:ss into a reps column", () => {
+    const base = session();
+    base[0] = {
+      ...base[0],
+      sets: [{ ...base[0].sets[0], reps: "8", completed: true }, base[0].sets[1], base[0].sets[2]],
+    };
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Incline Curl", sets: [{ seconds: 60 }] }],
+    };
+    const result = applyVoiceIntent(base, intent);
+    // No flip, no phantom set, honest empty result → the UI re-asks.
+    expect(result.exercises[0].tracking ?? "reps").toBe("reps");
+    expect(result.exercises[0].sets.filter((s) => s.completed)).toHaveLength(1);
+    expect(result.empty).toBe(true);
+  });
+});

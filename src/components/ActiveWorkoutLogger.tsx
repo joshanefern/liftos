@@ -977,7 +977,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     type="button"
                     disabled={templateSaveState === "saving"}
                     onClick={() => void handleSaveAsTemplate("new")}
-                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-primary/45 text-[13.5px] font-semibold text-primary transition hover:bg-primary/10 disabled:opacity-60"
+                    className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-foreground bg-foreground text-[13.5px] font-semibold text-background transition hover:opacity-90 disabled:opacity-60"
                   >
                     {templateSaveState === "saving" ? "Saving…" : "Save as workout"}
                   </button>
@@ -987,7 +987,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       type="button"
                       disabled={templateSaveState === "saving"}
                       onClick={() => void handleSaveAsTemplate("update")}
-                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-primary/45 px-3 text-[13px] font-semibold text-primary transition hover:bg-primary/10 disabled:opacity-60"
+                      className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-foreground bg-foreground px-3 text-[13px] font-semibold text-background transition hover:opacity-90 disabled:opacity-60"
                     >
                       Update “{session.name}”
                     </button>

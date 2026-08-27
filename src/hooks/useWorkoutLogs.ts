@@ -50,16 +50,18 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
       const { data, error } = await supabase
         .from("workout_logs")
         .select("*")
+        // Secondary sort makes page boundaries deterministic when several
+        // logs share a finished_at — without it a row can straddle pages
+        // (duplicated or dropped).
         .order("finished_at", { ascending: false })
+        .order("id", { ascending: false })
         .range(from, from + PAGE - 1);
-      // A failed page keeps the stale cache — blanking every screen to the
-      // empty state on a network hiccup would read as data loss.
+      // ANY failed page keeps the stale cache — committing a partial list
+      // would silently truncate history and regress all-time records,
+      // the exact bug this paging exists to prevent.
       if (error || !data) {
-        if (all.length === 0) {
-          setLoading(false);
-          return;
-        }
-        break;
+        setLoading(false);
+        return;
       }
       all.push(...(data as WorkoutLog[]));
       if (data.length < PAGE) break;

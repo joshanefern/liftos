@@ -294,13 +294,16 @@ const Workouts = () => {
 
   const updateExercise = <K extends keyof ExerciseDraft>(id: string, key: K, value: ExerciseDraft[K]) => {
     setExercises((current) =>
-      current.map((exercise) =>
-        exercise.id === id
-          ? // Name edits alone keep the original sets verbatim; touching any
-            // number/mode rebuilds the row from the visible fields.
-            { ...exercise, [key]: value, ...(key === "name" ? {} : { dirty: true }) }
-          : exercise,
-      ),
+      current.map((exercise) => {
+        if (exercise.id !== id) return exercise;
+        // A no-op write (tapping the already-active mode pill) must not
+        // dirty the row — dirty rows rebuild from the flattened fields on
+        // save, silently destroying pyramid/hold/multi-block data.
+        if (exercise[key] === value) return exercise;
+        // Name edits alone keep the original sets verbatim; touching any
+        // number/mode rebuilds the row from the visible fields.
+        return { ...exercise, [key]: value, ...(key === "name" ? {} : { dirty: true }) };
+      }),
     );
   };
 

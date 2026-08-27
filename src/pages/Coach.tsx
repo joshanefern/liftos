@@ -211,7 +211,7 @@ const Coach = () => {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     try {
-      await streamCoach(history, context, (delta) => {
+      const full = await streamCoach(history, context, (delta) => {
         setMessages((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
@@ -219,6 +219,25 @@ const Coach = () => {
           return next;
         });
       });
+      // A clean stream with zero tokens (safety refusal) would otherwise
+      // leave a permanent blank reply — drop the bubble and say so.
+      if (full.trim().length === 0) {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          const trimmed =
+            last?.role === "assistant" && last.content.length === 0
+              ? prev.slice(0, -1)
+              : prev;
+          return [
+            ...trimmed,
+            {
+              role: "assistant",
+              content:
+                "I can't help with that one — ask me about your training and I'm all in.",
+            },
+          ];
+        });
+      }
     } catch (err) {
       // Never fake a reply — drop the empty assistant bubble and show the
       // honest offline state. A partial reply (stream died mid-flight) stays.
