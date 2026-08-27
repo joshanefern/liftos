@@ -198,10 +198,6 @@ const Progress = () => {
               </span>
             </p>
             <p className="eyebrow mt-4">{heroStat.eyebrow}</p>
-            <p className="body-sm mt-4 max-w-sm">
-              {heroStat.detail}
-              <span className="text-fg-faint"> Tap a lift below for detail.</span>
-            </p>
           </>
         ) : bestNamedLift || bestNamedHold || bestNamedReps ? (
           /* History exists but nothing has 2 recent sessions — welcome back
@@ -239,30 +235,16 @@ const Progress = () => {
                   ? bestNamedHold.exerciseName
                   : bestNamedReps!.exerciseName}
             </p>
-            <p className="body-sm mt-4 max-w-sm">
-              {lastLog
-                ? `Welcome back — last workout ${relativeDay(lastLog.finished_at)}. `
-                : ""}
-              Log {TREND_MIN_SESSIONS} sessions of any lift and its trend appears here.
-            </p>
           </>
         ) : junkNames.length > 0 ? (
           /* Only unnamed imports exist — the fix-it row below is the way in. */
           <>
             <p className="heading-lg max-w-sm">Your imported workouts need names.</p>
-            <p className="body-sm mt-4 max-w-sm">
-              Name the exercises below and your records and trends start
-              charting from what you've already logged.
-            </p>
           </>
         ) : (
           <>
             <p className="stat-hero !text-6xl md:!text-7xl !text-fg-muted">0</p>
             <p className="eyebrow mt-4">Strength trend</p>
-            <p className="body-sm mt-4 max-w-sm">
-              Log your first workout — after {TREND_MIN_SESSIONS} sessions of a
-              lift, its trend appears right here.
-            </p>
             <CTAButton to="/workouts" className="mt-7">
               <Dumbbell size={15} />
               Log your first workout
@@ -274,12 +256,7 @@ const Progress = () => {
       {/* ── Card 1 · STRENGTH TRENDS — never silently missing ── */}
       {keyLifts.length > 0 && (
         <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
-          <p className="eyebrow mb-1">Strength trends</p>
-          <p className="caption mb-3">Best set per session · last 12 weeks. Tap a lift for detail.</p>
-
-          {/* Beat-last-time — the readout lifters actually check */}
-          
-
+          <p className="eyebrow mb-2">Strength trends</p>
           <div className="divide-y divide-border">
             {keyLifts.map((lift) => (
               <button
