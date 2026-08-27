@@ -40,7 +40,10 @@ const strongerOverall = (
     (t) => t.metric === "weight" && t.first > 0,
   );
   if (trends.length === 0) return null;
-  const relative = (t: { first: number; last: number }) => (t.last - t.first) / t.first;
+  // Peak-anchored: best-in-window vs start. A regression never reads as
+  // negative — the summit already reached is the honest headline.
+  const relative = (t: { first: number; points: number[] }) =>
+    (Math.max(...t.points) - t.first) / t.first;
   const pct = Math.round(
     (trends.reduce((sum, t) => sum + relative(t), 0) / trends.length) * 100,
   );

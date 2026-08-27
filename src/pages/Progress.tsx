@@ -64,10 +64,14 @@ const CARD_CLASS =
   "rounded-[14px] bg-card p-4 shadow-[0_4px_12px_rgba(16,22,35,0.08)] " +
   "dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]";
 
-/** Relative improvement across the trend window, in percent. Null when the
-    starting point is zero (nothing meaningful to divide by). */
-const liftPct = (lift: { first: number; last: number }): number | null =>
-  lift.first > 0 ? Math.round(((lift.last - lift.first) / lift.first) * 100) : null;
+/** Peak-anchored improvement: your best in the window vs where you
+    started. A plateau reads 0%, a regression still shows the summit you
+    reached — the number to reclaim — never a minus sign. */
+const peakPct = (lift: { first: number; points: number[] }): number | null => {
+  if (lift.first <= 0 || lift.points.length === 0) return null;
+  const peak = Math.max(...lift.points);
+  return Math.max(0, Math.round(((peak - lift.first) / lift.first) * 100));
+};
 
 const formatPct = (pct: number | null): string =>
   pct === null ? "—" : pct > 0 ? `+${pct}%` : pct < 0 ? `${pct}%` : "0%";
@@ -92,6 +96,15 @@ const Progress = () => {
     [logs, profile?.goal, units],
   );
   const keyLifts = useMemo(() => trends.slice(0, 4), [trends]);
+  // Mean peak-anchored improvement across every trended lift — the card's
+  // one number. ≥ 0 by construction.
+  const overallImprovement = useMemo(() => {
+    const pcts = trends
+      .map((t) => peakPct(t))
+      .filter((p): p is number => p !== null);
+    if (pcts.length === 0) return null;
+    return Math.round(pcts.reduce((sum, p) => sum + p, 0) / pcts.length);
+  }, [trends]);
 
   // Records, most recently improved first — real names only.
   const prs = useMemo(
@@ -258,10 +271,23 @@ const Progress = () => {
         )}
       </section>
 
-      {/* ── Card 1 · STRENGTH TRENDS — never silently missing ── */}
+      {/* ── Card 1 · IMPROVEMENT — one overall number (peak-anchored: only
+          ever up or flat), per-lift rows beneath, chart on tap. ── */}
       {keyLifts.length > 0 && (
         <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
-          <p className="eyebrow mb-2">Strength trends</p>
+          <p className="eyebrow mb-2">Improvement</p>
+          {overallImprovement !== null && (
+            <div className="mb-1 flex items-baseline justify-between gap-4">
+              <p
+                className={`stat-scoreboard text-[34px] leading-10 tabular-nums ${
+                  overallImprovement > 0 ? "text-primary" : "text-fg"
+                }`}
+              >
+                +{overallImprovement}%
+              </p>
+              <p className="caption shrink-0">Aim for 1% better every day</p>
+            </div>
+          )}
           <div className="divide-y divide-border">
             {keyLifts.map((lift) => (
               <button
@@ -286,13 +312,13 @@ const Progress = () => {
                 </svg>
                 <p
                   className={`w-20 shrink-0 text-right ${
-                    liftPct(lift) !== null && liftPct(lift)! > 0
+                    peakPct(lift) !== null && peakPct(lift)! > 0
                       ? "text-primary"
                       : "text-fg-muted"
                   }`}
                 >
                   <span className="stat-scoreboard text-[22px] leading-7 tabular-nums">
-                    {formatPct(liftPct(lift))}
+                    {formatPct(peakPct(lift))}
                   </span>
                 </p>
               </button>
