@@ -13,6 +13,7 @@ import {
   healthKitSupported,
 } from "@/lib/healthkit";
 import { prStrip } from "@/lib/bigThree";
+import { trackingFor } from "@/lib/exerciseTracking";
 import { labelForMuscle } from "@/lib/muscleCoverage";
 import type { Muscle } from "@/lib/muscleMap";
 import { muscleFreshnessFromLogs, trimSessionForRecovery } from "@/lib/recovery";
@@ -235,15 +236,25 @@ const Dashboard = () => {
           ? starterPrograms.find((p) => p.id === suggestion.id)?.exercises
           : undefined;
     if (!picked) return null;
-    const lifts = picked.filter((e) => !isPlaceholderName(e.name));
-    const sets = lifts.reduce((n, e) => n + e.sets.length, 0);
-    const reps = lifts.reduce(
-      (n, e) => n + e.sets.reduce((r, s) => r + (typeof s.reps === "number" ? s.reps : 0), 0),
-      0,
-    );
-    // ~3 min per working set (set + rest) — a lifter's rule of thumb, rounded
-    // to 5 so it reads as an estimate, not a promise.
-    const minutes = Math.max(10, Math.round((sets * 3) / 5) * 5);
+    // The shape trio adapts to what the session actually contains: SETS
+    // counts strength work (lifts + holds, never cardio blocks), REPS only
+    // counts rep-tracked lifts (a plank has sets but no reps), MIN is
+    // always shown and folds cardio duration in. Pure cardio → MIN alone.
+    const named = picked.filter((e) => !isPlaceholderName(e.name));
+    const strength = named.filter((e) => e.kind !== "cardio");
+    const sets = strength.reduce((n, e) => n + e.sets.length, 0);
+    const reps = strength
+      .filter((e) => trackingFor(e) === "reps")
+      .reduce(
+        (n, e) => n + e.sets.reduce((r, s) => r + (typeof s.reps === "number" ? s.reps : 0), 0),
+        0,
+      );
+    const cardioMinutes =
+      named
+        .filter((e) => e.kind === "cardio")
+        .reduce((n, e) => n + e.sets.reduce((r, s) => r + (s.duration_seconds ?? 0), 0), 0) / 60;
+    // 3 min per strength set (set + rest) plus the cardio you planned.
+    const minutes = Math.max(5, Math.round(sets * 3 + cardioMinutes));
 
     // Last time THIS session ran — matched by template id first, then by
     // name so starters and renamed templates still resolve.
@@ -254,7 +265,6 @@ const Dashboard = () => {
         l.name.trim().toLowerCase() === key,
     );
     return {
-      lifts: lifts.length,
       sets,
       reps,
       minutes,
@@ -427,27 +437,32 @@ const Dashboard = () => {
               {dataReady ? suggestion.title : "Syncing…"}
             </h2>
 
-            {/* The session's shape — sets · reps · minutes. What you're
-                walking into, no estimates dressed up as promises. */}
+            {/* The session's shape — only the tiles that mean something for
+                THIS session: a plank day has sets but no reps, a run has
+                only minutes. MIN always shows and includes planned cardio. */}
             {sessionShape && (
               <div className="mt-3 border-t border-background/10 pt-3">
                 <div className="flex items-baseline gap-5">
-                  <div>
-                    <p className="stat-scoreboard text-[28px] leading-8 text-background">
-                      {sessionShape.sets}
-                    </p>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
-                      sets
-                    </p>
-                  </div>
-                  <div>
-                    <p className="stat-scoreboard text-[28px] leading-8 text-background">
-                      {sessionShape.reps}
-                    </p>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
-                      reps
-                    </p>
-                  </div>
+                  {sessionShape.sets > 0 && (
+                    <div>
+                      <p className="stat-scoreboard text-[28px] leading-8 text-background">
+                        {sessionShape.sets}
+                      </p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
+                        sets
+                      </p>
+                    </div>
+                  )}
+                  {sessionShape.reps > 0 && (
+                    <div>
+                      <p className="stat-scoreboard text-[28px] leading-8 text-background">
+                        {sessionShape.reps}
+                      </p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
+                        reps
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <p className="stat-scoreboard text-[28px] leading-8 text-background">
                       {sessionShape.minutes}
