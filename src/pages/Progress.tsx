@@ -12,14 +12,15 @@ import {
   cacheInsight,
   INSIGHT_PROMPT,
   loadCachedInsight,
+  parseInsight,
   recentChatExcerpts,
+  type ProgressInsightData,
 } from "@/lib/progressInsight";
 import { getLiftTrends } from "@/lib/strengthTrend";
 import { getTopLifts } from "@/lib/workoutStats";
 import { ArrowRight, ChevronDown, Dumbbell, PenLine } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
+import { Link, useNavigate } from "react-router-dom";
 
 /* ── Progress — answers ONE question: "am I getting stronger?" — and reads
      top-to-bottom like a spoken summary (research round 2, Aug 2026):
@@ -73,6 +74,7 @@ const formatPct = (pct: number | null): string =>
 
 
 const Progress = () => {
+  const navigate = useNavigate();
   const { profile } = useUser();
   const { logs, reload } = useWorkoutLogs();
   const units = profile?.units ?? "lb";
@@ -114,10 +116,10 @@ const Progress = () => {
 
   const lastLog = logs[0] ?? null;
 
-  // ── Coach insight: one AI read on the whole picture, angled at the goal
-  // and informed by recent coach chats. Daily-cached; a newly logged
-  // session invalidates. ──
-  const [insight, setInsight] = useState("");
+  // ── Coach's read: the AI returns 2-3 label+value readings and one next
+  // move as strict JSON, rendered like every other stat row on this page —
+  // never prose. Daily-cached; a newly logged session invalidates. ──
+  const [insight, setInsight] = useState<ProgressInsightData | null>(null);
   const [insightLoading, setInsightLoading] = useState(false);
   useEffect(() => {
     if (logs.length === 0) return;
@@ -127,20 +129,23 @@ const Progress = () => {
       return;
     }
     let cancelled = false;
-    setInsight("");
+    setInsight(null);
     setInsightLoading(true);
     const context = {
       ...buildCoachContext(logs, profile),
       recent_conversations: recentChatExcerpts(),
     } as ReturnType<typeof buildCoachContext>;
-    streamCoach([{ role: "user", content: INSIGHT_PROMPT }], context, (delta) => {
-      if (!cancelled) setInsight((current) => current + delta);
-    })
+    streamCoach([{ role: "user", content: INSIGHT_PROMPT }], context, () => {})
       .then((full) => {
-        if (!cancelled && full.trim().length > 0) cacheInsight(logs.length, full);
+        if (cancelled) return;
+        const parsed = parseInsight(full);
+        if (parsed) {
+          cacheInsight(logs.length, full);
+          setInsight(parsed);
+        }
       })
       .catch(() => {
-        if (!cancelled) setInsight("");
+        if (!cancelled) setInsight(null);
       })
       .finally(() => {
         if (!cancelled) setInsightLoading(false);
@@ -408,28 +413,43 @@ const Progress = () => {
               Ask the coach →
             </Link>
           </div>
-          {insight || insightLoading ? (
-            /* Two lines max by design: one sentence, then "Next: <move>". */
-            <div className="mt-2 [&_p:first-child]:text-[15px] [&_p:first-child]:font-medium [&_p:first-child]:leading-6 [&_p:first-child]:text-fg [&_p:not(:first-child)]:mt-1.5 [&_p:not(:first-child)]:text-[13px] [&_p:not(:first-child)]:leading-5 [&_p:not(:first-child)]:text-fg-soft">
-              <ReactMarkdown
-                components={{
-                  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                  ul: ({ children }) => <>{children}</>,
-                  li: ({ children }) => <p>{children}</p>,
-                }}
-              >
-                {insight}
-              </ReactMarkdown>
-              {insightLoading && (
-                <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-[3px] animate-pulse rounded-full bg-primary" />
-              )}
+          {insightLoading ? (
+            /* Skeleton rows while the read computes — same shape it lands in. */
+            <div className="mt-1 divide-y divide-border">
+              {[0, 1].map((i) => (
+                <div key={i} className="flex min-h-11 items-center justify-between gap-4 py-3">
+                  <span className="h-3.5 w-28 animate-pulse rounded bg-foreground/[0.08]" />
+                  <span className="h-3.5 w-14 animate-pulse rounded bg-foreground/[0.08]" />
+                </div>
+              ))}
             </div>
-          ) : (
-            <p className="body-sm mt-2 text-fg-muted">
-              Insights build from your training and coach chats — they'll appear
-              here once the coach can reach the network.
-            </p>
-          )}
+          ) : insight ? (
+            <>
+              <div className="mt-1 divide-y divide-border">
+                {insight.items.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex min-h-11 items-center justify-between gap-4 py-3"
+                  >
+                    <p className="min-w-0 truncate text-sm font-semibold text-fg">{item.label}</p>
+                    <p className="mono shrink-0 text-sm font-semibold text-fg">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+              {insight.next && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate("/coach", { state: { draft: insight.next!.prompt } })
+                  }
+                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-[13.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98]"
+                >
+                  Next: {insight.next.label}
+                  <ArrowRight size={14} />
+                </button>
+              )}
+            </>
+          ) : null}
           <Link
             to="/calendar"
             className="mt-4 flex min-h-11 items-center justify-between rule-hairline pt-3 text-sm font-semibold text-fg transition hover:opacity-80"

@@ -38,6 +38,7 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   deleteConversation,
   listConversations,
@@ -135,6 +136,14 @@ const Coach = () => {
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  // A "Next:" tap on Progress lands here with a drafted message — prefill
+  // the composer; the user sends it themselves.
+  const location = useLocation();
+  useEffect(() => {
+    const draft = (location.state as { draft?: string } | null)?.draft;
+    if (draft) setInput(draft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [started, setStarted] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [offline, setOffline] = useState(false);
