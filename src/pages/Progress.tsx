@@ -73,10 +73,6 @@ const peakPct = (lift: { first: number; points: number[] }): number | null => {
   return Math.max(0, Math.round(((peak - lift.first) / lift.first) * 100));
 };
 
-const formatPct = (pct: number | null): string =>
-  pct === null ? "—" : pct > 0 ? `+${pct}%` : pct < 0 ? `${pct}%` : "0%";
-
-
 const Progress = () => {
   const navigate = useNavigate();
   const { profile } = useUser();
@@ -275,18 +271,17 @@ const Progress = () => {
           ever up or flat), per-lift rows beneath, chart on tap. ── */}
       {keyLifts.length > 0 && (
         <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
-          <p className="eyebrow mb-2">Improvement</p>
-          {overallImprovement !== null && (
-            <div className="mb-1 flex items-baseline justify-between gap-4">
-              <p
-                className={`stat-scoreboard text-[34px] leading-10 tabular-nums ${
-                  overallImprovement > 0 ? "text-primary" : "text-fg"
-                }`}
-              >
-                +{overallImprovement}%
-              </p>
-              <p className="caption shrink-0">Aim for 1% better every day</p>
-            </div>
+          {/* A zero never headlines: the big % appears only when genuinely
+              up. Flat stretches lead with the motto and the rows show each
+              lift's number to beat. */}
+          <div className="mb-2 flex items-baseline justify-between gap-4">
+            <p className="eyebrow">Improvement</p>
+            <p className="caption shrink-0">Aim for 1% better every day</p>
+          </div>
+          {overallImprovement !== null && overallImprovement > 0 && (
+            <p className="mb-1 stat-scoreboard text-[34px] leading-10 tabular-nums text-primary">
+              +{overallImprovement}%
+            </p>
           )}
           <div className="divide-y divide-border">
             {keyLifts.map((lift) => (
@@ -310,16 +305,24 @@ const Progress = () => {
                     vectorEffect="non-scaling-stroke"
                   />
                 </svg>
-                <p
-                  className={`w-20 shrink-0 text-right ${
-                    peakPct(lift) !== null && peakPct(lift)! > 0
-                      ? "text-primary"
-                      : "text-fg-muted"
-                  }`}
-                >
-                  <span className="stat-scoreboard text-[22px] leading-7 tabular-nums">
-                    {formatPct(peakPct(lift))}
-                  </span>
+                {/* Climbing → the gain; flat → the bar to beat, never a 0%. */}
+                <p className="w-24 shrink-0 whitespace-nowrap text-right">
+                  {(peakPct(lift) ?? 0) > 0 ? (
+                    <span className="stat-scoreboard text-[22px] leading-7 tabular-nums text-primary">
+                      +{peakPct(lift)}%
+                    </span>
+                  ) : (
+                    <span className="stat-scoreboard text-[22px] leading-7 tabular-nums text-fg">
+                      {lift.metric === "time" ? (
+                        formatHold(Math.max(...lift.points))
+                      ) : (
+                        <>
+                          {Math.max(...lift.points)}
+                          <span className="ml-1 text-[12px] font-medium text-fg-muted">{units}</span>
+                        </>
+                      )}
+                    </span>
+                  )}
                 </p>
               </button>
             ))}
