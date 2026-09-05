@@ -37,8 +37,9 @@ export const getLiftTrends = (
   logs: WorkoutLog[],
   windowDays = 84,
   minSessions = 3,
+  now = Date.now(),
 ): LiftTrend[] => {
-  const cutoff = Date.now() - windowDays * DAY_MS;
+  const cutoff = now - windowDays * DAY_MS;
   const bySession = new Map<
     string,
     { name: string; points: { t: number; weight: number; duration: number }[] }

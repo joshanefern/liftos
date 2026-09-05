@@ -36,7 +36,9 @@ const strongerOverall = (
   units: string,
   now: number,
 ): Omit<ProgressHeroStat, "eyebrow"> | null => {
-  const trends = getLiftTrends(logs, TREND_WINDOW_DAYS, TREND_MIN_SESSIONS).filter(
+  // Window anchored to the caller's clock — mixing Date.now() here with the
+  // caller's `now` made results (and tests) drift as real time passed.
+  const trends = getLiftTrends(logs, TREND_WINDOW_DAYS, TREND_MIN_SESSIONS, now).filter(
     (t) => t.metric === "weight" && t.first > 0,
   );
   if (trends.length === 0) return null;

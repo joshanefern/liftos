@@ -25,7 +25,7 @@ import {
 } from "@/lib/startSession";
 import { suggestNextWorkout } from "@/lib/suggestion";
 import { isPlaceholderName } from "@/lib/exerciseNames";
-import { getMonthStats, getWeeklyStreak, getWeekStats, localDayParam } from "@/lib/workoutStats";
+import { getMonthStats, getWeeklyStreak, getWeekStats } from "@/lib/workoutStats";
 import { useDayKey } from "@/hooks/useDayKey";
 import { useReadiness } from "@/hooks/useReadiness";
 import { RecoverySheet } from "@/components/home/RecoverySheet";
@@ -149,8 +149,6 @@ const Dashboard = () => {
   const activeMinutes = activeSeed?.startedAt
     ? Math.max(0, Math.round((Date.now() - Date.parse(activeSeed.startedAt)) / 60_000))
     : null;
-
-  const lastLog = logs[0] ?? null;
 
   // The engine's pick — names the CTA and (absent an AI insight) the sentence.
   // dayKey keeps the trained-today boundary honest across midnight.
@@ -531,25 +529,39 @@ const Dashboard = () => {
 
       {/* ── Card index ── */}
       <nav aria-label="Dashboard index" className="mt-4 space-y-2.5 animate-reveal-up">
-        {/* Last workout — one tap to the full summary (exercises, top sets,
-            PRs, notes) that the recap showed; it lives on the calendar day. */}
-        {lastLog && (
-          <Link
-            to={`/calendar?day=${localDayParam(lastLog.finished_at)}`}
-            className={ROW_CLASS}
-          >
-            <span className="min-w-0">
-              <RowLabel>Last workout</RowLabel>
-              <span className="mt-0.5 block truncate text-[12px] leading-4 text-fg-muted">
-                {lastLog.name} · {fmtAgo(lastLog.finished_at).toLowerCase() === "today" ? "today" : `${fmtAgo(lastLog.finished_at)} ago`}
-                {lastLog.completed_sets > 0 ? ` · ${lastLog.completed_sets} sets` : ""}
-                {lastLog.total_volume > 0
-                  ? ` · ${Math.round(lastLog.total_volume).toLocaleString()} ${units}`
-                  : ""}
-              </span>
-            </span>
-            <RowEnd label="View" />
-          </Link>
+        {/* Last sessions — up to the 4 most recent COMPLETED workouts, each
+            a tap to its full summary. Absent entirely until the first
+            finished workout exists; grows 1 → 4 with history. */}
+        {logs.length > 0 && (
+          <div className="rounded-[13px] bg-card px-4 py-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[hsl(35,25%,45%)] dark:text-[hsl(38,32%,72%)]">
+              {logs.length === 1 ? "Last session" : `Last ${Math.min(logs.length, 4)} sessions`}
+            </p>
+            <div className="mt-1 divide-y divide-border">
+              {logs.slice(0, 4).map((log) => (
+                <button
+                  key={log.id}
+                  type="button"
+                  onClick={() => navigate(`/workouts/review/${log.id}`)}
+                  className="flex min-h-[48px] w-full items-center justify-between gap-4 py-2.5 text-left transition active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-fg">{log.name}</span>
+                    <span className="mt-0.5 block truncate text-[12px] leading-4 text-fg-muted">
+                      {fmtAgo(log.finished_at).toLowerCase() === "today"
+                        ? "today"
+                        : `${fmtAgo(log.finished_at)} ago`}
+                      {log.completed_sets > 0 ? ` · ${log.completed_sets} sets` : ""}
+                      {log.total_volume > 0
+                        ? ` · ${Math.round(log.total_volume).toLocaleString()} ${units}`
+                        : ""}
+                    </span>
+                  </span>
+                  <ChevronsRight size={14} className="shrink-0 text-fg-muted" />
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Personal records — the three numbers a lifter recites. Raw best

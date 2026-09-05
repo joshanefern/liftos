@@ -466,15 +466,18 @@ const Calendar = () => {
       <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
         <SheetContent
           side={isMobile ? "bottom" : "right"}
-          className={`border-border bg-background p-0 ${
+          className={`flex flex-col border-border bg-background p-0 ${
             isMobile ? "max-h-[85vh] rounded-t-[1.5rem]" : "w-full sm:max-w-md"
           }`}
         >
-          <div className="h-full overflow-y-auto px-5 pb-6 pt-4 md:px-6 md:pt-5">
+          {/* min-h-0 + flex-1: max-h alone gives the sheet no definite
+              height, so a plain h-full child never overflowed — the content
+              just clipped and swipes did nothing. */}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-4 md:px-6 md:pt-5">
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border md:hidden" />
             <SheetHeader className="text-left sm:text-left">
               <p className="eyebrow !text-primary">
-                Ledger · {selected?.toLocaleDateString("en-US", { weekday: "long" })}
+                {selected?.toLocaleDateString("en-US", { weekday: "long" })}
               </p>
               <SheetTitle className="heading-md">
                 {selected?.toLocaleDateString("en-US", {
