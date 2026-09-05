@@ -24,6 +24,12 @@ import {
   persistActiveSession,
 } from "@/lib/startSession";
 import { suggestNextWorkout } from "@/lib/suggestion";
+import {
+  applyReminderPrefs,
+  loadReminderPrefs,
+  remindersSupported,
+  type ReminderPrefs,
+} from "@/lib/reminders";
 import { isPlaceholderName } from "@/lib/exerciseNames";
 import { getMonthStats, getWeeklyStreak, getWeekStats } from "@/lib/workoutStats";
 import { useDayKey } from "@/hooks/useDayKey";
@@ -328,6 +334,21 @@ const Dashboard = () => {
   const ctaLabel = dataReady ? suggestion.ctaLabel : "Start a workout";
 
   const [connectionsOpen, setConnectionsOpen] = useState(false);
+  // Training reminders — prefs persist locally; every change reschedules.
+  const [reminders, setReminders] = useState<ReminderPrefs>(() => loadReminderPrefs());
+  const updateReminders = async (next: ReminderPrefs) => {
+    setReminders(next);
+    const ok = await applyReminderPrefs(next);
+    if (!ok && next.enabled) {
+      toast({
+        title: "Notifications are off",
+        description: "Allow notifications for LiftOS in iOS Settings to get reminders.",
+        variant: "destructive",
+      });
+      setReminders({ ...next, enabled: false });
+      void applyReminderPrefs({ ...next, enabled: false });
+    }
+  };
 
   // Apple Health — iOS-native only.
   const healthKitAvailable = healthKitSupported();
@@ -529,39 +550,23 @@ const Dashboard = () => {
 
       {/* ── Card index ── */}
       <nav aria-label="Dashboard index" className="mt-4 space-y-2.5 animate-reveal-up">
-        {/* Last sessions — up to the 4 most recent COMPLETED workouts, each
-            a tap to its full summary. Absent entirely until the first
-            finished workout exists; grows 1 → 4 with history. */}
-        {logs.length > 0 && (
-          <div className="rounded-[13px] bg-card px-4 py-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[hsl(35,25%,45%)] dark:text-[hsl(38,32%,72%)]">
-              {logs.length === 1 ? "Last session" : `Last ${Math.min(logs.length, 4)} sessions`}
-            </p>
-            <div className="mt-1 divide-y divide-border">
-              {logs.slice(0, 4).map((log) => (
-                <button
-                  key={log.id}
-                  type="button"
-                  onClick={() => navigate(`/workouts/review/${log.id}`)}
-                  className="flex min-h-[48px] w-full items-center justify-between gap-4 py-2.5 text-left transition active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-fg">{log.name}</span>
-                    <span className="mt-0.5 block truncate text-[12px] leading-4 text-fg-muted">
-                      {fmtAgo(log.finished_at).toLowerCase() === "today"
-                        ? "today"
-                        : `${fmtAgo(log.finished_at)} ago`}
-                      {log.completed_sets > 0 ? ` · ${log.completed_sets} sets` : ""}
-                      {log.total_volume > 0
-                        ? ` · ${Math.round(log.total_volume).toLocaleString()} ${units}`
-                        : ""}
-                    </span>
-                  </span>
-                  <ChevronsRight size={14} className="shrink-0 text-fg-muted" />
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* Last workout — one tap straight to that workout's full summary
+            (exercises, top sets, PRs, share, delete). Hidden until the
+            first completed workout exists. */}
+        {logs[0] && (
+          <Link to={`/workouts/review/${logs[0].id}`} className={ROW_CLASS}>
+            <span className="min-w-0">
+              <RowLabel>Last workout</RowLabel>
+              <span className="mt-0.5 block truncate text-[12px] leading-4 text-fg-muted">
+                {logs[0].name} · {fmtAgo(logs[0].finished_at).toLowerCase() === "today" ? "today" : `${fmtAgo(logs[0].finished_at)} ago`}
+                {logs[0].completed_sets > 0 ? ` · ${logs[0].completed_sets} sets` : ""}
+                {logs[0].total_volume > 0
+                  ? ` · ${Math.round(logs[0].total_volume).toLocaleString()} ${units}`
+                  : ""}
+              </span>
+            </span>
+            <RowEnd label="View" />
+          </Link>
         )}
 
         {/* Personal records — the three numbers a lifter recites. Raw best
@@ -725,6 +730,69 @@ const Dashboard = () => {
               ? "Read-only. Turn it off any time in iOS Settings → Health → Data Access & Devices."
               : "Any watch that writes to Apple Health — Apple Watch, Garmin, Whoop, Oura — flows in."}
           </p>
+
+          {/* ── Training reminders — a local nudge on chosen days. ── */}
+          {remindersSupported() && (
+            <div className="mt-5 border-t border-border pt-4">
+              <label className={`${ROW_CLASS} cursor-pointer`}>
+                <span className="min-w-0">
+                  <RowLabel>Training reminders</RowLabel>
+                  <span className="mt-0.5 block text-[12px] leading-4 text-fg-muted">
+                    A nudge on your training days
+                  </span>
+                </span>
+                <Switch
+                  checked={reminders.enabled}
+                  onCheckedChange={(on) => void updateReminders({ ...reminders, enabled: on })}
+                  aria-label="Training reminders"
+                />
+              </label>
+              {reminders.enabled && (
+                <div className="mt-3 px-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(["S", "M", "T", "W", "T", "F", "S"] as const).map((letter, index) => {
+                      const day = index + 1; // iOS weekday: 1 = Sunday
+                      const active = reminders.days.includes(day);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() =>
+                            void updateReminders({
+                              ...reminders,
+                              days: active
+                                ? reminders.days.filter((d) => d !== day)
+                                : [...reminders.days, day].sort((a, b) => a - b),
+                            })
+                          }
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-[12px] font-semibold transition ${
+                            active
+                              ? "bg-primary text-primary-foreground"
+                              : "border border-border text-fg-muted hover:text-fg"
+                          }`}
+                        >
+                          {letter}
+                        </button>
+                      );
+                    })}
+                    <input
+                      type="time"
+                      value={`${String(reminders.hour).padStart(2, "0")}:${String(reminders.minute).padStart(2, "0")}`}
+                      onChange={(event) => {
+                        const [h, m] = event.target.value.split(":").map(Number);
+                        if (Number.isFinite(h) && Number.isFinite(m)) {
+                          void updateReminders({ ...reminders, hour: h, minute: m });
+                        }
+                      }}
+                      aria-label="Reminder time"
+                      className="ml-auto h-9 rounded-lg border border-border bg-card px-2 text-sm text-fg outline-none focus:border-primary/60"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </DrawerContent>
       </Drawer>
     </div>

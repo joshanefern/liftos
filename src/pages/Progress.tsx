@@ -6,6 +6,7 @@ import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
 import { isPlaceholderName, placeholderNames } from "@/lib/exerciseNames";
 import { formatHold, inferTracking } from "@/lib/exerciseTracking";
 import { allTimePRs, bestWeight, type WeightRecord } from "@/lib/prs";
+import { fetchBodyMass, type BodyMassSample } from "@/lib/healthkit";
 import { buildCoachContext, streamCoach } from "@/lib/coach";
 import { buildProgressHero } from "@/lib/progressHero";
 import {
@@ -87,9 +88,22 @@ const Progress = () => {
   const junkNames = useMemo(() => placeholderNames(logs), [logs]);
 
   const trends = useMemo(() => getLiftTrends(logs, 84, TREND_MIN_SESSIONS), [logs]);
+  // Body weight (HealthKit) powers the Fat Loss hero — fetched only when
+  // that's the goal; empty everywhere else and on web.
+  const [weightSamples, setWeightSamples] = useState<BodyMassSample[]>([]);
+  useEffect(() => {
+    if (!(profile?.goal ?? "").toLowerCase().includes("fat loss")) return;
+    let cancelled = false;
+    void fetchBodyMass(90).then((samples) => {
+      if (!cancelled) setWeightSamples(samples);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.goal]);
   const heroStat = useMemo(
-    () => buildProgressHero(logs, profile?.goal ?? null, units),
-    [logs, profile?.goal, units],
+    () => buildProgressHero(logs, profile?.goal ?? null, units, Date.now(), weightSamples),
+    [logs, profile?.goal, units, weightSamples],
   );
   const keyLifts = useMemo(() => trends.slice(0, 4), [trends]);
   // Mean peak-anchored improvement across every trended lift — the card's

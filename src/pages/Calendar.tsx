@@ -470,24 +470,29 @@ const Calendar = () => {
             isMobile ? "max-h-[85vh] rounded-t-[1.5rem]" : "w-full sm:max-w-md"
           }`}
         >
+          {/* Drag handle stays OUTSIDE the scroller — pinned, with real
+              margin, so scrolled content tucks under it instead of clipping
+              flush against the sheet's rounded edge. */}
+          <div className="shrink-0 pb-1 pt-3 md:hidden">
+            <div className="mx-auto h-1 w-10 rounded-full bg-border" />
+          </div>
           {/* min-h-0 + flex-1: max-h alone gives the sheet no definite
               height, so a plain h-full child never overflowed — the content
               just clipped and swipes did nothing. */}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-4 md:px-6 md:pt-5">
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border md:hidden" />
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-3 md:px-6 md:pt-6">
             <SheetHeader className="text-left sm:text-left">
-              <p className="eyebrow !text-primary">
-                {selected?.toLocaleDateString("en-US", { weekday: "long" })}
-              </p>
               <SheetTitle className="heading-md">
+                {selectedLogs.length} session{selectedLogs.length === 1 ? "" : "s"} logged
+              </SheetTitle>
+              {/* The day identity lives on each card now; kept here for
+                  screen readers only. */}
+              <SheetDescription className="sr-only">
                 {selected?.toLocaleDateString("en-US", {
+                  weekday: "long",
                   month: "long",
                   day: "numeric",
                   year: "numeric",
                 })}
-              </SheetTitle>
-              <SheetDescription className="caption">
-                {selectedLogs.length} session{selectedLogs.length === 1 ? "" : "s"} logged
               </SheetDescription>
             </SheetHeader>
 
@@ -517,6 +522,11 @@ const Calendar = () => {
                     <div className="flex items-baseline justify-between gap-3">
                       <h3 className="truncate text-sm font-semibold text-fg">{log.name}</h3>
                       <span className="mono shrink-0 text-[11px] text-fg-muted">
+                        {new Date(log.finished_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                        {" · "}
                         {new Date(log.finished_at).toLocaleTimeString("en-US", {
                           hour: "numeric",
                           minute: "2-digit",

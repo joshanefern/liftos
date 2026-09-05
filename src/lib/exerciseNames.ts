@@ -85,3 +85,37 @@ export const renameExercisesInLogs = async (
   }
   return updated;
 };
+
+/* ── Autocomplete: names the lifter has actually used, ranked prefix-first.
+   Kills "recline curl"-style typos at the source. ── */
+
+type NamedExercises = { exercises: { name: string }[] };
+
+export const exerciseNameSuggestions = (
+  logs: NamedExercises[],
+  templates: NamedExercises[],
+  query: string,
+  limit = 5,
+): string[] => {
+  const q = query.trim().toLowerCase();
+  if (q.length === 0) return [];
+  // Most recent usage wins the display casing; logs first (newest-first),
+  // then templates.
+  const seen = new Map<string, string>();
+  for (const source of [...logs, ...templates]) {
+    for (const exercise of source.exercises ?? []) {
+      const name = exercise.name?.trim();
+      if (!name || isPlaceholderName(name)) continue;
+      const key = normalizeExerciseName(name);
+      if (!seen.has(key)) seen.set(key, name);
+    }
+  }
+  const names = [...seen.values()].filter(
+    (name) => normalizeExerciseName(name) !== q,
+  );
+  const starts = names.filter((n) => n.toLowerCase().startsWith(q));
+  const contains = names.filter(
+    (n) => !n.toLowerCase().startsWith(q) && n.toLowerCase().includes(q),
+  );
+  return [...starts, ...contains].slice(0, limit);
+};

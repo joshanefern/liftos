@@ -1,4 +1,5 @@
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
+import type { BodyMassSample } from "@/lib/healthkit";
 import { getLiftTrends } from "@/lib/strengthTrend";
 
 /* ── The Progress hero: one positively-framed overall number, angled at the
@@ -111,6 +112,36 @@ const showingUp = (
   return null;
 };
 
+/** Weight lost vs ~4 weeks ago (nearest older sample). Only ever a loss —
+    the "only show improvement" law: flat or up simply yields nothing and
+    the chain falls through to consistency. Samples arrive newest-first. */
+const weightDown = (
+  samples: BodyMassSample[],
+  units: string,
+  now: number,
+): Omit<ProgressHeroStat, "eyebrow"> | null => {
+  if (samples.length < 2) return null;
+  const latest = samples[0];
+  const target = now - 28 * DAY_MS;
+  let baseline = samples[samples.length - 1];
+  for (const sample of samples) {
+    const t = Date.parse(sample.t);
+    if (Number.isFinite(t) && t <= target) {
+      baseline = sample;
+      break;
+    }
+  }
+  const lostKg = baseline.kg - latest.kg;
+  const metric = units === "kg";
+  const lost = Math.round((metric ? lostKg : lostKg * 2.20462) * 10) / 10;
+  if (lost < 0.5) return null;
+  return {
+    value: String(lost),
+    label: `${metric ? "kg" : "lb"} down`,
+    detail: "Trending down over the last month — the plan is working.",
+  };
+};
+
 type Focus = "strength" | "muscle" | "weight" | "general";
 
 /** profiles.goal can be a comma-joined multi-select ("Hypertrophy, Strength"). */
@@ -134,11 +165,13 @@ export const buildProgressHero = (
   goal: string | null,
   units: string,
   now: number = Date.now(),
+  weightSamples: BodyMassSample[] = [],
 ): ProgressHeroStat | null => {
   const focus = focusFor(goal);
   const stronger = () => strongerOverall(logs, units, now);
   const volume = () => volumeUp(logs, units, now);
   const consistent = () => showingUp(logs, now);
+  const lighter = () => weightDown(weightSamples, units, now);
 
   const order =
     focus === "strength"
@@ -146,7 +179,7 @@ export const buildProgressHero = (
       : focus === "muscle"
         ? [volume, stronger, consistent]
         : focus === "weight"
-          ? [consistent, volume, stronger]
+          ? [lighter, consistent, volume, stronger]
           : [stronger, volume, consistent];
 
   for (const make of order) {

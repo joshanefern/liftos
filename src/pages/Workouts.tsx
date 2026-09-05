@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { CTAButton } from "@/components/GoldButton";
+import ExerciseNameSuggestions from "@/components/ExerciseNameSuggestions";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PendingReviewsCard } from "@/components/review/PendingReviewsCard";
@@ -168,6 +169,8 @@ const Workouts = () => {
   const readiness = useReadiness();
   const isMobile = useIsMobile();
   const [builderOpen, setBuilderOpen] = useState(false);
+  // Which builder row's name input is focused — its suggestions render.
+  const [nameFocusId, setNameFocusId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editingWorkoutId, setEditingWorkoutId] = useState<string | null>(null);
   const [workoutName, setWorkoutName] = useState("");
@@ -408,6 +411,8 @@ const Workouts = () => {
                 <input
                   value={exercise.name}
                   onChange={(event) => updateExercise(exercise.id, "name", event.target.value)}
+                  onFocus={() => setNameFocusId(exercise.id)}
+                  onBlur={() => setNameFocusId((current) => (current === exercise.id ? null : current))}
                   placeholder={
                     exercise.mode === "cardio"
                       ? "Stairmaster, bike, treadmill…"
@@ -447,6 +452,12 @@ const Workouts = () => {
                   </button>
                 )}
               </div>
+              {nameFocusId === exercise.id && (
+                <ExerciseNameSuggestions
+                  query={exercise.name}
+                  onPick={(name) => updateExercise(exercise.id, "name", name)}
+                />
+              )}
               {exercise.mode === "cardio" ? (
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   <label className="block min-w-0">

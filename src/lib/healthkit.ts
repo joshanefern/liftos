@@ -41,6 +41,7 @@ type HealthKitPluginIface = {
   /** Overnight recovery metrics (HRV, resting HR, sleep, respiratory rate)
       for the readiness engine — see src/lib/recovery.ts. */
   queryRecoveryMetrics(options: { days: number }): Promise<RecoveryMetrics>;
+  queryBodyMass(options: { daysBack: number }): Promise<{ samples: BodyMassSample[] }>;
   /** Registers the HKObserverQuery + background delivery; idempotent. */
   startObserving(): Promise<void>;
   addListener(
@@ -245,6 +246,21 @@ export const startHealthKitObserver = async (
     safe to call before recovery queries for users who connected under a
     build with a smaller read set (their new types sit at .notDetermined and
     would silently query empty forever). */
+export type BodyMassSample = { t: string; kg: number };
+
+/** Body-weight samples (newest first, kg) for the Fat Loss hero. Empty on
+    web, when unauthorized, or when the scale never synced — callers treat
+    empty as "no weight story to tell". */
+export const fetchBodyMass = async (daysBack = 90): Promise<BodyMassSample[]> => {
+  if (!healthKitSupported()) return [];
+  try {
+    const { samples } = await HealthKit.queryBodyMass({ daysBack });
+    return samples ?? [];
+  } catch {
+    return [];
+  }
+};
+
 export const requestHealthKitAuthorization = async (): Promise<void> => {
   if (!healthKitSupported()) return;
   await HealthKit.requestAuthorization();

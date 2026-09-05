@@ -118,3 +118,27 @@ describe("buildProgressHero", () => {
     expect(buildProgressHero([], "Strength", "lb", NOW)).toBeNull();
   });
 });
+
+describe("buildProgressHero — Fat Loss weight trend", () => {
+  const sample = (daysAgo: number, kg: number) => ({
+    t: new Date(NOW - daysAgo * DAY_MS).toISOString(),
+    kg,
+  });
+
+  it("leads with weight lost when the goal is Fat Loss and the scale is down", () => {
+    const logs = [makeLog(10, "Bench", 100), makeLog(5, "Bench", 105)];
+    const samples = [sample(1, 88.0), sample(15, 89.1), sample(30, 90.0)];
+    const hero = buildProgressHero(logs, "Fat Loss", "lb", NOW, samples);
+    expect(hero).not.toBeNull();
+    expect(hero!.label).toBe("lb down");
+    expect(hero!.value).toBe("4.4"); // 2kg → 4.4 lb
+  });
+
+  it("never shows weight gained — falls through to consistency", () => {
+    const logs = [makeLog(10, "Bench", 100), makeLog(5, "Bench", 105)];
+    const samples = [sample(1, 91.0), sample(30, 90.0)];
+    const hero = buildProgressHero(logs, "Fat Loss", "lb", NOW, samples);
+    expect(hero).not.toBeNull();
+    expect(hero!.label).toBe("sessions this month");
+  });
+});

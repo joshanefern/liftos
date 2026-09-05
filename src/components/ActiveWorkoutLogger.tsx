@@ -2,6 +2,7 @@ import { CTAButton } from "@/components/GoldButton";
 import { ShareButton } from "@/components/ShareButton";
 import { RestTimerRing } from "@/components/logging/RestTimerRing";
 import { VoiceLogControl } from "@/components/logging/VoiceLogControl";
+import ExerciseNameSuggestions from "@/components/ExerciseNameSuggestions";
 import { SetInputRow, formatWeightForDisplay } from "@/components/logging/SetInputRow";
 import { useEnterAdvance } from "@/components/logging/useEnterAdvance";
 import {
@@ -334,6 +335,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
 
   // Manual add-exercise (blank quick starts, or the planks case by hand).
   const [newExerciseName, setNewExerciseName] = useState("");
+  const [newExerciseFocused, setNewExerciseFocused] = useState(false);
   const addExercise = (): void => {
     const name = newExerciseName.trim();
     if (!name) return;
@@ -1263,6 +1265,8 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
               <input
                 value={newExerciseName}
                 onChange={(e) => setNewExerciseName(e.target.value)}
+                onFocus={() => setNewExerciseFocused(true)}
+                onBlur={() => setNewExerciseFocused(false)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") addExercise();
                 }}
@@ -1280,6 +1284,12 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                 Add
               </button>
             </div>
+            {newExerciseFocused && (
+              <ExerciseNameSuggestions
+                query={newExerciseName}
+                onPick={(name) => setNewExerciseName(name)}
+              />
+            )}
           </div>
         </section>
 

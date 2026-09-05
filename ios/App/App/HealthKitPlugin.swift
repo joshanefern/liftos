@@ -14,6 +14,7 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "requestAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryRecoveryMetrics", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryBodyMass", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startObserving", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "debugSeedWorkout", returnType: CAPPluginReturnPromise),
     ]
@@ -43,17 +44,19 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
               let hrv = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN),
               let restingHeartRate = HKQuantityType.quantityType(forIdentifier: .restingHeartRate),
               let respiratoryRate = HKQuantityType.quantityType(forIdentifier: .respiratoryRate),
-              let sleepAnalysis = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)
+              let sleepAnalysis = HKObjectType.categoryType(forIdentifier: .sleepAnalysis),
+              let bodyMass = HKQuantityType.quantityType(forIdentifier: .bodyMass)
         else {
             call.reject("HealthKit types unavailable")
             return
         }
         // Overnight recovery metrics ride the same permission sheet — the
         // readiness engine (src/lib/recovery.ts) reads HRV, resting HR,
-        // sleep, and respiratory rate via queryRecoveryMetrics.
+        // sleep, and respiratory rate via queryRecoveryMetrics. Body mass
+        // powers the Fat Loss goal's progress hero.
         let read: Set<HKObjectType> = [
             HKObjectType.workoutType(), heartRate, energy,
-            hrv, restingHeartRate, respiratoryRate, sleepAnalysis,
+            hrv, restingHeartRate, respiratoryRate, sleepAnalysis, bodyMass,
         ]
         // Write access exists only so debug builds can seed the simulator's
         // empty Health store for end-to-end QA.
@@ -73,6 +76,41 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
         }
+    }
+
+    /// Body-weight samples for the last `daysBack` days (default 90),
+    /// newest first, in kilograms. Powers the Fat Loss progress hero;
+    /// an unauthorized read just returns an empty list.
+    @objc public func queryBodyMass(_ call: CAPPluginCall) {
+        guard let bodyMass = HKQuantityType.quantityType(forIdentifier: .bodyMass) else {
+            call.reject("HealthKit types unavailable")
+            return
+        }
+        let daysBack = call.getInt("daysBack") ?? 90
+        let since = Date().addingTimeInterval(TimeInterval(-daysBack * 86_400))
+        let predicate = HKQuery.predicateForSamples(
+            withStart: since, end: nil, options: .strictStartDate)
+        let newestFirst = NSSortDescriptor(
+            key: HKSampleSortIdentifierStartDate, ascending: false)
+        let query = HKSampleQuery(
+            sampleType: bodyMass, predicate: predicate,
+            limit: 200, sortDescriptors: [newestFirst]
+        ) { _, samples, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    call.reject("body mass query failed: \(error.localizedDescription)")
+                    return
+                }
+                let rows = (samples as? [HKQuantitySample] ?? []).map { sample in
+                    [
+                        "t": Self.iso.string(from: sample.startDate),
+                        "kg": sample.quantity.doubleValue(for: .gramUnit(with: .kilo)),
+                    ] as [String: Any]
+                }
+                call.resolve(["samples": rows])
+            }
+        }
+        store.execute(query)
     }
 
     @objc public func queryWorkouts(_ call: CAPPluginCall) {
