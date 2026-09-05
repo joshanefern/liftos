@@ -5,7 +5,9 @@ import { starterPrograms } from "@/data/starterPrograms";
 import { useDayKey } from "@/hooks/useDayKey";
 import { useReadiness } from "@/hooks/useReadiness";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
-import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { TEMPLATE_LIMIT_ERROR, useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { extractWorkoutPlan, planToTemplateExercises } from "@/lib/coachPlan";
+import { toast } from "@/components/ui/use-toast";
 import { suggestNextWorkout } from "@/lib/suggestion";
 import {
   buildCoachContext,
@@ -32,6 +34,7 @@ import {
   Check,
   ChevronDown,
   CloudOff,
+  Dumbbell,
   History,
   Sparkles,
   SquarePen,
@@ -129,7 +132,34 @@ const OfflineNotice = ({ onRetry }: { onRetry?: () => void }) => (
 const Coach = () => {
   const { profile } = useUser();
   const { logs } = useWorkoutLogs();
-  const { templates } = useWorkoutTemplates();
+  const { templates, save: saveTemplate } = useWorkoutTemplates();
+  // Coach replies that read as a workout ("Bench 3×8 @ 185"…) grow a
+  // one-tap save into My Workouts. Keyed by message index for this chat.
+  const [savedPlanAt, setSavedPlanAt] = useState<Set<number>>(new Set());
+  const [savingPlanAt, setSavingPlanAt] = useState<number | null>(null);
+  const savePlanFromMessage = async (index: number, content: string) => {
+    if (savingPlanAt !== null || savedPlanAt.has(index)) return;
+    const plan = extractWorkoutPlan(content);
+    if (plan.length < 2) return;
+    setSavingPlanAt(index);
+    const name = `Coach plan · ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+    try {
+      await saveTemplate({ id: null, name, exercises: planToTemplateExercises(plan, name) });
+      setSavedPlanAt((current) => new Set(current).add(index));
+      toast({ title: `Saved "${name}" to your workouts` });
+    } catch (err) {
+      toast(
+        err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR
+          ? {
+              title: "Workout limit reached",
+              description: "You have 7 saved workouts — the max. Delete one in Workouts to make room.",
+            }
+          : { title: "Could not save the plan", variant: "destructive" },
+      );
+    } finally {
+      setSavingPlanAt(null);
+    }
+  };
   // Full rows for the newest HR-bearing sessions — the provider's list is
   // summary-only (no hr_samples), so the coach context reads these instead.
   const { hrDetailSessions } = useCapturedSessions();
@@ -431,16 +461,39 @@ const Coach = () => {
         <div className="flex-1 overflow-y-auto py-5 md:py-8">
           <div className="mx-auto w-full max-w-4xl space-y-6 px-6 md:space-y-8 md:px-10 lg:px-12">
             {messages.map((message, index) => (
-              <CoachMessage
-                key={index}
-                role={message.role}
-                content={message.content}
-                streaming={
-                  streaming &&
-                  index === messages.length - 1 &&
-                  message.role === "assistant"
-                }
-              />
+              <div key={index}>
+                <CoachMessage
+                  role={message.role}
+                  content={message.content}
+                  streaming={
+                    streaming &&
+                    index === messages.length - 1 &&
+                    message.role === "assistant"
+                  }
+                />
+                {/* A reply that reads as a workout grows a one-tap save. */}
+                {message.role === "assistant" &&
+                  !(streaming && index === messages.length - 1) &&
+                  extractWorkoutPlan(message.content).length >= 2 && (
+                    <button
+                      type="button"
+                      disabled={savingPlanAt !== null || savedPlanAt.has(index)}
+                      onClick={() => void savePlanFromMessage(index, message.content)}
+                      className={`mt-2.5 inline-flex min-h-10 items-center gap-2 rounded-full px-4 text-[13px] font-semibold transition active:scale-[0.98] ${
+                        savedPlanAt.has(index)
+                          ? "border border-border text-fg-muted"
+                          : "bg-primary text-primary-foreground hover:opacity-90"
+                      }`}
+                    >
+                      <Dumbbell size={14} />
+                      {savedPlanAt.has(index)
+                        ? "Saved to your workouts ✓"
+                        : savingPlanAt === index
+                          ? "Saving…"
+                          : "Save to My Workouts"}
+                    </button>
+                  )}
+              </div>
             ))}
             {offline && (
               <OfflineNotice

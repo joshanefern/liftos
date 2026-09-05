@@ -550,25 +550,6 @@ const Dashboard = () => {
 
       {/* ── Card index ── */}
       <nav aria-label="Dashboard index" className="mt-4 space-y-2.5 animate-reveal-up">
-        {/* Last workout — one tap straight to that workout's full summary
-            (exercises, top sets, PRs, share, delete). Hidden until the
-            first completed workout exists. */}
-        {logs[0] && (
-          <Link to={`/workouts/review/${logs[0].id}`} className={ROW_CLASS}>
-            <span className="min-w-0">
-              <RowLabel>Last workout</RowLabel>
-              <span className="mt-0.5 block truncate text-[12px] leading-4 text-fg-muted">
-                {logs[0].name} · {fmtAgo(logs[0].finished_at).toLowerCase() === "today" ? "today" : `${fmtAgo(logs[0].finished_at)} ago`}
-                {logs[0].completed_sets > 0 ? ` · ${logs[0].completed_sets} sets` : ""}
-                {logs[0].total_volume > 0
-                  ? ` · ${Math.round(logs[0].total_volume).toLocaleString()} ${units}`
-                  : ""}
-              </span>
-            </span>
-            <RowEnd label="View" />
-          </Link>
-        )}
-
         {/* Personal records — the three numbers a lifter recites. Raw best
             weights; a record broken in the last 72h lights up. */}
         {records.length > 0 && (
@@ -664,6 +645,25 @@ const Dashboard = () => {
           </Link>
         )}
 
+        {/* Last workout — one tap straight to that workout's full summary
+            (exercises, top sets, PRs, share, delete). Hidden until the
+            first completed workout exists. */}
+        {logs[0] && (
+          <Link to={`/workouts/review/${logs[0].id}`} className={ROW_CLASS}>
+            <span className="min-w-0">
+              <RowLabel>Last workout</RowLabel>
+              <span className="mt-0.5 block truncate text-[12px] leading-4 text-fg-muted">
+                {logs[0].name} · {fmtAgo(logs[0].finished_at).toLowerCase() === "today" ? "today" : `${fmtAgo(logs[0].finished_at)} ago`}
+                {logs[0].completed_sets > 0 ? ` · ${logs[0].completed_sets} sets` : ""}
+                {logs[0].total_volume > 0
+                  ? ` · ${Math.round(logs[0].total_volume).toLocaleString()} ${units}`
+                  : ""}
+              </span>
+            </span>
+            <RowEnd label="View" />
+          </Link>
+        )}
+
         {/* Connections — a button that opens the sheet (Apple Health toggle
             lives there). iOS-native only: the web has nothing to connect. */}
         {healthKitAvailable && (
@@ -673,7 +673,7 @@ const Dashboard = () => {
             className={ROW_CLASS}
           >
             <RowLabel>Connections</RowLabel>
-            <RowEnd value={healthKitConnected ? "Apple Health on" : "None"} label="Manage" />
+            <RowEnd label="Manage" />
           </button>
         )}
       </nav>
@@ -743,52 +743,32 @@ const Dashboard = () => {
                 </span>
                 <Switch
                   checked={reminders.enabled}
-                  onCheckedChange={(on) => void updateReminders({ ...reminders, enabled: on })}
+                  onCheckedChange={(on) =>
+                    void updateReminders({
+                      ...reminders,
+                      enabled: on,
+                      // Simple daily nudge — no weekday picker to babysit.
+                      days: [1, 2, 3, 4, 5, 6, 7],
+                    })
+                  }
                   aria-label="Training reminders"
                 />
               </label>
               {reminders.enabled && (
-                <div className="mt-3 px-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {(["S", "M", "T", "W", "T", "F", "S"] as const).map((letter, index) => {
-                      const day = index + 1; // iOS weekday: 1 = Sunday
-                      const active = reminders.days.includes(day);
-                      return (
-                        <button
-                          key={day}
-                          type="button"
-                          aria-pressed={active}
-                          onClick={() =>
-                            void updateReminders({
-                              ...reminders,
-                              days: active
-                                ? reminders.days.filter((d) => d !== day)
-                                : [...reminders.days, day].sort((a, b) => a - b),
-                            })
-                          }
-                          className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-[12px] font-semibold transition ${
-                            active
-                              ? "bg-primary text-primary-foreground"
-                              : "border border-border text-fg-muted hover:text-fg"
-                          }`}
-                        >
-                          {letter}
-                        </button>
-                      );
-                    })}
-                    <input
-                      type="time"
-                      value={`${String(reminders.hour).padStart(2, "0")}:${String(reminders.minute).padStart(2, "0")}`}
-                      onChange={(event) => {
-                        const [h, m] = event.target.value.split(":").map(Number);
-                        if (Number.isFinite(h) && Number.isFinite(m)) {
-                          void updateReminders({ ...reminders, hour: h, minute: m });
-                        }
-                      }}
-                      aria-label="Reminder time"
-                      className="ml-auto h-9 rounded-lg border border-border bg-card px-2 text-sm text-fg outline-none focus:border-primary/60"
-                    />
-                  </div>
+                <div className="mt-3 flex items-center justify-between gap-3 px-1">
+                  <span className="text-[12px] text-fg-muted">Every day at</span>
+                  <input
+                    type="time"
+                    value={`${String(reminders.hour).padStart(2, "0")}:${String(reminders.minute).padStart(2, "0")}`}
+                    onChange={(event) => {
+                      const [h, m] = event.target.value.split(":").map(Number);
+                      if (Number.isFinite(h) && Number.isFinite(m)) {
+                        void updateReminders({ ...reminders, hour: h, minute: m });
+                      }
+                    }}
+                    aria-label="Reminder time"
+                    className="h-9 rounded-lg border border-border bg-card px-2 text-sm text-fg outline-none focus:border-primary/60"
+                  />
                 </div>
               )}
             </div>

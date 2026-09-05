@@ -87,7 +87,6 @@ const Progress = () => {
   //    surface only through the fix-it row) ──
   const junkNames = useMemo(() => placeholderNames(logs), [logs]);
 
-  const trends = useMemo(() => getLiftTrends(logs, 84, TREND_MIN_SESSIONS), [logs]);
   // Body weight (HealthKit) powers the Fat Loss hero — fetched only when
   // that's the goal; empty everywhere else and on web.
   const [weightSamples, setWeightSamples] = useState<BodyMassSample[]>([]);
@@ -105,16 +104,18 @@ const Progress = () => {
     () => buildProgressHero(logs, profile?.goal ?? null, units, Date.now(), weightSamples),
     [logs, profile?.goal, units, weightSamples],
   );
-  const keyLifts = useMemo(() => trends.slice(0, 4), [trends]);
-  // Mean peak-anchored improvement across every trended lift — the card's
-  // one number. ≥ 0 by construction.
+  // The Improvement card reads ALL-TIME: every lift's first-ever session
+  // vs its all-time peak. "How far have I come since I started" — one
+  // number, ≥ 0 by construction (mean of peak-anchored per-lift gains).
+  const allTimeTrends = useMemo(() => getLiftTrends(logs, 36_500, 2), [logs]);
+  const keyLifts = useMemo(() => allTimeTrends.slice(0, 4), [allTimeTrends]);
   const overallImprovement = useMemo(() => {
-    const pcts = trends
+    const pcts = allTimeTrends
       .map((t) => peakPct(t))
       .filter((p): p is number => p !== null);
     if (pcts.length === 0) return null;
     return Math.round(pcts.reduce((sum, p) => sum + p, 0) / pcts.length);
-  }, [trends]);
+  }, [allTimeTrends]);
 
   // Records, most recently improved first — real names only.
   const prs = useMemo(
@@ -295,6 +296,9 @@ const Progress = () => {
           {overallImprovement !== null && overallImprovement > 0 && (
             <p className="mb-1 stat-scoreboard text-[34px] leading-10 tabular-nums text-primary">
               +{overallImprovement}%
+              <span className="ml-2 text-[13px] font-medium tracking-normal text-fg-muted">
+                since you started
+              </span>
             </p>
           )}
           <div className="divide-y divide-border">
@@ -457,28 +461,25 @@ const Progress = () => {
             </Link>
           </div>
           {insightLoading ? (
-            /* Skeleton rows while the read computes — same shape it lands in. */
-            <div className="mt-1 divide-y divide-border">
-              {[0, 1].map((i) => (
-                <div key={i} className="flex min-h-11 items-center justify-between gap-4 py-3">
-                  <span className="h-3.5 w-28 animate-pulse rounded bg-foreground/[0.08]" />
-                  <span className="h-3.5 w-14 animate-pulse rounded bg-foreground/[0.08]" />
+            /* Skeleton bullets while the read computes. */
+            <div className="mt-3 space-y-2.5">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-2.5">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/[0.12]" />
+                  <span className="h-3.5 w-48 animate-pulse rounded bg-foreground/[0.08]" />
                 </div>
               ))}
             </div>
           ) : insight ? (
             <>
-              <div className="mt-1 divide-y divide-border">
-                {insight.items.map((item) => (
-                  <div
-                    key={item.label}
-                    className="flex min-h-11 items-center justify-between gap-4 py-3"
-                  >
-                    <p className="min-w-0 truncate text-sm font-semibold text-fg">{item.label}</p>
-                    <p className="mono shrink-0 text-sm font-semibold text-fg">{item.value}</p>
-                  </div>
+              <ul className="mt-3 space-y-2.5">
+                {insight.bullets.map((bullet) => (
+                  <li key={bullet} className="flex items-start gap-2.5">
+                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
+                    <span className="min-w-0 text-sm leading-5 text-fg">{bullet}</span>
+                  </li>
                 ))}
-              </div>
+              </ul>
               {insight.next && (
                 <button
                   type="button"

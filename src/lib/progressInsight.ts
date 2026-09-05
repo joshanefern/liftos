@@ -9,21 +9,20 @@ import { listConversations } from "@/lib/coachStore";
    Cached per day + log count in localStorage: a new day or a new logged
    session refreshes it; revisiting the tab does not re-bill the API. ── */
 
-export type InsightItem = { label: string; value: string };
 export type InsightNext = { label: string; prompt: string };
-export type ProgressInsightData = { items: InsightItem[]; next: InsightNext | null };
+export type ProgressInsightData = { bullets: string[]; next: InsightNext | null };
 
 export const INSIGHT_PROMPT =
   "Return STRICT JSON only — no prose, no markdown fences — matching exactly: " +
-  '{"items":[{"label":"...","value":"..."}],"next":{"label":"...","prompt":"..."}} ' +
-  "items: 2 or 3 rows, each one real reading from my data, angled at my goal. " +
-  'label is at most 3 words ("Posterior chain", "Volume trend", "Bench"); ' +
-  'value is a compact stat of at most 10 characters ("109d idle", "+12%", "3/wk", "stalled"). ' +
+  '{"bullets":["..."],"next":{"label":"...","prompt":"..."}} ' +
+  "bullets: 3 to 5 ultra-short readings of my training, each AT MOST 8 words, " +
+  'each anchored in a real number where possible ("Upper back idle 109 days", ' +
+  '"Volume up 12% this month", "Squat stalled at 300"). Angle at my goal; ' +
+  "factor recent_conversations in if relevant. " +
   "next: the single best next move. label at most 4 words; prompt is one sentence " +
-  "I could send my coach to act on it. " +
-  "Factor recent_conversations in if relevant. JSON only.";
+  "I could send my coach to act on it. JSON only.";
 
-const KEY = "liftos-progress-insight-v3";
+const KEY = "liftos-progress-insight-v4";
 
 type CachedInsight = { day: string; logCount: number; raw: string };
 
@@ -37,20 +36,14 @@ export const parseInsight = (raw: string): ProgressInsightData | null => {
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/, "");
     const parsed = JSON.parse(cleaned) as {
-      items?: { label?: unknown; value?: unknown }[];
+      bullets?: unknown[];
       next?: { label?: unknown; prompt?: unknown } | null;
     };
-    const items = (parsed.items ?? [])
-      .filter(
-        (item): item is { label: string; value: string } =>
-          typeof item?.label === "string" &&
-          item.label.trim().length > 0 &&
-          typeof item?.value === "string" &&
-          item.value.trim().length > 0,
-      )
-      .slice(0, 3)
-      .map((item) => ({ label: item.label.trim().slice(0, 28), value: item.value.trim().slice(0, 12) }));
-    if (items.length === 0) return null;
+    const bullets = (parsed.bullets ?? [])
+      .filter((b): b is string => typeof b === "string" && b.trim().length > 0)
+      .slice(0, 5)
+      .map((b) => b.trim().slice(0, 80));
+    if (bullets.length === 0) return null;
     const next =
       typeof parsed.next?.label === "string" &&
       parsed.next.label.trim().length > 0 &&
@@ -58,7 +51,7 @@ export const parseInsight = (raw: string): ProgressInsightData | null => {
       parsed.next.prompt.trim().length > 0
         ? { label: parsed.next.label.trim().slice(0, 32), prompt: parsed.next.prompt.trim().slice(0, 240) }
         : null;
-    return { items, next };
+    return { bullets, next };
   } catch {
     return null;
   }
