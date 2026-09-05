@@ -207,9 +207,10 @@ export type LastDelta = {
 const bestOfLog = (
   log: WorkoutLog,
   key: string,
-): { weight: number; reps: number; duration: number } | null => {
+): { weight: number; reps: number; duration: number; e1rm: number } | null => {
   let best: { weight: number; reps: number } | null = null;
   let longestHold = 0;
+  let bestE = 0;
   let any = false;
   for (const exercise of log.exercises) {
     if (exercise.kind === "cardio") continue;
@@ -219,17 +220,27 @@ const bestOfLog = (
       const reps = typeof s.reps === "number" ? s.reps : 0;
       const rawWeight = typeof s.weight === "number" ? s.weight : 0;
       const weight = rawWeight > 0 && reps >= 1 ? rawWeight : 0;
-      const duration = typeof s.duration_seconds === "number" ? s.duration_seconds : 0;
+      // A distance set's time is pace, not a hold — same exclusion as
+      // getLiftTrends and the PR engine.
+      const isDistance = typeof s.distance_m === "number" && s.distance_m > 0;
+      const duration =
+        !isDistance && typeof s.duration_seconds === "number" ? s.duration_seconds : 0;
       if (duration > longestHold) longestHold = duration;
       if (weight <= 0 && duration <= 0 && reps < 1) continue;
       any = true;
+      if (weight > 0) bestE = Math.max(bestE, epley1RM(weight, reps));
       if (!best || weight > best.weight || (weight === best.weight && reps > best.reps)) {
         best = { weight, reps };
       }
     }
   }
   if (!any) return null;
-  return { weight: best?.weight ?? 0, reps: best?.reps ?? 0, duration: longestHold };
+  return {
+    weight: best?.weight ?? 0,
+    reps: best?.reps ?? 0,
+    duration: longestHold,
+    e1rm: bestE,
+  };
 };
 
 /** Per-session detail series for one lift — the per-lift page's data. Each
@@ -292,6 +303,72 @@ export const liftSessionSeries = (
     });
   }
   return points.sort((a, b) => a.t - b.t);
+};
+
+/** One number for the Improvement card: the latest session vs the previous
+    time each of its lifts was trained, averaged into a single signed %.
+    Weight lifts compare on Epley e1RM so both load and rep gains count
+    (80×5 → 80×8 is real improvement); holds compare duration; bodyweight
+    rep work compares reps. A lift whose two sessions aren't shaped alike
+    (weights then bodyweight, reps then holds) is skipped — no honest %. */
+export type SessionImprovement = {
+  /** Rounded mean % change; negative when the session was genuinely down. */
+  pct: number;
+  /** How many lifts had a previous session to compare against. */
+  lifts: number;
+};
+
+export const sessionImprovement = (logs: WorkoutLog[]): SessionImprovement | null => {
+  if (logs.length < 2) return null;
+  const ordered = [...logs].sort(
+    (a, b) => Date.parse(b.finished_at) - Date.parse(a.finished_at),
+  );
+  const [latest, ...earlier] = ordered;
+  const changes: number[] = [];
+  const seen = new Set<string>();
+
+  for (const exercise of latest.exercises) {
+    if (exercise.kind === "cardio" || isPlaceholderName(exercise.name)) continue;
+    const key = normalizeExerciseName(exercise.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const last = bestOfLog(latest, key);
+    if (!last) continue;
+    let prev: ReturnType<typeof bestOfLog> = null;
+    for (const log of earlier) {
+      prev = bestOfLog(log, key);
+      if (prev) break;
+    }
+    if (!prev) continue;
+
+    let lastScore = 0;
+    let prevScore = 0;
+    if (last.duration > 0 || prev.duration > 0) {
+      if (last.duration <= 0 || prev.duration <= 0) continue;
+      lastScore = last.duration;
+      prevScore = prev.duration;
+    } else if (last.e1rm > 0 && prev.e1rm > 0) {
+      // Each session's best Epley across ALL its weighted sets — the top
+      // single must not hide a better back-off set. Uncapped rep counts are
+      // fine here: this is a relative comparison between the lifter's own
+      // sessions, not a displayed "est. single", so the ≤10-rep display
+      // rule doesn't apply.
+      lastScore = last.e1rm;
+      prevScore = prev.e1rm;
+    } else if (last.weight <= 0 && prev.weight <= 0 && last.reps > 0 && prev.reps > 0) {
+      lastScore = last.reps;
+      prevScore = prev.reps;
+    } else {
+      continue;
+    }
+    if (prevScore <= 0) continue;
+    changes.push(((lastScore - prevScore) / prevScore) * 100);
+  }
+
+  if (changes.length === 0) return null;
+  const pct = Math.round(changes.reduce((sum, c) => sum + c, 0) / changes.length);
+  // `Math.round(-0.4)` is -0 — never let a wash print as "-0%".
+  return { pct: pct || 0, lifts: changes.length };
 };
 
 export const lastSessionDeltas = (logs: WorkoutLog[], limit = 3): LastDelta[] => {

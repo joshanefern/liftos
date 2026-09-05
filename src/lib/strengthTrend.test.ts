@@ -7,6 +7,7 @@ import {
   lastSessionDeltas,
   liftSessionSeries,
   lockedTrendCandidates,
+  sessionImprovement,
 } from "./strengthTrend";
 import { getWeeklyStreak } from "./workoutStats";
 
@@ -181,6 +182,69 @@ describe("lastSessionDeltas", () => {
       log(daysAgo(8), [ex("Bench Press", 80)]),
     ];
     expect(lastSessionDeltas(logs)).toEqual([]);
+  });
+});
+
+describe("sessionImprovement", () => {
+  it("one signed % — latest session vs each lift's previous occurrence", () => {
+    const logs = [
+      log(daysAgo(1), [ex("Bench Press", 88)]),
+      log(daysAgo(8), [ex("Bench Press", 80)]),
+    ];
+    // Same reps both sides → Epley cancels: (88-80)/80 = +10%.
+    expect(sessionImprovement(logs)).toEqual({ pct: 10, lifts: 1 });
+  });
+
+  it("rep gains at the same weight count as improvement", () => {
+    const heavy = ex("Bench Press", 100);
+    heavy.sets[0].reps = 8;
+    const logs = [log(daysAgo(1), [heavy]), log(daysAgo(8), [ex("Bench Press", 100)])];
+    // e1RM 100×8 (126.67) vs 100×5 (116.67) → +8.57 → rounds to +9.
+    expect(sessionImprovement(logs)).toEqual({ pct: 9, lifts: 1 });
+  });
+
+  it("averages across the session's lifts and can go negative", () => {
+    const logs = [
+      log(daysAgo(1), [ex("Bench Press", 88), ex("Squat", 90)]),
+      log(daysAgo(8), [ex("Bench Press", 80), ex("Squat", 100)]),
+    ];
+    // Bench +10%, squat −10% → 0%.
+    expect(sessionImprovement(logs)).toEqual({ pct: 0, lifts: 2 });
+  });
+
+  it("a top single never hides a better back-off set", () => {
+    const single = ex("Bench Press", 105); // 105×1 — weight PR, low Epley
+    single.sets[0].reps = 1;
+    const backoff = ex("Bench Press", 100); // 100×9 — the session's best Epley
+    backoff.sets[0].reps = 9;
+    backoff.sets[0].id = "backoff-1";
+    const prevSession = ex("Bench Press", 100);
+    prevSession.sets[0].reps = 8;
+    const latest = log(daysAgo(1), [single]);
+    latest.exercises[0].sets.push(backoff.sets[0]);
+    const logs = [latest, log(daysAgo(8), [prevSession])];
+    // Best Epley per side: 100×9 (130) vs 100×8 (126.67) → +2.6 → +3, not −14.
+    expect(sessionImprovement(logs)).toEqual({ pct: 3, lifts: 1 });
+  });
+
+  it("null with fewer than two logs or no comparable lift", () => {
+    expect(sessionImprovement([log(daysAgo(1), [ex("Bench Press", 80)])])).toBeNull();
+    const logs = [
+      log(daysAgo(1), [ex("Overhead Press", 95)]),
+      log(daysAgo(8), [ex("Bench Press", 80)]),
+    ];
+    expect(sessionImprovement(logs)).toBeNull();
+  });
+
+  it("skips junk names and shape-mismatched lifts", () => {
+    const bodyweight = ex("Push Up", 0);
+    bodyweight.sets[0].reps = 20;
+    const logs = [
+      log(daysAgo(1), [ex("Exercise 1", 200), bodyweight, ex("Bench Press", 88)]),
+      log(daysAgo(8), [ex("Exercise 1", 100), ex("Push Up", 50), ex("Bench Press", 80)]),
+    ];
+    // Junk name and weighted-then-bodyweight push-up are skipped; only bench counts.
+    expect(sessionImprovement(logs)).toEqual({ pct: 10, lifts: 1 });
   });
 });
 

@@ -17,11 +17,11 @@ import {
   recentChatExcerpts,
   type ProgressInsightData,
 } from "@/lib/progressInsight";
-import { getLiftTrends } from "@/lib/strengthTrend";
+import { sessionImprovement } from "@/lib/strengthTrend";
 import { getTopLifts } from "@/lib/workoutStats";
-import { ArrowRight, ChevronDown, Dumbbell, PenLine } from "lucide-react";
+import { ArrowRight, Dumbbell, PenLine } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 /* ── Progress — answers ONE question: "am I getting stronger?" — and reads
      top-to-bottom like a spoken summary (research round 2, Aug 2026):
@@ -35,44 +35,10 @@ import { Link, useNavigate } from "react-router-dom";
 const DAY_MS = 86_400_000;
 const PR_RECENT_DAYS = 7;
 const RECORDS_VISIBLE = 3;
-const TREND_MIN_SESSIONS = 2;
-
-const relativeDay = (iso: string): string => {
-  const days = Math.floor((Date.now() - Date.parse(iso)) / DAY_MS);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 7) return `${days} days ago`;
-  if (days < 56) return `${Math.floor(days / 7)} weeks ago`;
-  if (days < 365) return `${Math.floor(days / 30)} months ago`;
-  return `${Math.floor(days / 365)} years ago`;
-};
-
-/** Tiny sparkline points for a 100×28 viewBox. */
-const sparkPoints = (values: number[], w = 100, h = 28, pad = 3): string => {
-  if (values.length < 2) return "";
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  return values
-    .map((v, i) => {
-      const x = (i / (values.length - 1)) * w;
-      const y = max === min ? h / 2 : pad + (1 - (v - min) / (max - min)) * (h - pad * 2);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-};
 
 const CARD_CLASS =
   "rounded-[14px] bg-card p-4 shadow-[0_4px_12px_rgba(16,22,35,0.08)] " +
   "dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]";
-
-/** Peak-anchored improvement: your best in the window vs where you
-    started. A plateau reads 0%, a regression still shows the summit you
-    reached — the number to reclaim — never a minus sign. */
-const peakPct = (lift: { first: number; points: number[] }): number | null => {
-  if (lift.first <= 0 || lift.points.length === 0) return null;
-  const peak = Math.max(...lift.points);
-  return Math.max(0, Math.round(((peak - lift.first) / lift.first) * 100));
-};
 
 const Progress = () => {
   const navigate = useNavigate();
@@ -104,18 +70,9 @@ const Progress = () => {
     () => buildProgressHero(logs, profile?.goal ?? null, units, Date.now(), weightSamples),
     [logs, profile?.goal, units, weightSamples],
   );
-  // The Improvement card reads ALL-TIME: every lift's first-ever session
-  // vs its all-time peak. "How far have I come since I started" — one
-  // number, ≥ 0 by construction (mean of peak-anchored per-lift gains).
-  const allTimeTrends = useMemo(() => getLiftTrends(logs, 36_500, 2), [logs]);
-  const keyLifts = useMemo(() => allTimeTrends.slice(0, 4), [allTimeTrends]);
-  const overallImprovement = useMemo(() => {
-    const pcts = allTimeTrends
-      .map((t) => peakPct(t))
-      .filter((p): p is number => p !== null);
-    if (pcts.length === 0) return null;
-    return Math.round(pcts.reduce((sum, p) => sum + p, 0) / pcts.length);
-  }, [allTimeTrends]);
+  // The Improvement card is ONE number: this session vs the previous time
+  // the same lifts were trained, averaged into a single signed %.
+  const improvement = useMemo(() => sessionImprovement(logs), [logs]);
 
   // Records, most recently improved first — real names only.
   const prs = useMemo(
@@ -137,8 +94,6 @@ const Progress = () => {
         .length,
     [prs],
   );
-
-  const lastLog = logs[0] ?? null;
 
   // ── Coach's read: the AI returns 2-3 label+value readings and one next
   // move as strict JSON, rendered like every other stat row on this page —
@@ -282,70 +237,22 @@ const Progress = () => {
         )}
       </section>
 
-      {/* ── Card 1 · IMPROVEMENT — one overall number (peak-anchored: only
-          ever up or flat), per-lift rows beneath, chart on tap. ── */}
-      {keyLifts.length > 0 && (
+      {/* ── Card 1 · IMPROVEMENT — one number: this session vs the previous
+          time the same lifts were trained. Signed and honest. ── */}
+      {improvement && (
         <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
-          {/* A zero never headlines: the big % appears only when genuinely
-              up. Flat stretches lead with the motto and the rows show each
-              lift's number to beat. */}
-          <div className="mb-2 flex items-baseline justify-between gap-4">
-            <p className="eyebrow">Improvement</p>
-            <p className="caption shrink-0">Aim for 1% better every day</p>
-          </div>
-          {overallImprovement !== null && overallImprovement > 0 && (
-            <p className="mb-1 stat-scoreboard text-[34px] leading-10 tabular-nums text-primary">
-              +{overallImprovement}%
-              <span className="ml-2 text-[13px] font-medium tracking-normal text-fg-muted">
-                since you started
-              </span>
-            </p>
-          )}
-          <div className="divide-y divide-border">
-            {keyLifts.map((lift) => (
-              <button
-                key={lift.name}
-                type="button"
-                onClick={() => setDetailLift({ name: lift.name, timed: lift.metric === "time" })}
-                className="flex min-h-11 w-full items-center gap-4 py-3 text-left transition hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-fg">{lift.name}</p>
-                </div>
-                <svg viewBox="0 0 100 28" aria-hidden className="h-7 w-24 shrink-0">
-                  <polyline
-                    points={sparkPoints(lift.points)}
-                    fill="none"
-                    stroke="hsl(var(--chart-line))"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                </svg>
-                {/* Climbing → the gain; flat → the bar to beat, never a 0%. */}
-                <p className="w-24 shrink-0 whitespace-nowrap text-right">
-                  {(peakPct(lift) ?? 0) > 0 ? (
-                    <span className="stat-scoreboard text-[22px] leading-7 tabular-nums text-primary">
-                      +{peakPct(lift)}%
-                    </span>
-                  ) : (
-                    <span className="stat-scoreboard text-[22px] leading-7 tabular-nums text-fg">
-                      {lift.metric === "time" ? (
-                        formatHold(Math.max(...lift.points))
-                      ) : (
-                        <>
-                          {Math.max(...lift.points)}
-                          <span className="ml-1 text-[12px] font-medium text-fg-muted">{units}</span>
-                        </>
-                      )}
-                    </span>
-                  )}
-                </p>
-              </button>
-            ))}
-
-          </div>
+          <p className="eyebrow">Improvement</p>
+          <p
+            className={`mt-2 stat-scoreboard text-[34px] leading-10 tabular-nums ${
+              improvement.pct > 0 ? "text-primary" : "text-fg"
+            }`}
+          >
+            {improvement.pct > 0 ? "+" : ""}
+            {improvement.pct}%
+            <span className="ml-2 text-[13px] font-medium tracking-normal text-fg-muted">
+              vs last session
+            </span>
+          </p>
         </section>
       )}
 
@@ -454,12 +361,7 @@ const Progress = () => {
           Cached for the day; refreshes when a new session lands. ── */}
       {logs.length > 0 && (
         <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "240ms" }}>
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="eyebrow">Coach insight</p>
-            <Link to="/coach" className="caption transition hover:text-fg">
-              Ask the coach →
-            </Link>
-          </div>
+          <p className="eyebrow">Coach insight</p>
           {insightLoading ? (
             /* Skeleton bullets while the read computes. */
             <div className="mt-3 space-y-2.5">
@@ -471,36 +373,30 @@ const Progress = () => {
               ))}
             </div>
           ) : insight ? (
-            <>
-              <ul className="mt-3 space-y-2.5">
-                {insight.bullets.map((bullet) => (
-                  <li key={bullet} className="flex items-start gap-2.5">
-                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
-                    <span className="min-w-0 text-sm leading-5 text-fg">{bullet}</span>
-                  </li>
-                ))}
-              </ul>
-              {insight.next && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    navigate("/coach", { state: { draft: insight.next!.prompt } })
-                  }
-                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-[13.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98]"
-                >
-                  Next: {insight.next.label}
-                  <ArrowRight size={14} />
-                </button>
-              )}
-            </>
+            <ul className="mt-3 space-y-2.5">
+              {insight.bullets.map((bullet) => (
+                <li key={bullet} className="flex items-start gap-2.5">
+                  <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
+                  <span className="min-w-0 text-sm leading-5 text-fg">{bullet}</span>
+                </li>
+              ))}
+            </ul>
           ) : null}
-          <Link
-            to="/calendar"
-            className="mt-4 flex min-h-11 items-center justify-between rule-hairline pt-3 text-sm font-semibold text-fg transition hover:opacity-80"
+          {/* One small way in — seeded with the coach's next move when it
+              has one, a plain chat otherwise. */}
+          <button
+            type="button"
+            onClick={() =>
+              navigate(
+                "/coach",
+                insight?.next ? { state: { draft: insight.next.prompt } } : undefined,
+              )
+            }
+            className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full bg-primary px-4 text-[13px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98]"
           >
-            Training calendar
-            <ArrowRight size={14} className="text-fg-muted" />
-          </Link>
+            Ask the Coach
+            <ArrowRight size={13} />
+          </button>
         </section>
       )}
 
