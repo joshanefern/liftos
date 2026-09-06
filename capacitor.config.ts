@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.liftos.app',
+  appId: 'com.joshanefernando.liftos',
   appName: 'LiftOS',
   webDir: 'dist',
   ios: {
