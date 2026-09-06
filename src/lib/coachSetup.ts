@@ -33,6 +33,37 @@ Reply with NOTHING but one section per training day, in EXACTLY this format:
 5-8 exercises per day. No weights — I'll find my working weights as I go. No intro, no outro, no rest-day sections.`;
 };
 
+export type ScheduleDay = {
+  /** "Monday" … "Sunday" */
+  day: string;
+  /** "Push", "Pull", "Legs", "Upper", "Lower", "Full body", … */
+  focus: string;
+};
+
+/** The experienced lifter's 30-second intake: they told us WHEN they train
+    and WHAT each day hits — the coach only fills in the exercises. Day
+    headers double as template names ("Monday · Push"). */
+export const buildSchedulePrompt = (
+  profile: UserProfile | null,
+  schedule: ScheduleDay[],
+  notes: string,
+): string => {
+  const context: string[] = [];
+  if (profile?.goal) context.push(`goal: ${profile.goal}`);
+  if (profile?.experience) context.push(`experience: ${profile.experience}`);
+  if (profile?.equipment) context.push(`equipment: ${profile.equipment}`);
+  const noteLine = notes.trim() ? `\nAlso: ${notes.trim().slice(0, 400)}` : "";
+  return `Write my training week. This is MY schedule — keep every day exactly as given${context.length > 0 ? ` (${context.join(", ")})` : ""}:
+${schedule.map((s) => `- ${s.day}: ${s.focus}`).join("\n")}${noteLine}
+
+Reply with NOTHING but one section per day above, in EXACTLY this format:
+
+## ${schedule[0] ? `${schedule[0].day} · ${schedule[0].focus}` : "Monday · Push"}
+<Exercise name>: <sets>x<reps>
+
+5-8 exercises per day matched to that day's focus. No weights. No intro, no outro, no extra days.`;
+};
+
 /** Marked day headers — the shapes the prompt pins plus what models emit
     anyway: "## Push Day", "**Pull Day**", "Day 1: Upper" (any dash). */
 const MARKED_HEADERS = [

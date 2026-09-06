@@ -31,8 +31,6 @@ import {
   persistActiveSession,
 } from "@/lib/startSession";
 import { toast } from "@/components/ui/use-toast";
-import { useReadiness } from "@/hooks/useReadiness";
-import { trimSessionForRecovery } from "@/lib/recovery";
 import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -166,7 +164,6 @@ const StarterProgramRow = ({ program, saved, saving, saveDisabled, onSave, onSta
 const Workouts = () => {
   const navigate = useNavigate();
   const { templates, loading, save, remove } = useWorkoutTemplates();
-  const readiness = useReadiness();
   const isMobile = useIsMobile();
   const [builderOpen, setBuilderOpen] = useState(false);
   // Which builder row's name input is focused — its suggestions render.
@@ -240,15 +237,6 @@ const Workouts = () => {
     }
   };
 
-  // The run-down trim applies on EVERY start path — the readiness sentence
-  // and the coach both promise it unconditionally, so a library start must
-  // behave exactly like the dashboard CTA.
-  const persistWithRecovery = (session: ReturnType<typeof buildSessionFromTemplate>) => {
-    persistActiveSession(
-      readiness?.state === "run_down" ? trimSessionForRecovery(session) : session,
-    );
-  };
-
   // One session at a time: starting anything while a session is live would
   // silently erase its progress. The dialog routes back into the live one.
   const [blockedStart, setBlockedStart] = useState(false);
@@ -262,14 +250,14 @@ const Workouts = () => {
 
   const startWorkout = (template: { id?: string; name: string; exercises: WorkoutExercise[] }) => {
     if (guardActive()) return;
-    persistWithRecovery(buildSessionFromTemplate(template));
+    persistActiveSession(buildSessionFromTemplate(template));
     navigate("/workouts/active");
   };
 
   // Starter programs start without a templateId — see buildSessionFromStarter.
   const startProgram = (program: StarterProgram) => {
     if (guardActive()) return;
-    persistWithRecovery(buildSessionFromStarter(program));
+    persistActiveSession(buildSessionFromStarter(program));
     navigate("/workouts/active");
   };
 
@@ -573,7 +561,7 @@ const Workouts = () => {
           <CTAButton
             onClick={() => {
               if (guardActive()) return;
-              persistWithRecovery(buildBlankSession());
+              persistActiveSession(buildBlankSession());
               navigate("/workouts/active");
             }}
           >

@@ -20,9 +20,6 @@ import { prStrip } from "@/lib/bigThree";
 import { buildCoachContext, streamCoach } from "@/lib/coach";
 import { buildSplitPrompt, parseWeekPlan } from "@/lib/coachSetup";
 import { trackingFor } from "@/lib/exerciseTracking";
-import { labelForMuscle } from "@/lib/muscleCoverage";
-import type { Muscle } from "@/lib/muscleMap";
-import { muscleFreshnessFromLogs, trimSessionForRecovery } from "@/lib/recovery";
 import { ACTIVE_WORKOUT_STORAGE_KEY } from "@/lib/startSession";
 import {
   buildSessionFromStarter,
@@ -39,8 +36,6 @@ import {
 import { isPlaceholderName } from "@/lib/exerciseNames";
 import { getMonthStats, getWeeklyStreak, getWeekStats } from "@/lib/workoutStats";
 import { useDayKey } from "@/hooks/useDayKey";
-import { useReadiness } from "@/hooks/useReadiness";
-import { RecoverySheet } from "@/components/home/RecoverySheet";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { Switch } from "@/components/ui/switch";
 import type { ActiveSession } from "@/pages/ActiveWorkout";
@@ -186,62 +181,6 @@ const Dashboard = () => {
     return suggestion.title.toLowerCase().includes(split.toLowerCase()) ? null : split;
   }, [suggestion]);
 
-  // ── Recovery: overnight readiness (HealthKit) + per-muscle freshness
-  // (training history). The hero carries one line; the sheet has the rest.
-  const readiness = useReadiness();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const freshness = useMemo(() => muscleFreshnessFromLogs(logs), [logs, dayKey]);
-  const [recoveryOpen, setRecoveryOpen] = useState(false);
-
-  // Without a wearable verdict, recovery is COMPUTED from training history —
-  // across EVERY trained muscle, because "% recovered" reads as body state.
-  // (Scoring it against the next pick's muscles said "81% recovered" seconds
-  // after a session, because the engine had already rotated to fresh muscle
-  // groups.) The pick-specific freshness lives in the recovery sheet.
-  const computedRecovery = useMemo(() => {
-    // Only muscles still recovering count — freshness returns one entry per
-    // TRACKED muscle, and a dozen never-trained muscles sitting at 100%
-    // would dilute a hard leg day into "94% recovered".
-    const recovering = freshness.filter((f) => f.freshness < 1);
-    if (recovering.length === 0) {
-      return freshness.length > 0 ? { pct: 100, worst: null } : null;
-    }
-    let worst: { muscle: Muscle; value: number } | null = null;
-    let sum = 0;
-    for (const f of recovering) {
-      sum += f.freshness;
-      if (!worst || f.freshness < worst.value) worst = { muscle: f.muscle, value: f.freshness };
-    }
-    return { pct: Math.round((sum / recovering.length) * 100), worst };
-  }, [freshness]);
-
-  // The recovery line names its SOURCE. Apple Watch data (via Health) gives
-  // the overnight verdict; without it the number is computed from the log.
-  const recoveryLine = useMemo(():
-    | { word: string; source: string; tone: "good" | "neutral" | "warn" }
-    | null => {
-    if (readiness?.state === "primed") return { word: "Primed", source: "Apple Watch", tone: "good" };
-    if (readiness?.state === "steady") return { word: "Steady", source: "Apple Watch", tone: "neutral" };
-    if (readiness?.state === "run_down") return { word: "Run down", source: "Apple Watch", tone: "warn" };
-    if (readiness?.baselineDaysRemaining != null) {
-      return {
-        word: `Learning baseline · ${readiness.baselineDaysRemaining}d`,
-        source: "Apple Watch",
-        tone: "neutral",
-      };
-    }
-    if (logs.length === 0 || !computedRecovery) return null;
-    const { pct, worst } = computedRecovery;
-    if (pct >= 85) return { word: `${pct}% recovered`, source: "from your training", tone: "good" };
-    return {
-      word: worst && worst.value < 0.85
-        ? `${pct}% recovered · ${labelForMuscle(worst.muscle)} ${Math.round(worst.value * 100)}%`
-        : `${pct}% recovered`,
-      source: "from your training",
-      tone: pct < 60 ? "warn" : "neutral",
-    };
-  }, [readiness, computedRecovery, logs.length]);
-
   // The pick's shape — what you're walking into: how many lifts and sets,
   // roughly how long, when you last ran this exact session and how it went.
   // Replaces the per-exercise number rows (owner: "put something meaningful").
@@ -298,13 +237,7 @@ const Dashboard = () => {
 
   // One tap starts the named session pre-seeded; rest-day picks, still-loading
   // data, and any stale id fall back to the library, so the CTA never
-  // dead-ends. On a run-down morning the seeded session is trimmed — the
-  // readiness sentence announces exactly that.
-  const persistWithRecovery = (session: ActiveSession): void => {
-    persistActiveSession(
-      readiness?.state === "run_down" ? trimSessionForRecovery(session) : session,
-    );
-  };
+  // dead-ends.
 
   // ── First run: zero logs, zero templates — and both queries genuinely
   // SUCCEEDED (a failed cold-start load returns the same empty arrays, and a
@@ -374,14 +307,14 @@ const Dashboard = () => {
     if (suggestion.kind === "template") {
       const template = templates.find((t) => t.id === suggestion.id);
       if (template) {
-        persistWithRecovery(buildSessionFromTemplate(template));
+        persistActiveSession(buildSessionFromTemplate(template));
         navigate("/workouts/active");
         return;
       }
     } else if (suggestion.kind === "starter") {
       const program = starterPrograms.find((p) => p.id === suggestion.id);
       if (program) {
-        persistWithRecovery(buildSessionFromStarter(program));
+        persistActiveSession(buildSessionFromStarter(program));
         navigate("/workouts/active");
         return;
       }
@@ -390,11 +323,6 @@ const Dashboard = () => {
   };
 
   const { refresh: refreshCapturedSessions } = useCapturedSessions();
-
-  // One sentence ONLY when something changed the plan (run-down/illness).
-  // The daily coach-speak line is gone — owner's call: keep it simple.
-  const sentence =
-    dataReady && readiness?.state === "run_down" ? readiness.summary : null;
 
   // The banner owns "Resume"; the hero CTA always reads as the pick. (It
   // still routes into the live session when one exists — see
@@ -601,43 +529,6 @@ const Dashboard = () => {
               </div>
             )}
 
-            {sentence && (
-              <p className="mt-3 line-clamp-2 max-w-md text-[13px] leading-5 text-background/65">
-                {sentence}
-              </p>
-            )}
-
-            {/* Recovery line — a state word, not a gauge. Speaks in the
-                sentence above only when ≥2 overnight flags agree. */}
-            {recoveryLine && (
-              <button
-                type="button"
-                onClick={() => setRecoveryOpen(true)}
-                aria-label={`Recovery: ${recoveryLine.word}. Open details`}
-                className="relative mt-3 flex items-center gap-2 rounded-md text-left after:absolute after:-inset-x-1 after:-inset-y-3 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              >
-                <span
-                  aria-hidden
-                  className={`h-2 w-2 shrink-0 rounded-full ${
-                    recoveryLine.tone === "good"
-                      ? "bg-[hsl(var(--primary-on-inverse))]"
-                      : recoveryLine.tone === "warn"
-                        ? "border-[1.5px] border-[hsl(var(--primary-on-inverse))] bg-transparent"
-                        : "bg-background/40"
-                  }`}
-                />
-                {/* One flowing span: the word and source wrap as a sentence,
-                    never as two side-by-side squeezed columns. */}
-                <span className="min-w-0 text-[13px] font-semibold leading-5 text-background/85">
-                  {recoveryLine.word}{" "}
-                  <span className="whitespace-nowrap text-[11px] font-normal text-background/45">
-                    · {recoveryLine.source}
-                  </span>
-                </span>
-                <ChevronsRight size={13} className="shrink-0 text-background/50" />
-              </button>
-            )}
-
             {/* The one CTA on this screen — starts the exact pick
                 pre-seeded. The quiet chevron is the swap valve. */}
             <div className="mt-4 flex items-center gap-2">
@@ -786,14 +677,6 @@ const Dashboard = () => {
           </button>
         )}
       </nav>
-
-      <RecoverySheet
-        open={recoveryOpen}
-        onOpenChange={setRecoveryOpen}
-        assessment={readiness}
-        freshness={freshness}
-        targetMuscles={suggestion.muscles}
-      />
 
       <Drawer open={connectionsOpen} onOpenChange={setConnectionsOpen}>
         <DrawerContent className="px-6 pb-8">
