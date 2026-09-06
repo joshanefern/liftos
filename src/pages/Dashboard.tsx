@@ -18,7 +18,13 @@ import {
 } from "@/lib/healthkit";
 import { prStrip } from "@/lib/bigThree";
 import { buildCoachContext, streamCoach } from "@/lib/coach";
-import { buildSplitPrompt, parseWeekPlan } from "@/lib/coachSetup";
+import {
+  buildSchedulePrompt,
+  buildSplitPrompt,
+  parseWeekPlan,
+  type ScheduleDay,
+} from "@/lib/coachSetup";
+import { SplitIntakeSheet } from "@/components/home/SplitIntakeSheet";
 import { trackingFor } from "@/lib/exerciseTracking";
 import { ACTIVE_WORKOUT_STORAGE_KEY } from "@/lib/startSession";
 import {
@@ -245,21 +251,32 @@ const Dashboard = () => {
   // open while templates stream in mid-build, so the panel doesn't flip to
   // a pick after the first save.
   const [buildingWeek, setBuildingWeek] = useState(false);
+  // profile !== null = the profile fetch completed (fetchProfile always sets
+  // an object, even for an empty row) — without it the beginner variant
+  // flashes, and its one-tap build can fire, on a null in-flight profile.
   const firstRun =
     buildingWeek ||
     (dataReady &&
+      profile !== null &&
       !logsLoadFailed &&
       !templatesLoadFailed &&
       logs.length === 0 &&
       templates.length === 0);
 
-  const handleBuildWeek = async (): Promise<void> => {
+  // Beginners never see this — the coach decides everything from onboarding.
+  // Experienced lifters route through the intake sheet, which hands us their
+  // actual schedule.
+  const [intakeOpen, setIntakeOpen] = useState(false);
+  const isBeginner =
+    !profile?.experience || profile.experience.toLowerCase().includes("beginner");
+
+  const runWeekBuild = async (prompt: string): Promise<void> => {
     if (buildingWeek) return;
     setBuildingWeek(true);
     let saved = 0;
     try {
       const reply = await streamCoach(
-        [{ role: "user", content: buildSplitPrompt(profile) }],
+        [{ role: "user", content: prompt }],
         buildCoachContext(logs, profile),
         () => {},
       );
@@ -291,7 +308,12 @@ const Dashboard = () => {
       if (saved === 0) navigate("/workouts");
     } finally {
       setBuildingWeek(false);
+      setIntakeOpen(false);
     }
+  };
+
+  const handleIntakeBuild = (schedule: ScheduleDay[], notes: string): void => {
+    void runWeekBuild(buildSchedulePrompt(profile, schedule, notes));
   };
 
   const handleSuggestionStart = (): void => {
@@ -441,34 +463,68 @@ const Dashboard = () => {
                   Welcome{firstName ? ` · ${firstName}` : ""}
                 </p>
                 <h2 className="mt-1.5 text-[26px] font-semibold leading-8 tracking-[-0.01em] text-background">
-                  Let’s set up your training.
+                  {isBeginner ? "New to the gym? Start here." : "Set up your split."}
                 </h2>
                 <p className="mt-2 max-w-md text-[13px] leading-5 text-background/65">
-                  The coach can turn your goal into a full week of workouts —
-                  or jump straight in and log one.
+                  {isBeginner
+                    ? "One tap and the coach builds your first week around your goal — then walks you through every session."
+                    : "Thirty seconds: your days, your focus — the coach writes the week."}
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => void handleBuildWeek()}
+                    onClick={() =>
+                      isBeginner
+                        ? void runWeekBuild(buildSplitPrompt(profile))
+                        : setIntakeOpen(true)
+                    }
                     disabled={buildingWeek}
                     className="inline-flex min-h-[44px] items-center gap-2 rounded-full bg-[hsl(var(--primary-on-inverse))] px-5 py-3 text-[14px] font-semibold text-foreground transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
                   >
                     <Sparkles size={15} />
-                    {buildingWeek ? "Building your week…" : "Build my week with the coach"}
+                    {buildingWeek
+                      ? "Building your week…"
+                      : isBeginner
+                        ? "Build my plan for me"
+                        : "Build my split"}
                   </button>
+                  {isBeginner ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigate("/coach", {
+                          state: {
+                            draft:
+                              "I'm brand new to the gym. Build me a simple first week and tell me exactly how to start.",
+                          },
+                        })
+                      }
+                      className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-background/25 px-5 py-3 text-[14px] font-semibold text-background transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    >
+                      Talk to the coach
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => navigate("/workouts")}
+                      className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-background/25 px-5 py-3 text-[14px] font-semibold text-background transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    >
+                      Start a workout
+                    </button>
+                  )}
+                </div>
+                {isBeginner && !buildingWeek && (
                   <button
                     type="button"
                     onClick={() => navigate("/workouts")}
-                    className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-background/25 px-5 py-3 text-[14px] font-semibold text-background transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    className="mt-3 text-left text-[12.5px] font-semibold text-background/55 transition hover:text-background/80"
                   >
-                    Start a workout
+                    I’ll start on my own →
                   </button>
-                </div>
+                )}
                 {buildingWeek && (
                   <p className="mt-3 text-[12px] leading-4 text-background/55">
-                    Writing your split from your goal, schedule, and equipment —
-                    about 15 seconds.
+                    Writing your week — about 15 seconds.
                   </p>
                 )}
               </>
@@ -677,6 +733,13 @@ const Dashboard = () => {
           </button>
         )}
       </nav>
+
+      <SplitIntakeSheet
+        open={intakeOpen}
+        onOpenChange={setIntakeOpen}
+        building={buildingWeek}
+        onBuild={handleIntakeBuild}
+      />
 
       <Drawer open={connectionsOpen} onOpenChange={setConnectionsOpen}>
         <DrawerContent className="px-6 pb-8">

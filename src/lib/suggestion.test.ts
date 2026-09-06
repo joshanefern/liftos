@@ -579,3 +579,37 @@ describe("suggestNextWorkout — determinism", () => {
     expect(s.title).toBe("Anchor");
   });
 });
+
+describe("rule h — weekday-named templates follow the calendar", () => {
+  // NOW is a Sunday. Intake-built templates carry their weekday in the
+  // title; today's day must headline, another day's never should.
+  const weekTemplates = [
+    template("t-sun", "Sunday · Push", ["Barbell Bench Press"]),
+    template("t-wed", "Wednesday · Pull", ["Barbell Row"]),
+  ];
+
+  it("today's named template wins even against staler muscles", () => {
+    const s = suggestNextWorkout({
+      logs: [log("Push", daysAgo(2), [ex("Barbell Bench Press")])],
+      templates: weekTemplates,
+      starters: [],
+      now: NOW,
+    });
+    // Pull muscles are much staler, but Wednesday must not headline on
+    // a Sunday — the Sunday template wins.
+    expect(s.title).toBe("Sunday · Push");
+  });
+
+  it("titles without a weekday are unaffected", () => {
+    const s = suggestNextWorkout({
+      logs: [log("Push", daysAgo(2), [ex("Barbell Bench Press")])],
+      templates: [
+        template("t-wed", "Wednesday · Pull", ["Barbell Row"]),
+        template("t-plain", "Pull Day", ["Barbell Row"]),
+      ],
+      starters: [],
+      now: NOW,
+    });
+    expect(s.title).toBe("Pull Day");
+  });
+});

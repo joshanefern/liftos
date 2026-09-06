@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSplitPrompt, parseWeekPlan } from "./coachSetup";
+import { buildSchedulePrompt, buildSplitPrompt, parseWeekPlan } from "./coachSetup";
 
 const REPLY = `Here's your week!
 
@@ -121,6 +121,32 @@ Bicep Curl: 3x12`;
       "Seated Row",
       "Bicep Curl",
     ]);
+  });
+});
+
+describe("buildSchedulePrompt → parseWeekPlan round trip", () => {
+  it("day·focus headers survive the parser as template names", () => {
+    const prompt = buildSchedulePrompt(
+      { goal: "Strength", experience: "Advanced", equipment: "Full gym", frequency: null, split: null, units: "lb" } as never,
+      [
+        { day: "Monday", focus: "Push" },
+        { day: "Thursday", focus: "Legs" },
+      ],
+      "I love front squats",
+    );
+    expect(prompt).toContain("- Monday: Push");
+    expect(prompt).toContain("- Thursday: Legs");
+    expect(prompt).toContain("front squats");
+    // The exact header format the prompt pins parses back into day names.
+    const reply = `## Monday · Push
+Bench Press: 4x6
+Overhead Press: 3x8
+
+## Thursday · Legs
+Front Squat: 4x6
+Romanian Deadlift: 3x8`;
+    const days = parseWeekPlan(reply);
+    expect(days.map((d) => d.name)).toEqual(["Monday · Push", "Thursday · Legs"]);
   });
 });
 

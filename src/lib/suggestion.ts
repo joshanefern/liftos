@@ -31,6 +31,18 @@ const STALENESS_CAP_DAYS = 14;
 // onboarding, matching starters get a small boost — enough to prefer the
 // chosen split, small enough that a genuinely stale muscle still wins.
 const SPLIT_MATCH_BONUS = 2;
+// Rule h: outranks the 14-day staleness cap in both directions — a template
+// named for today must headline today, and never on any other day.
+const WEEKDAY_MATCH_BONUS = 20;
+const WEEKDAY_NAMES = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+];
 
 /** A log only counts as training if something was actually completed — the
     same convention getLastTrainedByMuscle uses. A session opened and
@@ -232,6 +244,18 @@ export function suggestNextWorkout(args: {
       ? SPLIT_MATCH_BONUS
       : 0;
 
+  // Rule h: intake-built templates carry their weekday in the title
+  // ("Monday · Push"). Today's named day outranks staleness; another day's
+  // name never headlines. Titles without a weekday are untouched.
+  const todayName = WEEKDAY_NAMES[now.getDay()];
+  const weekdayBonus = (candidate: Candidate): number => {
+    const match = /^(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i.exec(
+      candidate.title.trim(),
+    );
+    if (!match) return 0;
+    return match[1].toLowerCase() === todayName ? WEEKDAY_MATCH_BONUS : -WEEKDAY_MATCH_BONUS;
+  };
+
   const lastTrained = getLastTrainedByMuscle(logs);
 
   // Rule c (penalty): only the MOST RECENT session can penalize — repeating
@@ -265,7 +289,8 @@ export function suggestNextWorkout(args: {
         ? 0
         : capped.reduce((s, d) => s + d, 0) / capped.length -
           recencyPenalty(candidate) +
-          splitBonus(candidate);
+          splitBonus(candidate) +
+          weekdayBonus(candidate);
     // Stalest primary — Infinity (never trained) outranks any day count.
     let stalest: { muscle: Muscle; days: number } | null = null;
     muscles.forEach((muscle, i) => {

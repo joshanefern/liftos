@@ -230,6 +230,10 @@ const Onboarding = () => {
             onClick={async () => {
               const ok = await persistProfile();
               if (!ok) return;
+              // The context profile was fetched at signup, BEFORE these
+              // answers existed — without this refresh the dashboard reads
+              // experience/goal as null and mis-routes the first-run hero.
+              await refreshProfile();
               navigate("/dashboard", { state: { firstTime: true } });
             }}
             className="h-12 flex-1 rounded-[14px] border border-border text-sm text-fg-soft transition hover:border-primary/40 hover:text-fg"
@@ -246,6 +250,9 @@ const Onboarding = () => {
                 // wearable step follows; on the web this is the finish line.
                 const ok = await persistProfile();
                 if (!ok) return;
+                // Same reason as the skip path: the dashboard must see the
+                // answers that were just saved, not the signup-time nulls.
+                await refreshProfile();
                 if (!hasWearableStep) {
                   navigate("/dashboard", { state: { firstTime: true } });
                   return;

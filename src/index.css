@@ -486,6 +486,14 @@
   width: 6px;
 }
 
+/* Horizontal chip rows scroll without showing a track */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }

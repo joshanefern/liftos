@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PluginListenerHandle } from "@capacitor/core";
 import { Mic, Undo2 } from "lucide-react";
-import { toast } from "@/components/ui/use-toast";
 import {
   cancelListening,
   ensureSpeechPermissions,
@@ -41,10 +40,31 @@ const HARD_CAP_MS = 30_000;
 
 type Phase =
   | { at: "idle" }
+  | { at: "starting" }
+  | { at: "blocked"; reason: string }
   | { at: "listening"; partial: string }
   | { at: "thinking"; transcript: string }
   | { at: "applied"; result: VoiceApplyResult }
   | { at: "missed"; transcript: string };
+
+/** Native start failures, named on screen — a dead tap taught us that any
+    silent failure path reads as "voice is broken". */
+const blockedReason = (message: string): string => {
+  if (message.includes("speech_not_authorized")) {
+    return "Speech Recognition is off for LiftOS. iOS Settings → LiftOS → turn on Speech Recognition and Microphone.";
+  }
+  if (message.includes("recognizer_unavailable")) {
+    return "Speech recognition isn't available on this iPhone right now — check Settings → Siri (dictation must be enabled), then try again.";
+  }
+  if (
+    message.includes("audio_session_failed") ||
+    message.includes("audio_engine_failed") ||
+    message.includes("no_input_device")
+  ) {
+    return "The microphone couldn't start — close any other app using the mic and try again.";
+  }
+  return `Voice couldn't start (${message || "unknown error"}). Try again in a moment.`;
+};
 
 export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) => {
   const [phase, setPhase] = useState<Phase>({ at: "idle" });
@@ -84,15 +104,18 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     sessionGen.current += 1;
     window.clearTimeout(dismissTimer.current);
     tapHaptic();
+    // Visible from the FIRST millisecond — a hung permission call or a
+    // denied mic must never read as a dead tap.
+    setPhase({ at: "starting" });
     const granted = await ensureSpeechPermissions();
     if (!granted) {
       activeRef.current = false;
-      setPhase({ at: "idle" });
-      toast({
-        title: "Microphone is off",
-        description: "Allow the mic and speech in iOS Settings → LiftOS.",
-        variant: "destructive",
+      setPhase({
+        at: "blocked",
+        reason:
+          "Microphone or Speech Recognition is off for LiftOS. iOS Settings → LiftOS → allow both, then try again.",
       });
+      scheduleDismiss(10_000);
       return;
     }
     if (!activeRef.current) return;
@@ -141,11 +164,14 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     }, 250);
     try {
       await startListening(exercisesRef.current.map((e) => e.name).slice(0, 60));
-    } catch {
+    } catch (err) {
       activeRef.current = false;
       window.clearInterval(watchdog.current);
-      setPhase({ at: "idle" });
-      toast({ title: "Couldn't start listening", variant: "destructive" });
+      setPhase({
+        at: "blocked",
+        reason: blockedReason(err instanceof Error ? err.message : String(err)),
+      });
+      scheduleDismiss(10_000);
     }
   };
 
@@ -238,6 +264,20 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
       {phase.at !== "idle" && (
         <div className="pointer-events-none fixed inset-x-4 bottom-[calc(4rem+var(--safe-bottom)+4.5rem)] z-40 flex justify-center">
           <div className="pointer-events-auto w-full max-w-md rounded-[16px] border border-border bg-card p-4 shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
+            {phase.at === "starting" && (
+              <>
+                <p className="eyebrow animate-pulse !text-primary">Opening the mic…</p>
+                <p className="mt-1.5 text-sm leading-5 text-fg-soft">
+                  First time, iOS will ask for mic and speech permission.
+                </p>
+              </>
+            )}
+            {phase.at === "blocked" && (
+              <>
+                <p className="eyebrow !text-fg-muted">Voice can’t start</p>
+                <p className="mt-1.5 text-sm leading-5 text-fg-soft">{phase.reason}</p>
+              </>
+            )}
             {listening && (
               <>
                 <p className="eyebrow !text-primary">Listening…</p>
