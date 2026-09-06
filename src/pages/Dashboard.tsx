@@ -4,7 +4,11 @@ import { useCapturedSessions } from "@/context/CapturedSessionsProvider";
 import { useUser } from "@/context/UserContext";
 import { starterPrograms } from "@/data/starterPrograms";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
-import { useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import {
+  MAX_TEMPLATES,
+  TEMPLATE_LIMIT_ERROR,
+  useWorkoutTemplates,
+} from "@/hooks/useWorkoutTemplates";
 import { usePendingReviews } from "@/hooks/usePendingReviews";
 import {
   connectHealthKit,
@@ -13,6 +17,8 @@ import {
   healthKitSupported,
 } from "@/lib/healthkit";
 import { prStrip } from "@/lib/bigThree";
+import { buildCoachContext, streamCoach } from "@/lib/coach";
+import { buildSplitPrompt, parseWeekPlan } from "@/lib/coachSetup";
 import { trackingFor } from "@/lib/exerciseTracking";
 import { labelForMuscle } from "@/lib/muscleCoverage";
 import type { Muscle } from "@/lib/muscleMap";
@@ -38,7 +44,7 @@ import { RecoverySheet } from "@/components/home/RecoverySheet";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { Switch } from "@/components/ui/switch";
 import type { ActiveSession } from "@/pages/ActiveWorkout";
-import { CalendarDays, ChevronsRight, RefreshCw } from "lucide-react";
+import { CalendarDays, ChevronsRight, RefreshCw, Sparkles } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -104,8 +110,13 @@ const RowEnd = ({
 const Dashboard = () => {
   const navigate = useNavigate();
   const { profile, refreshProfile } = useUser();
-  const { logs, loading: logsLoading } = useWorkoutLogs();
-  const { templates, loading: templatesLoading } = useWorkoutTemplates();
+  const { logs, loading: logsLoading, loadFailed: logsLoadFailed } = useWorkoutLogs();
+  const {
+    templates,
+    loading: templatesLoading,
+    loadFailed: templatesLoadFailed,
+    save: saveTemplate,
+  } = useWorkoutTemplates();
   const { pendingCount, pendingSessions } = usePendingReviews();
 
   // Both queries settled — before this, an established user's empty arrays
@@ -182,25 +193,27 @@ const Dashboard = () => {
   const freshness = useMemo(() => muscleFreshnessFromLogs(logs), [logs, dayKey]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
 
-  // Without a wearable verdict, recovery is COMPUTED from training history:
-  // the freshness of the muscles today's pick targets (falls back to every
-  // trained muscle on rest days / unknown picks). Shown as a percentage —
-  // it's a real number from real sets, not a vibe.
+  // Without a wearable verdict, recovery is COMPUTED from training history —
+  // across EVERY trained muscle, because "% recovered" reads as body state.
+  // (Scoring it against the next pick's muscles said "81% recovered" seconds
+  // after a session, because the engine had already rotated to fresh muscle
+  // groups.) The pick-specific freshness lives in the recovery sheet.
   const computedRecovery = useMemo(() => {
-    const byMuscle = new Map(freshness.map((f) => [f.muscle, f.freshness]));
-    const targets = suggestion.muscles.length > 0 ? suggestion.muscles : freshness.map((f) => f.muscle);
+    // Only muscles still recovering count — freshness returns one entry per
+    // TRACKED muscle, and a dozen never-trained muscles sitting at 100%
+    // would dilute a hard leg day into "94% recovered".
+    const recovering = freshness.filter((f) => f.freshness < 1);
+    if (recovering.length === 0) {
+      return freshness.length > 0 ? { pct: 100, worst: null } : null;
+    }
     let worst: { muscle: Muscle; value: number } | null = null;
     let sum = 0;
-    let n = 0;
-    for (const muscle of targets) {
-      const value = byMuscle.get(muscle) ?? 1;
-      sum += value;
-      n += 1;
-      if (!worst || value < worst.value) worst = { muscle, value };
+    for (const f of recovering) {
+      sum += f.freshness;
+      if (!worst || f.freshness < worst.value) worst = { muscle: f.muscle, value: f.freshness };
     }
-    if (n === 0) return null;
-    return { pct: Math.round((sum / n) * 100), worst };
-  }, [freshness, suggestion.muscles]);
+    return { pct: Math.round((sum / recovering.length) * 100), worst };
+  }, [freshness]);
 
   // The recovery line names its SOURCE. Apple Watch data (via Health) gives
   // the overnight verdict; without it the number is computed from the log.
@@ -291,6 +304,61 @@ const Dashboard = () => {
     persistActiveSession(
       readiness?.state === "run_down" ? trimSessionForRecovery(session) : session,
     );
+  };
+
+  // ── First run: zero logs, zero templates — and both queries genuinely
+  // SUCCEEDED (a failed cold-start load returns the same empty arrays, and a
+  // veteran must never see the welcome hero). buildingWeek pins the branch
+  // open while templates stream in mid-build, so the panel doesn't flip to
+  // a pick after the first save.
+  const [buildingWeek, setBuildingWeek] = useState(false);
+  const firstRun =
+    buildingWeek ||
+    (dataReady &&
+      !logsLoadFailed &&
+      !templatesLoadFailed &&
+      logs.length === 0 &&
+      templates.length === 0);
+
+  const handleBuildWeek = async (): Promise<void> => {
+    if (buildingWeek) return;
+    setBuildingWeek(true);
+    let saved = 0;
+    try {
+      const reply = await streamCoach(
+        [{ role: "user", content: buildSplitPrompt(profile) }],
+        buildCoachContext(logs, profile),
+        () => {},
+      );
+      const days = parseWeekPlan(reply, MAX_TEMPLATES);
+      if (days.length === 0) throw new Error("no_plan");
+      for (const day of days) {
+        await saveTemplate({ id: null, name: day.name, exercises: day.exercises });
+        saved += 1;
+      }
+      toast({
+        title: `Your week is ready — ${saved} workout${saved === 1 ? "" : "s"} saved`,
+      });
+    } catch (err) {
+      // A mid-loop failure leaves the already-saved days in the library —
+      // say what landed instead of announcing total failure.
+      const limitHit = err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR;
+      toast({
+        title:
+          saved > 0
+            ? `Saved ${saved} workout${saved === 1 ? "" : "s"} — the rest didn't land`
+            : "Couldn't build your plan right now",
+        description: limitHit
+          ? "Your library hit its limit of saved workouts."
+          : saved > 0
+            ? "They're in My Workouts; ask the coach for the missing days any time."
+            : "The starter programs are ready to run today.",
+        variant: saved > 0 ? "default" : "destructive",
+      });
+      if (saved === 0) navigate("/workouts");
+    } finally {
+      setBuildingWeek(false);
+    }
   };
 
   const handleSuggestionStart = (): void => {
@@ -439,6 +507,45 @@ const Dashboard = () => {
       <section className="mt-6 md:mt-8 animate-reveal-up">
         <div className="relative overflow-hidden rounded-[18px] bg-foreground p-5 text-background shadow-[0_8px_24px_rgba(16,22,35,0.16)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
           <div className="relative z-10">
+            {firstRun ? (
+              <>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--primary-on-inverse))]">
+                  Welcome{firstName ? ` · ${firstName}` : ""}
+                </p>
+                <h2 className="mt-1.5 text-[26px] font-semibold leading-8 tracking-[-0.01em] text-background">
+                  Let’s set up your training.
+                </h2>
+                <p className="mt-2 max-w-md text-[13px] leading-5 text-background/65">
+                  The coach can turn your goal into a full week of workouts —
+                  or jump straight in and log one.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleBuildWeek()}
+                    disabled={buildingWeek}
+                    className="inline-flex min-h-[44px] items-center gap-2 rounded-full bg-[hsl(var(--primary-on-inverse))] px-5 py-3 text-[14px] font-semibold text-foreground transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
+                  >
+                    <Sparkles size={15} />
+                    {buildingWeek ? "Building your week…" : "Build my week with the coach"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/workouts")}
+                    className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-background/25 px-5 py-3 text-[14px] font-semibold text-background transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  >
+                    Start a workout
+                  </button>
+                </div>
+                {buildingWeek && (
+                  <p className="mt-3 text-[12px] leading-4 text-background/55">
+                    Writing your split from your goal, schedule, and equipment —
+                    about 15 seconds.
+                  </p>
+                )}
+              </>
+            ) : (
+            <>
             {/* Split-position line — "what day of my split is it" as a
                 label, never a calendar to interpret. */}
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--primary-on-inverse))]">
@@ -544,6 +651,8 @@ const Dashboard = () => {
               </button>
 
             </div>
+            </>
+            )}
           </div>
         </div>
       </section>

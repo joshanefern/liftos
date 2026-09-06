@@ -33,6 +33,152 @@ const session = (): VoiceLoggedExercise[] => [
   },
 ];
 
+describe("applyVoiceIntent — done-without-numbers ('I did goblet squats')", () => {
+  it("completes an existing exercise's planned sets from targets", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Incline Curl", done: true, sets: [] }],
+    };
+    const result = applyVoiceIntent(session(), intent);
+    const rows = result.exercises[0].sets;
+    expect(rows.every((r) => r.completed)).toBe(true);
+    expect(rows[0]).toMatchObject({ reps: "8", weight: "185" });
+    expect(result.setsLogged).toBe(3);
+    expect(result.summary[0]).toBe("Incline Curl — 3 sets done");
+    expect(result.empty).toBe(false);
+  });
+
+  it("keeps typed values, skips warm-ups, and never completes target-less blank rows", () => {
+    const exercises: VoiceLoggedExercise[] = [
+      {
+        id: "e1",
+        name: "Goblet Squat",
+        category: "",
+        target: "",
+        sets: [
+          set({ isWarmup: true }),
+          set({ reps: "12", weight: "50", targetReps: null, targetWeight: null }),
+          set({ targetReps: null, targetWeight: null }), // no target, nothing typed
+        ],
+      },
+    ];
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Goblet Squat", done: true, sets: [] }],
+    };
+    const result = applyVoiceIntent(exercises, intent);
+    const rows = result.exercises[0].sets;
+    expect(rows[0].completed).toBe(false); // warm-up untouched
+    expect(rows[1]).toMatchObject({ reps: "12", weight: "50", completed: true });
+    expect(rows[2].completed).toBe(false);
+    expect(result.setsLogged).toBe(1);
+  });
+
+  it("adds an unknown exercise instead of swallowing the words", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Goblet Squat", isNew: true, done: true, sets: [] }],
+    };
+    const result = applyVoiceIntent(session(), intent);
+    expect(result.addedExercises).toEqual(["Goblet Squat"]);
+    expect(result.exercises.at(-1)?.name).toBe("Goblet Squat");
+    expect(result.exercises.at(-1)?.sets[0].completed).toBe(false);
+    expect(result.summary[0]).toContain("fill in your sets");
+    expect(result.empty).toBe(false);
+  });
+
+  it("says so when the exercise is already fully done", () => {
+    const exercises = session().map((e) =>
+      e.id === "e1"
+        ? { ...e, sets: e.sets.map((r) => ({ ...r, reps: "8", completed: true })) }
+        : e,
+    );
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Incline Curl", done: true, sets: [] }],
+    };
+    const result = applyVoiceIntent(exercises, intent);
+    expect(result.summary[0]).toBe("Incline Curl — already done");
+    expect(result.setsLogged).toBe(0);
+    expect(result.empty).toBe(false);
+  });
+
+  it("name-inferred holds (no explicit tracking) fill hold targets, never reps-as-seconds", () => {
+    // "Glute Bridge" carries no tracking field (coach plans and starters
+    // never set one) but the NAME infers time — the done path must agree
+    // with the save path or reps targets become phantom hold durations.
+    const exercises: VoiceLoggedExercise[] = [
+      {
+        id: "e1",
+        name: "Glute Bridge",
+        category: "",
+        target: "",
+        sets: [set({ targetReps: 12, targetWeight: null, targetTime: 45 })],
+      },
+    ];
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Glute Bridge", done: true, sets: [] }],
+    };
+    const result = applyVoiceIntent(exercises, intent);
+    expect(result.exercises[0].sets[0]).toMatchObject({ reps: "0:45", completed: true });
+  });
+
+  it("'first set of bench done' — done with an ordinal completes ONLY that set", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Incline Curl", done: true, sets: [{ ordinal: 1 }] }],
+    };
+    const result = applyVoiceIntent(session(), intent);
+    const rows = result.exercises[0].sets;
+    expect(rows[0].completed).toBe(true);
+    expect(rows[1].completed).toBe(false);
+    expect(rows[2].completed).toBe(false);
+    expect(result.setsLogged).toBe(1);
+    expect(result.summary[0]).toBe("Incline Curl — 1 set done");
+  });
+
+  it("zero-valued targets never complete rows", () => {
+    const exercises: VoiceLoggedExercise[] = [
+      {
+        id: "e1",
+        name: "Bench Press",
+        category: "",
+        target: "",
+        sets: [set({ targetReps: 0, targetWeight: 0 })],
+      },
+    ];
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Bench Press", done: true, sets: [] }],
+    };
+    const result = applyVoiceIntent(exercises, intent);
+    expect(result.exercises[0].sets[0].completed).toBe(false);
+    expect(result.setsLogged).toBe(0);
+    expect(result.summary[0]).toContain("no planned numbers");
+    expect(result.empty).toBe(false);
+  });
+
+  it("fills timed exercises from their hold targets as m:ss", () => {
+    const exercises: VoiceLoggedExercise[] = [
+      {
+        id: "e1",
+        name: "Plank",
+        tracking: "time",
+        category: "",
+        target: "",
+        sets: [set({ targetReps: null, targetWeight: null, targetTime: 90 })],
+      },
+    ];
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Plank", done: true, sets: [] }],
+    };
+    const result = applyVoiceIntent(exercises, intent);
+    expect(result.exercises[0].sets[0]).toMatchObject({ reps: "1:30", completed: true });
+  });
+});
+
 describe("applyVoiceIntent — the owner's exact utterances", () => {
   it("'5 reps first set, only 2 on my second set of incline curls' hits ordinals", () => {
     // "recline curls" was already resolved to the session name by the

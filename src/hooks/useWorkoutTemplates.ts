@@ -18,6 +18,8 @@ export type SupabaseTemplate = {
 type WorkoutTemplatesContextValue = {
   templates: SupabaseTemplate[];
   loading: boolean;
+  /** Last load attempt failed — an empty library must not read as new. */
+  loadFailed: boolean;
   save: (template: { id: string | null; name: string; exercises: WorkoutExercise[] }) => Promise<void>;
   remove: (id: string) => Promise<void>;
 };
@@ -28,6 +30,7 @@ export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNo
   const { user } = useUser();
   const [templates, setTemplates] = useState<SupabaseTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -37,6 +40,7 @@ export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNo
     // A failed reload keeps the stale cache — blanking the library to the
     // "No saved workouts yet" state on a network hiccup reads as data loss.
     if (data) setTemplates(data as SupabaseTemplate[]);
+    setLoadFailed(!data);
     setLoading(false);
   }, []);
 
@@ -90,7 +94,7 @@ export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNo
 
   return createElement(
     WorkoutTemplatesContext.Provider,
-    { value: { templates, loading, save, remove } },
+    { value: { templates, loading, loadFailed, save, remove } },
     children,
   );
 };

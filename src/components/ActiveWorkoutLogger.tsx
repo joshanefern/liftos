@@ -105,6 +105,8 @@ type SessionSummary = {
   totalSets: number;
   exercisesCount: number;
   prs: SessionPR[];
+  /** The account's very first log — everything is a baseline, not a record. */
+  firstWorkout: boolean;
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -245,7 +247,7 @@ const computePrs = (
 // ── Component ───────────────────────────────────────────────────────────────
 
 const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
-  const { save, logs } = useWorkoutLogs();
+  const { save, logs, loadFailed: logsLoadFailed } = useWorkoutLogs();
   const { profile } = useUser();
   const units = profile?.units ?? "lb";
   const isMetric = isMetricUnits(units);
@@ -856,10 +858,16 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         totalSets: stats.totalSets,
         exercisesCount: exercises.length,
         prs,
+        firstWorkout: logs.length === 0 && !logsLoadFailed,
       });
       // One long success haptic at the session boundary — the recap moment.
       successHaptic();
-      if (prEvents.length > 0) setPrCelebration(prEvents);
+      // The celebration overlay is for BEATEN records only. First-ever logs
+      // are baselines — a new split day would otherwise flood the overlay
+      // with one "record" per unfamiliar lift (they get one quiet recap
+      // line instead).
+      const beaten = prEvents.filter((event) => !event.isFirst);
+      if (beaten.length > 0) setPrCelebration(beaten);
     } catch {
       toast({ title: "Could not save workout", variant: "destructive" });
     } finally {
@@ -881,8 +889,10 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   // ── Session-end reveal ──
 
   if (summary) {
+    const improvedPrs = summary.prs.filter((pr) => !pr.isFirst);
+    const firstLogCount = summary.prs.length - improvedPrs.length;
     return (
-      <div className="relative min-h-screen w-full max-w-6xl mx-auto p-6 md:p-10 lg:p-12">
+      <div className="relative min-h-screen w-full max-w-6xl mx-auto p-6 pb-[calc(4rem+var(--safe-bottom)+2rem)] md:p-10 md:pb-[calc(4rem+var(--safe-bottom)+2.5rem)] lg:p-12 lg:pb-[calc(4rem+var(--safe-bottom)+3rem)]">
         <div aria-hidden className="fixed inset-0 z-[-1] bg-background" />
 
         {/* PR celebration sits over the summary; Done reveals the normal path */}
@@ -953,22 +963,26 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
             >
               <div className="mb-4 flex items-center gap-2">
                 <Trophy size={14} className="text-primary" />
-                <p className="eyebrow !text-primary">Personal records</p>
+                <p className="eyebrow !text-primary">
+                  {summary.firstWorkout ? "Baseline set" : "Personal records"}
+                </p>
               </div>
-              {summary.prs.length > 0 ? (
+              {summary.firstWorkout ? (
+                /* First workout ever: every number is a starting line, not a
+                   wall of "records" — one sentence, not a list. */
+                <p className="body-md text-fg-soft">
+                  Every number you just logged is your starting line. Beat any
+                  of them next session for your first record.
+                </p>
+              ) : improvedPrs.length > 0 || firstLogCount > 0 ? (
                 <div className="divide-y divide-border">
-                  {summary.prs.map((pr, i) => (
+                  {improvedPrs.map((pr, i) => (
                     <div
                       key={pr.name}
                       className="flex items-center justify-between gap-3 py-3 animate-reveal-up"
                       style={{ animationDelay: `${500 + i * 80}ms` }}
                     >
-                      <span className="body-md min-w-0 truncate !text-fg">
-                        {pr.name}
-                        {pr.isFirst && (
-                          <span className="caption ml-2 !text-primary/70">first log</span>
-                        )}
-                      </span>
+                      <span className="body-md min-w-0 truncate !text-fg">{pr.name}</span>
                       <span className="mono shrink-0 text-sm font-semibold text-primary">
                         {pr.kind === "hold"
                           ? pr.weight > 0
@@ -980,6 +994,14 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       </span>
                     </div>
                   ))}
+                  {/* New lifts collapse to one quiet line — a first log is a
+                      baseline, and eight of them are not eight records. */}
+                  {firstLogCount > 0 && (
+                    <p className="py-3 text-[13px] leading-5 text-fg-muted">
+                      {firstLogCount} lift{firstLogCount === 1 ? "" : "s"} logged for
+                      the first time — baseline{firstLogCount === 1 ? "" : "s"} set.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="body-md text-fg-muted">
@@ -1044,7 +1066,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   <span className="caption">Send this session anywhere</span>
                   <ShareButton
                     log={savedLog}
-                    prCount={summary.prs.length}
+                    prCount={summary.firstWorkout ? 0 : summary.prs.length}
                     activations={sessionActivations}
                   />
                 </div>
@@ -1079,7 +1101,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   // ── Active logging screen ──
 
   return (
-    <div className="scoreboard-reveal relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
+    <div className="scoreboard-reveal relative min-h-screen w-full max-w-7xl mx-auto p-6 pb-[calc(4rem+var(--safe-bottom)+5rem)] md:p-10 md:pb-[calc(4rem+var(--safe-bottom)+5rem)] lg:p-12 lg:pb-[calc(4rem+var(--safe-bottom)+5rem)]">
       {/* Solid canvas: no grain, no blur — battery + arm's-length legibility. */}
       <div aria-hidden className="fixed inset-0 z-[-1] bg-background" />
 

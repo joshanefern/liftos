@@ -50,6 +50,7 @@ Schema:
       "exercise": string,      // EXACT name from SESSION_EXERCISES when the lifter means one of them (fix mishearings: "recline curls" → "Incline Curl"); otherwise the cleaned new-exercise name, Title Case
       "isNew": boolean,        // true ONLY when it is not in SESSION_EXERCISES
       "tracking": "reps" | "time" | null,   // "time" for holds (planks, wall sits, carries measured in seconds)
+      "done": boolean,         // true when the exercise was reported finished with NO numbers spoken
       "sets": [ { "ordinal": int|null, "reps": int|null, "weight": number|null, "seconds": number|null } ]
     }
   ],
@@ -57,6 +58,8 @@ Schema:
 }
 
 Rules:
+- Naming an exercise as performed with NO counts at all ("I did goblet squats", "goblet squats done", "finished my planks") → kind "sets", one action { exercise, isNew, done: true, sets: [] }. The logger completes that exercise's planned sets. This is common — it is NOT "unclear".
+- A SPECIFIC set reported done without effort numbers ("first set of bench done", "finished my second set of squats") → done: true with sets [ { "ordinal": N } ] — the logger completes only that set, never the whole exercise.
 - "first set / second set" → ordinal 1 / 2. No ordinal words → ordinal null (sets apply in order).
 - "3 sets of X" or "did 3 sets" with one effort value → emit that many identical set objects.
 - "about 40 seconds" → seconds 40. Durations for holds go in seconds, never reps.

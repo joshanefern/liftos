@@ -13,13 +13,16 @@ export type ParsedPlanExercise = {
   weight: number;
 };
 
-// "Bench Press: 3×8 @ 185", "- Squat — 4 x 6", "| Deadlift | 3×5 @ 225 |",
-// and table rows with the weight in its own cell: "| Bench | 4×6 | 185 lb |".
+// "Bench Press: 3×8 @ 185", "- Squat — 4 x 6", "1. Bench Press: 3x8",
+// "| Deadlift | 3×5 @ 225 |", and table rows with the weight in its own
+// cell: "| Bench | 4×6 | 185 lb |".
 const LINE_PATTERN =
-  /^[\s|*•-]*\**([A-Za-z][A-Za-z0-9 /()'’.-]{2,40}?)\**\s*[:|—–-]?\s*\|?\s*(\d{1,2})\s*[x×]\s*(\d{1,3})(?:\s*(?:@|at|\|)\s*(\d{1,4}(?:\.\d)?)\s*(?:lb|kg)?)?/i;
+  /^[\s|*•-]*(?:\d{1,2}[.)]\s+)?\**([A-Za-z][A-Za-z0-9 /()'’.-]{2,40}?)\**\s*[:|—–-]?\s*\|?\s*(\d{1,2})\s*[x×]\s*(\d{1,3})(?:\s*(?:@|at|\|)\s*(\d{1,4}(?:\.\d)?)\s*(?:lb|kg)?)?/i;
 
-/** Words that mean the "name" wasn't an exercise (day headers, totals…). */
-const NOT_EXERCISES = /^(day|week|rest|warm ?up|cool ?down|total|superset|round|set)s?\b/i;
+/** Words that mean the "name" wasn't an exercise — day headers, totals, and
+    coaching prose ("Add weight once you can hit 3x12" is a tip, not a lift). */
+const NOT_EXERCISES =
+  /^(day|week|rest|warm ?up|cool ?down|total|superset|round|set|add|aim|try|increase|keep|focus|remember|note|start|perform|complete|repeat|alternate|progress|once|when|if|after)s?\b/i;
 
 export const extractWorkoutPlan = (text: string): ParsedPlanExercise[] => {
   const seen = new Map<string, ParsedPlanExercise>();

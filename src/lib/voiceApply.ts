@@ -8,7 +8,7 @@
    The logger's own types stay in the component; we type structurally
    against the exact shape it holds so state passes straight through. */
 
-import { formatHoldInput } from "@/lib/exerciseTracking";
+import { formatHoldInput, inferTracking, trackingFor } from "@/lib/exerciseTracking";
 
 export type VoiceLoggedSet = {
   id: string;
@@ -44,6 +44,9 @@ export type VoiceAction = {
   exercise: string;
   isNew?: boolean;
   tracking?: "reps" | "time" | null;
+  /** "I did my goblet squats" — performed, no numbers spoken. The apply
+      engine completes that exercise's planned sets from its targets. */
+  done?: boolean;
   sets: VoiceSet[];
 };
 
@@ -171,11 +174,107 @@ export const applyVoiceIntent = (
   const actions =
     intent.kind === "note" || intent.kind === "unclear"
       ? []
-      : (intent.actions ?? []).filter((a) => a && a.sets?.some(hasContent));
+      : (intent.actions ?? []).filter(
+          (a) => a && (a.done === true || a.sets?.some(hasContent)),
+        );
 
   for (const action of actions) {
-    const spokenSets = action.sets.filter(hasContent).slice(0, MAX_NEW_SETS);
-    if (spokenSets.length === 0) continue;
+    const spokenSets = (action.sets ?? []).filter(hasContent).slice(0, MAX_NEW_SETS);
+
+    // "Did my goblet squats" — no numbers spoken. Complete the exercise's
+    // planned sets: typed values stay, blank rows fill from their targets,
+    // rows with neither are left alone (never invent a set that happened).
+    if (spokenSets.length === 0) {
+      if (action.done !== true) continue;
+      const existing = action.isNew ? null : findExercise(next, action.exercise);
+      if (existing) {
+        // Same tracking rule as the logger/save path: explicit wins, name
+        // inference fills in — raw `.tracking` alone turned "did my glute
+        // bridges" into three 12-second holds.
+        const timed = trackingFor(existing) === "time";
+        const openRows = existing.sets.filter((r) => !r.isWarmup && !r.completed);
+        if (openRows.length === 0) {
+          summary.push(`${existing.name} — already done`);
+          continue;
+        }
+        // "First set of bench done" — done with ordinal-only set refs
+        // completes just those rows, never the whole exercise.
+        const ordinals = (action.sets ?? [])
+          .map((s) => sane(s.ordinal, 200))
+          .filter((o): o is number => o !== null);
+        const workingIdxs = existing.sets
+          .map((r, i) => (r.isWarmup ? -1 : i))
+          .filter((i) => i >= 0);
+        const onlyIdxs =
+          ordinals.length > 0
+            ? new Set(
+                ordinals
+                  .filter((o) => o <= workingIdxs.length)
+                  .map((o) => workingIdxs[o - 1]),
+              )
+            : null;
+        let doneCount = 0;
+        const rows = existing.sets.map((row, i) => {
+          if (row.isWarmup || row.completed) return row;
+          if (onlyIdxs && !onlyIdxs.has(i)) return row;
+          // The effort column (reps, or the hold on timed rows) must end up
+          // filled — a weight with no effort is a failed lift, not a set.
+          // Zero targets never fill (same >0 rule as the manual done path).
+          const typedEffort = row.reps.trim() !== "";
+          const fillEffort = timed
+            ? row.targetTime !== null && row.targetTime > 0
+              ? formatHoldInput(Math.round(row.targetTime))
+              : null
+            : row.targetReps !== null && row.targetReps > 0
+              ? String(row.targetReps)
+              : null;
+          const fillWeight =
+            row.targetWeight !== null && row.targetWeight > 0
+              ? String(row.targetWeight)
+              : null;
+          if (!typedEffort && fillEffort === null) return row;
+          doneCount += 1;
+          return {
+            ...row,
+            reps: typedEffort ? row.reps : fillEffort ?? row.reps,
+            weight: row.weight.trim() !== "" ? row.weight : fillWeight ?? row.weight,
+            completed: true,
+          };
+        });
+        if (doneCount === 0) {
+          // Open rows exist but nothing honest to fill — say so instead of
+          // letting an empty result read as "didn't catch that".
+          summary.push(`${existing.name} — no planned numbers to fill; type them in`);
+          continue;
+        }
+        next = next.map((e) => (e.id === existing.id ? { ...e, sets: rows } : e));
+        setsLogged += doneCount;
+        summary.push(
+          `${existing.name} — ${doneCount} set${doneCount === 1 ? "" : "s"} done`,
+        );
+        continue;
+      }
+      // Named something not in the session: add it so the words are never
+      // swallowed — the lifter fills in the numbers.
+      const name = action.exercise.trim();
+      if (!name) continue;
+      const timed = (action.tracking ?? inferTracking(name)) === "time";
+      next = [
+        ...next,
+        {
+          id: freshId("exercise"),
+          name,
+          kind: "weighted",
+          ...(timed ? { tracking: "time" as const } : {}),
+          category: "",
+          target: "",
+          sets: [emptySet()],
+        },
+      ];
+      addedExercises.push(name);
+      summary.push(`${name} (added) — fill in your sets`);
+      continue;
+    }
     const existing = action.isNew ? null : findExercise(next, action.exercise);
 
     if (existing) {

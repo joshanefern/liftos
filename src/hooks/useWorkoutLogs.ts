@@ -27,6 +27,9 @@ export type NewWorkoutLog = Omit<WorkoutLog, "id" | "created_at">;
 type WorkoutLogsContextValue = {
   logs: WorkoutLog[];
   loading: boolean;
+  /** Last load attempt failed — `logs` may be stale or empty, and an empty
+      array must NOT be read as "brand-new account". */
+  loadFailed: boolean;
   save: (log: NewWorkoutLog) => Promise<WorkoutLog | null>;
   remove: (id: string) => Promise<void>;
   reload: () => Promise<void>;
@@ -38,6 +41,7 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
   const { user } = useUser();
   const [logs, setLogs] = useState<WorkoutLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
     // Page through EVERYTHING: all-time PRs and trends computed over a
@@ -61,6 +65,7 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
       // would silently truncate history and regress all-time records,
       // the exact bug this paging exists to prevent.
       if (error || !data) {
+        setLoadFailed(true);
         setLoading(false);
         return;
       }
@@ -68,6 +73,7 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
       if (data.length < PAGE) break;
     }
     setLogs(all);
+    setLoadFailed(false);
     setLoading(false);
   }, []);
 
@@ -109,7 +115,7 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
 
   return createElement(
     WorkoutLogsContext.Provider,
-    { value: { logs, loading, save, remove, reload: load } },
+    { value: { logs, loading, loadFailed, save, remove, reload: load } },
     children,
   );
 };
