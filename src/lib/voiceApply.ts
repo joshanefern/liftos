@@ -8,7 +8,7 @@
    The logger's own types stay in the component; we type structurally
    against the exact shape it holds so state passes straight through. */
 
-import { formatHoldInput, inferTracking, trackingFor } from "@/lib/exerciseTracking";
+import { formatHoldInput, inferKind, inferTracking, trackingFor } from "@/lib/exerciseTracking";
 
 export type VoiceLoggedSet = {
   id: string;
@@ -264,7 +264,7 @@ export const applyVoiceIntent = (
         {
           id: freshId("exercise"),
           name,
-          kind: "weighted",
+          kind: inferKind(name),
           ...(timed ? { tracking: "time" as const } : {}),
           category: "",
           target: "",
@@ -344,7 +344,7 @@ export const applyVoiceIntent = (
     const newExercise: VoiceLoggedExercise = {
       id: freshId("exercise"),
       name,
-      kind: "weighted",
+      kind: inferKind(name),
       ...(timed ? { tracking: "time" as const } : {}),
       category: "",
       target: "",

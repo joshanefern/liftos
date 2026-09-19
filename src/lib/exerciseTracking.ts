@@ -19,6 +19,24 @@ const TIMED_NAME = /\b(planks?|holds?|hangs?|carry|carries|wall sits?|l[- ]?sits
 export const inferTracking = (name: string): EffortTracking =>
   TIMED_NAME.test(name.trim().toLowerCase()) ? "time" : "reps";
 
+/* Cardio by NAME — a treadmill run typed into a quick start must never get
+   the reps/weight layout. "row" alone is a lift (Barbell Row); only the
+   machine/erg forms count. Loaded carries stay timed strength work. */
+const CARDIO_NAME =
+  /\b(treadmill|run|runs|running|jog|jogging|sprints?|bike|biking|cycling|cycle|spin|peloton|rowing|rower|row machine|erg|elliptical|stair ?(master|climber|stepper)|stairs|walk|walking|hike|hiking|swim|swimming|jump ?rope|skipping|hiit|cardio|assault bike|airdyne|ski ?erg|battle ropes?)\b/;
+const NOT_CARDIO = /\b(farmer|carry|carries|lunge|lunges|sled|suitcase|yoke)\b/;
+
+export type InferredKind = "cardio" | "weighted";
+
+/** "cardio" for cardio-named work, otherwise "weighted" (bodyweight is
+    left to explicit data — the logger treats it like weighted anyway). */
+export const inferKind = (name: string): InferredKind => {
+  const n = name.trim().toLowerCase();
+  if (!n) return "weighted";
+  if (NOT_CARDIO.test(n)) return "weighted";
+  return CARDIO_NAME.test(n) ? "cardio" : "weighted";
+};
+
 /** Explicit per-exercise setting wins; otherwise infer from the name. */
 export const trackingFor = (exercise: {
   name: string;

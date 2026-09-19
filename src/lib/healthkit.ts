@@ -41,6 +41,10 @@ type HealthKitPluginIface = {
   /** Overnight recovery metrics (HRV, resting HR, sleep, respiratory rate)
       for the readiness engine — see src/lib/recovery.ts. */
   queryRecoveryMetrics(options: { days: number }): Promise<RecoveryMetrics>;
+  queryVitals(options: { startMs: number; endMs?: number }): Promise<{
+    heartRate: { t: number; bpm: number }[];
+    activeKcal: number;
+  }>;
   queryBodyMass(options: { daysBack: number }): Promise<{ samples: BodyMassSample[] }>;
   /** Registers the HKObserverQuery + background delivery; idempotent. */
   startObserving(): Promise<void>;
@@ -277,6 +281,37 @@ export const fetchRecoveryMetrics = async (
       restingHr: metrics.restingHr ?? [],
       sleep: metrics.sleep ?? [],
       respiratory: metrics.respiratory ?? [],
+    };
+  } catch {
+    return null;
+  }
+};
+
+export type VitalsWindow = {
+  samples: { t: number; bpm: number }[];
+  latest: number | null;
+  avg: number | null;
+  max: number | null;
+  activeKcal: number;
+};
+
+/** Heart rate + active calories between two instants — the cardio card's
+    live vitals. Empty (not an error) when nothing was recorded. */
+export const fetchVitalsWindow = async (
+  startMs: number,
+  endMs: number = Date.now(),
+): Promise<VitalsWindow | null> => {
+  if (!healthKitSupported()) return null;
+  try {
+    const { heartRate, activeKcal } = await HealthKit.queryVitals({ startMs, endMs });
+    const samples = (heartRate ?? []).filter((s) => Number.isFinite(s.bpm) && s.bpm > 0);
+    const bpms = samples.map((s) => s.bpm);
+    return {
+      samples,
+      latest: bpms.length > 0 ? Math.round(bpms[bpms.length - 1]) : null,
+      avg: bpms.length > 0 ? Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length) : null,
+      max: bpms.length > 0 ? Math.round(Math.max(...bpms)) : null,
+      activeKcal: Math.round(activeKcal ?? 0),
     };
   } catch {
     return null;

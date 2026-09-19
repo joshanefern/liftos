@@ -14,6 +14,7 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "requestAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryRecoveryMetrics", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryVitals", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryBodyMass", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startObserving", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "debugSeedWorkout", returnType: CAPPluginReturnPromise),
@@ -189,6 +190,47 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
         }
+    }
+
+    /// Live vitals for a cardio block: heart-rate samples and active energy
+    /// between two epoch-ms instants (the session start → now). Reads only;
+    /// the Watch writes HR to Health every few seconds during a Watch
+    /// workout, otherwise every few minutes in the background.
+    @objc public func queryVitals(_ call: CAPPluginCall) {
+        guard let startMs = call.getDouble("startMs") else {
+            call.reject("startMs required")
+            return
+        }
+        let start = Date(timeIntervalSince1970: startMs / 1000)
+        let end = call.getDouble("endMs").map { Date(timeIntervalSince1970: $0 / 1000) } ?? Date()
+        guard let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate),
+              let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)
+        else {
+            call.reject("HealthKit types unavailable")
+            return
+        }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+        let oldestFirst = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        let hrQuery = HKSampleQuery(
+            sampleType: hrType, predicate: predicate,
+            limit: HKObjectQueryNoLimit, sortDescriptors: [oldestFirst]
+        ) { _, samples, _ in
+            let rows: [[String: Any]] = ((samples as? [HKQuantitySample]) ?? []).map {
+                ["t": $0.startDate.timeIntervalSince1970 * 1000,
+                 "bpm": $0.quantity.doubleValue(for: Self.bpmUnit)]
+            }
+            let energyQuery = HKStatisticsQuery(
+                quantityType: energyType, quantitySamplePredicate: predicate,
+                options: .cumulativeSum
+            ) { _, stats, _ in
+                let kcal = stats?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
+                DispatchQueue.main.async {
+                    call.resolve(["heartRate": Array(rows.suffix(900)), "activeKcal": kcal])
+                }
+            }
+            self.store.execute(energyQuery)
+        }
+        store.execute(hrQuery)
     }
 
     /// Ascending {t, <valueKey>} rows for one quantity type since `since`.

@@ -2,6 +2,7 @@ import { CTAButton } from "@/components/GoldButton";
 import { ShareButton } from "@/components/ShareButton";
 import { RestTimerRing } from "@/components/logging/RestTimerRing";
 import { VoiceLogControl } from "@/components/logging/VoiceLogControl";
+import { CardioVitalsSheet } from "@/components/logging/CardioVitalsSheet";
 import ExerciseNameSuggestions from "@/components/ExerciseNameSuggestions";
 import { SetInputRow, formatWeightForDisplay } from "@/components/logging/SetInputRow";
 import { useEnterAdvance } from "@/components/logging/useEnterAdvance";
@@ -39,6 +40,7 @@ import {
   parseHoldSeconds,
   trackingFor,
   type EffortTracking,
+  inferKind,
 } from "@/lib/exerciseTracking";
 import { successHaptic, tapHaptic } from "@/lib/haptics";
 import { formatPlateMath, plateBreakdown } from "@/lib/plateMath";
@@ -55,7 +57,7 @@ import {
   SkipForward,
   Timer,
   Trophy,
-} from "lucide-react";
+ HeartPulse } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -338,6 +340,8 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   // Manual add-exercise (blank quick starts, or the planks case by hand).
   const [newExerciseName, setNewExerciseName] = useState("");
   const [newExerciseFocused, setNewExerciseFocused] = useState(false);
+  // Cardio card → live vitals sheet (heart rate + calories via Health).
+  const [vitalsFor, setVitalsFor] = useState<string | null>(null);
   const addExercise = (): void => {
     const name = newExerciseName.trim();
     if (!name) return;
@@ -346,7 +350,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       {
         id: `exercise-${Date.now()}`,
         name,
-        kind: "weighted",
+        kind: inferKind(name),
         category: "",
         target: "",
         sets: [
@@ -1203,6 +1207,19 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       )
                     )}
                   </button>
+                  {exercise.kind === "cardio" && (
+                    <button
+                      type="button"
+                      onClick={() => setVitalsFor(exercise.name)}
+                      aria-label={`Live vitals for ${exercise.name}`}
+                      className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-primary transition after:absolute after:-inset-1 after:content-[''] hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
+                    >
+                      <HeartPulse size={17} />
+                      <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1 text-[7.5px] font-bold uppercase leading-[11px] tracking-[0.08em] text-primary-foreground">
+                        Pro
+                      </span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setAllSetsDone(exercise.id, !allDone)}
@@ -1437,6 +1454,15 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CardioVitalsSheet
+        open={vitalsFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setVitalsFor(null);
+        }}
+        exerciseName={vitalsFor ?? ""}
+        sinceMs={startedAt.current.getTime()}
+      />
 
       {/* Plate math bottom sheet — opened by tapping a filled weight value.
           pb-0: the sheet body below pads the home indicator itself. */}
