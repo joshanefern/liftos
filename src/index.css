@@ -676,3 +676,31 @@
     to { transform: translateX(100%); }
   }
 }
+
+/* ── Voice receipt card: rises from the pill; the undo bar drains over the
+   8s window; "Logging" gets three breathing dots. ── */
+@media (prefers-reduced-motion: no-preference) {
+  .voice-card { animation: liftos-voice-rise 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+  @keyframes liftos-voice-rise {
+    from { opacity: 0; transform: translateY(10px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+  .voice-undo-bar { animation: liftos-undo-drain 8s linear forwards; }
+  @keyframes liftos-undo-drain { from { width: 100%; } to { width: 0%; } }
+  .voice-dots::after {
+    content: "…";
+    display: inline-block;
+    width: 1.1em;
+    text-align: left;
+    animation: liftos-dots 1.2s steps(4, end) infinite;
+  }
+  @keyframes liftos-dots {
+    0% { clip-path: inset(0 100% 0 0); }
+    100% { clip-path: inset(0 -10% 0 0); }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-card { animation: fade-in 200ms ease-out; }
+  .voice-undo-bar { width: 100%; }
+  .voice-dots::after { content: "…"; }
+}
