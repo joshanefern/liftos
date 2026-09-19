@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { tapHaptic } from "@/lib/haptics";
 
 type CTAButtonProps = {
   children: ReactNode;
@@ -41,14 +42,21 @@ export const CTAButton = ({
     `transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.98] ` +
     `${dims} ${className}`.trim();
 
+  // The app's primary action answers the thumb with a light tick on device
+  // (a silent no-op on web) — the same tick as logging a set.
+  const handleClick = (): void => {
+    tapHaptic();
+    onClick?.();
+  };
+
   return to !== undefined ? (
-    <Link to={to} onClick={onClick} className={cls}>
+    <Link to={to} onClick={handleClick} className={cls}>
       {children}
     </Link>
   ) : (
     <button
       type={type}
-      onClick={onClick}
+      onClick={handleClick}
       disabled={disabled}
       className={`${cls} disabled:cursor-not-allowed disabled:opacity-50`}
     >

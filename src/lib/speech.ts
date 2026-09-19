@@ -37,15 +37,21 @@ export const speechSupported = (): boolean =>
 
 let permissionsGranted: boolean | null = null;
 
-/** Ask once per app boot; iOS shows each sheet only the first time ever. */
+/** Ask once per app boot; iOS shows each sheet only the first time ever.
+    Every outcome logs — these breadcrumbs surface in a captured native
+    console and are the fastest route to "why did voice do nothing". */
 export const ensureSpeechPermissions = async (): Promise<boolean> => {
   if (!speechSupported()) return false;
   if (permissionsGranted !== null) return permissionsGranted;
   try {
     const result = await Speech.requestSpeechPermissions();
     permissionsGranted = result.speech && result.microphone;
-  } catch {
+    console.log(
+      `[voice] permissions: speech=${result.speech} microphone=${result.microphone}`,
+    );
+  } catch (err) {
     permissionsGranted = false;
+    console.log(`[voice] permission request FAILED: ${err instanceof Error ? err.message : err}`);
   }
   return permissionsGranted;
 };

@@ -464,23 +464,19 @@ const Calendar = () => {
 
       {/* ── Day detail sheet — true overlay ── */}
       <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
+        {/* The bottom variant brings its own grabber, X, corners, height
+            cap and safe-area padding; this only adds the scroller. */}
         <SheetContent
           side={isMobile ? "bottom" : "right"}
-          className={`flex flex-col border-border bg-background p-0 ${
-            isMobile ? "max-h-[85vh] rounded-t-[1.5rem]" : "w-full sm:max-w-md"
+          className={`flex flex-col border-border bg-background ${
+            isMobile ? "" : "w-full p-0 sm:max-w-md"
           }`}
         >
-          {/* Drag handle stays OUTSIDE the scroller — pinned, with real
-              margin, so scrolled content tucks under it instead of clipping
-              flush against the sheet's rounded edge. */}
-          <div className="shrink-0 pb-1 pt-3 md:hidden">
-            <div className="mx-auto h-1 w-10 rounded-full bg-border" />
-          </div>
           {/* min-h-0 + flex-1: max-h alone gives the sheet no definite
               height, so a plain h-full child never overflowed — the content
               just clipped and swipes did nothing. */}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-3 md:px-6 md:pt-6">
-            <SheetHeader className="text-left sm:text-left">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-1 md:px-6 md:pt-6">
+            <SheetHeader className="pr-10 text-left sm:text-left">
               <SheetTitle className="heading-md">
                 {selectedLogs.length} session{selectedLogs.length === 1 ? "" : "s"} logged
               </SheetTitle>

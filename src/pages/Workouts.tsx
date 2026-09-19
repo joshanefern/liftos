@@ -391,7 +391,9 @@ const Workouts = () => {
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 md:px-6">
+      {/* data-vaul-no-drag: scrolling the exercise list never turns into a
+          half-dismissed sheet — the title row and grabber still swipe. */}
+      <div data-vaul-no-drag className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 md:px-6">
         <div className="space-y-4">
           {exercises.map((exercise, index) => (
             <div key={exercise.id} className="rule-hairline pt-3 first:border-t-0 first:pt-0">
@@ -766,8 +768,13 @@ const Workouts = () => {
           shouldScaleBackground={false}
           repositionInputs={false}
         >
-          <DrawerContent className="flex h-[calc(100dvh-var(--safe-top)-10px)] max-h-[calc(100dvh-var(--safe-top)-10px)] flex-col rounded-t-[22px] border-0 bg-background p-0">
-            <div className="flex items-center justify-between px-5 pb-2 pt-4">
+          {/* hideClose: the X lives in the title row here. p-0 takes over
+              the safe-area padding — the Save footer clears the indicator. */}
+          <DrawerContent
+            hideClose
+            className="flex h-[calc(100dvh-var(--safe-top)-12px)] max-h-[calc(100dvh-var(--safe-top)-12px)] flex-col bg-background p-0"
+          >
+            <div className="flex items-center justify-between px-5 pb-2 pt-1.5">
               <DrawerTitle className="text-[17px] font-semibold text-fg">
                 {editingWorkoutId ? "Edit workout" : "New workout"}
               </DrawerTitle>
@@ -775,9 +782,9 @@ const Workouts = () => {
                 type="button"
                 onClick={() => setBuilderOpen(false)}
                 aria-label="Close"
-                className="relative -mr-2 inline-flex h-10 w-10 items-center justify-center rounded-full text-fg-muted transition hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                className="relative -mr-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.06] text-fg-soft transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-foreground/[0.1] hover:text-fg active:bg-foreground/[0.12] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
-                <X size={18} />
+                <X size={18} strokeWidth={2.25} />
               </button>
             </div>
             {builderBody}

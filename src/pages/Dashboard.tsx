@@ -104,6 +104,16 @@ const RowEnd = ({
   </span>
 );
 
+/* Loading stand-in for a "This month" tile: the same box, two breathing
+   bars where the numeral and its label will land — the card never changes
+   height when the numbers arrive. */
+const StatTileSkeleton = () => (
+  <div aria-hidden className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
+    <span className="skeleton mt-1 block h-6 w-10" />
+    <span className="skeleton mb-0.5 mt-2 block h-3 w-14" />
+  </div>
+);
+
 /* ── Hero ink panel + card index — the panel inverts with the theme
    (ink-on-porcelain in light, porcelain-on-slate in dark); that
    flip is the signature, so every color inside it is a token. ── */
@@ -456,7 +466,7 @@ const Dashboard = () => {
           its last-time numbers, one recovery line, one CTA. ── */}
       <section className="mt-6 md:mt-8 animate-reveal-up">
         <div className="relative overflow-hidden rounded-[18px] bg-foreground p-5 text-background shadow-[0_8px_24px_rgba(16,22,35,0.16)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
-          <div className="relative z-10">
+          <div className="relative z-10" aria-busy={!dataReady}>
             {firstRun ? (
               <>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--primary-on-inverse))]">
@@ -544,13 +554,35 @@ const Dashboard = () => {
 
             {/* The pick itself — the reason this screen exists. */}
             <h2 className="mt-1.5 text-[26px] font-semibold leading-8 tracking-[-0.01em] text-background">
-              {dataReady ? suggestion.title : "Syncing…"}
+              {dataReady ? (
+                suggestion.title
+              ) : (
+                <>
+                  <span className="sr-only">Loading your next workout</span>
+                  <span aria-hidden className="skeleton skeleton-inverse my-1 block h-6 w-[62%]" />
+                </>
+              )}
             </h2>
+
+            {/* While the pick loads, the shape row keeps its slot with three
+                breathing bars — the panel never jumps when the numbers land. */}
+            {!dataReady && (
+              <div aria-hidden className="mt-3 border-t border-background/10 pt-3">
+                <div className="flex items-baseline gap-5">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i}>
+                      <span className="skeleton skeleton-inverse block h-8 w-9" />
+                      <span className="skeleton skeleton-inverse mt-1 block h-3 w-8" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* The session's shape — only the tiles that mean something for
                 THIS session: a plank day has sets but no reps, a run has
                 only minutes. MIN always shows and includes planned cardio. */}
-            {sessionShape && (
+            {dataReady && sessionShape && (
               <div className="mt-3 border-t border-background/10 pt-3">
                 <div className="flex items-baseline gap-5">
                   {sessionShape.sets > 0 && (
@@ -651,29 +683,39 @@ const Dashboard = () => {
               <span className="caption whitespace-nowrap">{weeklyStreak}-week streak</span>
             )}
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
-              <p className="stat-scoreboard text-[26px] leading-8 tabular-nums text-fg">
-                {monthStats.count}
-              </p>
-              <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">
-                {monthStats.count === 1 ? "session" : "sessions"}
-              </p>
-            </div>
-            <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
-              <p className="stat-scoreboard text-[26px] leading-8 tabular-nums text-fg">
-                {weekStats.sessions}
-              </p>
-              <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">this week</p>
-            </div>
-            <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
-              <p className="stat-scoreboard whitespace-nowrap text-[26px] leading-8 tabular-nums text-fg">
-                {monthStats.volume >= 1000
-                  ? `${(monthStats.volume / 1000).toFixed(monthStats.volume >= 10_000 ? 0 : 1)}k`
-                  : monthStats.volume}
-              </p>
-              <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">{units} lifted</p>
-            </div>
+          <div className="mt-3 grid grid-cols-3 gap-2" aria-busy={!dataReady}>
+            {!dataReady ? (
+              <>
+                <StatTileSkeleton />
+                <StatTileSkeleton />
+                <StatTileSkeleton />
+              </>
+            ) : (
+              <>
+                <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
+                  <p className="stat-scoreboard text-[26px] leading-8 tabular-nums text-fg">
+                    {monthStats.count}
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">
+                    {monthStats.count === 1 ? "session" : "sessions"}
+                  </p>
+                </div>
+                <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
+                  <p className="stat-scoreboard text-[26px] leading-8 tabular-nums text-fg">
+                    {weekStats.sessions}
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">this week</p>
+                </div>
+                <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
+                  <p className="stat-scoreboard whitespace-nowrap text-[26px] leading-8 tabular-nums text-fg">
+                    {monthStats.volume >= 1000
+                      ? `${(monthStats.volume / 1000).toFixed(monthStats.volume >= 10_000 ? 0 : 1)}k`
+                      : monthStats.volume}
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">{units} lifted</p>
+                </div>
+              </>
+            )}
           </div>
           <Link
             to="/calendar"
@@ -742,7 +784,7 @@ const Dashboard = () => {
       />
 
       <Drawer open={connectionsOpen} onOpenChange={setConnectionsOpen}>
-        <DrawerContent className="px-6 pb-8">
+        <DrawerContent className="px-6 pb-[calc(2rem+var(--safe-bottom))]">
           <p className="eyebrow mt-4 !text-primary">Connections</p>
           <DrawerTitle className="heading-md mt-2 text-fg">Where your data comes from</DrawerTitle>
 

@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
-import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { usePendingReviews } from "@/hooks/usePendingReviews";
+import { tapHaptic } from "@/lib/haptics";
 import {
   ACTIVE_WORKOUT_STORAGE_KEY,
   buildBlankSession,
@@ -27,7 +28,8 @@ const tabs = [
 
 /* Bottom tab bar for phones — the sidebar is desktop-only. The center +
    opens a two-way chooser: Quick start (log as you go, voice or typed) or
-   New workout (plan it first in the builder). */
+   New workout (plan it first in the builder). Every press ticks (native
+   only — the haptic no-ops on web). */
 const MobileTabBar = () => {
   const { pendingCount } = usePendingReviews();
   const { pathname } = useLocation();
@@ -41,6 +43,7 @@ const MobileTabBar = () => {
   const scoreboard = pathname === "/workouts/active";
 
   const handlePlus = (): void => {
+    tapHaptic();
     // A live session outranks starting anything new.
     try {
       if (window.localStorage.getItem(ACTIVE_WORKOUT_STORAGE_KEY)) {
@@ -54,12 +57,14 @@ const MobileTabBar = () => {
   };
 
   const quickStart = (): void => {
+    tapHaptic();
     setChooserOpen(false);
     persistActiveSession(buildBlankSession());
     navigate("/workouts/active");
   };
 
   const planWorkout = (): void => {
+    tapHaptic();
     setChooserOpen(false);
     navigate("/workouts?new=1");
   };
@@ -72,6 +77,7 @@ const MobileTabBar = () => {
       key={tab.url}
       to={tab.url}
       end
+      onClick={tapHaptic}
       className={`flex flex-1 flex-col items-center justify-center gap-1 text-fg-muted transition-colors duration-200 ${
         tab.url === "/workouts" && workoutsActive ? "!text-fg" : ""
       }`}
@@ -114,12 +120,21 @@ const MobileTabBar = () => {
 
       <Drawer open={chooserOpen} onOpenChange={setChooserOpen}>
         <DrawerContent className="px-5 pb-[calc(var(--safe-bottom)+1.5rem)]">
-          <DrawerTitle className="sr-only">Start or create a workout</DrawerTitle>
-          <div className="mt-5 space-y-2.5">
+          {/* A visible eyebrow gives the sheet a name; the description
+              carries the fuller label for screen readers. */}
+          {/* Explicit size/tracking: DrawerTitle's text-lg utilities would
+              otherwise outrank the component-layer eyebrow. */}
+          <DrawerTitle className="eyebrow mt-3 pr-12 text-[10px] leading-4 tracking-[0.14em] !text-primary">
+            Start
+          </DrawerTitle>
+          <DrawerDescription className="sr-only">
+            Start a workout now, or plan a new one first.
+          </DrawerDescription>
+          <div className="mt-3 space-y-2.5">
             <button
               type="button"
               onClick={quickStart}
-              className="flex min-h-[64px] w-full items-center justify-between gap-3 rounded-[16px] bg-primary px-5 text-left text-primary-foreground transition active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="flex min-h-[64px] w-full items-center justify-between gap-3 rounded-[16px] bg-primary px-5 text-left text-primary-foreground transition-transform duration-150 active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               <span>
                 <span className="block text-[15px] font-semibold">Quick start</span>
@@ -132,7 +147,7 @@ const MobileTabBar = () => {
             <button
               type="button"
               onClick={planWorkout}
-              className="flex min-h-[64px] w-full items-center justify-between gap-3 rounded-[16px] border border-border bg-card px-5 text-left text-fg transition active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="flex min-h-[64px] w-full items-center justify-between gap-3 rounded-[16px] border border-border bg-card px-5 text-left text-fg transition-transform duration-150 active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               <span>
                 <span className="block text-[15px] font-semibold">New workout</span>

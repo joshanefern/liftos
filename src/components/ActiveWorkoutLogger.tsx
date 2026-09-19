@@ -1438,14 +1438,15 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Plate math bottom sheet — opened by tapping a filled weight value */}
+      {/* Plate math bottom sheet — opened by tapping a filled weight value.
+          pb-0: the sheet body below pads the home indicator itself. */}
       <Drawer
         open={plateOpen}
         onOpenChange={(open) => {
           if (!open) setPlateOpen(false);
         }}
       >
-        <DrawerContent>
+        <DrawerContent className="pb-0">
           <DrawerTitle className="sr-only">Plate math</DrawerTitle>
           {plateWeight !== null && (
             <PlateMathSheet

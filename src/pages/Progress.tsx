@@ -226,9 +226,32 @@ const Progress = () => {
             <p className="heading-lg max-w-sm">Your imported workouts need names.</p>
           </>
         ) : (
+          /* Nothing logged yet: a bare "0" read as broken. Show what this
+             page becomes — ghost tiles for the three numbers it will hold —
+             and the one door in. */
           <>
-            <p className="stat-hero !text-6xl md:!text-7xl !text-fg-muted">0</p>
-            <p className="eyebrow mt-4">Strength trend</p>
+            <p className="eyebrow !text-primary">Your progress</p>
+            <p className="heading-lg mt-2 max-w-sm">Every set you log becomes a number here.</p>
+            <p className="body-md mt-3 max-w-sm text-fg-muted">
+              Improvement against your last session, all-time records, and a
+              weekly rhythm — all from what you actually lift.
+            </p>
+            <div className="mt-6 grid max-w-sm grid-cols-3 gap-2.5">
+              {[
+                { value: "+—%", label: "vs last" },
+                { value: "—", label: "Records" },
+                { value: "0 / wk", label: "Rhythm" },
+              ].map((tile, i) => (
+                <div
+                  key={tile.label}
+                  className="rounded-[12px] border border-dashed border-border px-3 py-3 animate-reveal-up"
+                  style={{ animationDelay: `${120 + i * 70}ms` }}
+                >
+                  <p className="mono text-[17px] font-semibold text-fg-muted/60">{tile.value}</p>
+                  <p className="eyebrow mt-1 !text-[10px]">{tile.label}</p>
+                </div>
+              ))}
+            </div>
             <CTAButton to="/workouts" className="mt-7">
               <Dumbbell size={15} />
               Log your first workout

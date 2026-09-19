@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import AuthLayout from "@/pages/auth/AuthLayout";
 import { CTAButton } from "@/components/GoldButton";
 import { signIn } from "@/lib/auth";
@@ -102,6 +103,20 @@ const SignIn = () => {
         New to LiftOS?{" "}
         <Link to="/create-account" className="inline-flex min-h-11 items-center text-gold hover:underline">Create account</Link>
       </p>
+      {/* Native-plugin heartbeat — screenshot-readable diagnostics after the
+          Speech plugin silently failed to register for weeks. Native only,
+          and quiet (a dim one-liner) unless something is actually missing. */}
+      {Capacitor.isNativePlatform() && (
+        <p
+          className={`mt-6 text-center text-[10px] tracking-[0.14em] ${
+            Capacitor.isPluginAvailable("Speech") && Capacitor.isPluginAvailable("HealthKit")
+              ? "text-fg-muted/50"
+              : "font-semibold text-destructive"
+          }`}
+        >
+          {`voice ${Capacitor.isPluginAvailable("Speech") ? "✓" : "✗ MISSING"} · health ${Capacitor.isPluginAvailable("HealthKit") ? "✓" : "✗ MISSING"}`}
+        </p>
+      )}
     </AuthLayout>
   );
 };

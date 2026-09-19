@@ -164,7 +164,9 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     }, 250);
     try {
       await startListening(exercisesRef.current.map((e) => e.name).slice(0, 60));
+      console.log("[voice] listening started");
     } catch (err) {
+      console.log(`[voice] startListening FAILED: ${err instanceof Error ? err.message : err}`);
       activeRef.current = false;
       window.clearInterval(watchdog.current);
       setPhase({
@@ -183,6 +185,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     let transcript = "";
     try {
       transcript = (await stopListening()).transcript.trim();
+      console.log(`[voice] transcript (${transcript.length} chars)`);
     } catch {
       /* fell through — treated as empty */
     }
@@ -221,6 +224,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
         scheduleDismiss(6000);
         return;
       }
+      console.log(`[voice] intent kind=${intent.kind} confidence=${intent.confidence ?? "?"} actions=${intent.actions?.length ?? 0}`);
       const result = applyVoiceIntent(exercisesRef.current, intent);
       if (result.empty) {
         setPhase({ at: "missed", transcript });

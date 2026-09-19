@@ -86,18 +86,21 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
+      {/* Everything but the day list is shrink-0: when the sheet hits its
+          height cap on a short phone, only the list gives way (and scrolls),
+          so the Build button is never pushed off-screen. */}
       <DrawerContent className="px-6 pb-[calc(1.5rem+var(--safe-bottom))]">
-        <p className="eyebrow mt-4 !text-primary">Your split</p>
-        <DrawerTitle className="heading-md mt-2 text-fg">
+        <p className="eyebrow mt-3 shrink-0 pr-12 !text-primary">Your split</p>
+        <DrawerTitle className="heading-md mt-2 shrink-0 text-fg">
           Pick your days — the coach fills in the work.
         </DrawerTitle>
-        <DrawerDescription className="mt-1 text-[13px] leading-5 text-fg-muted">
+        <DrawerDescription className="mt-1 shrink-0 text-[13px] leading-5 text-fg-muted">
           Each day is prefilled with the standard split for that many days —
           change any of them.
         </DrawerDescription>
 
         {/* Which days */}
-        <div className="mt-4 flex justify-between gap-1.5">
+        <div className="mt-4 flex shrink-0 justify-between gap-1.5">
           {WEEK.map((day) => {
             const active = selected.includes(day);
             return (
@@ -119,9 +122,15 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
           })}
         </div>
 
-        {/* What each day hits — prefilled from the standard split */}
+        {/* What each day hits — prefilled from the standard split. The
+            focus chips scroll sideways inside a list that scrolls down;
+            data-vaul-no-drag keeps either scroll from turning into a
+            half-dismissed sheet — the header and grabber still drag. */}
         {schedule.length > 0 && (
-          <div className="mt-4 max-h-[38vh] space-y-2 overflow-y-auto">
+          <div
+            data-vaul-no-drag
+            className="mt-4 min-h-[5.5rem] flex-auto space-y-2 overflow-y-auto overscroll-contain"
+          >
             {schedule.map(({ day, focus }) => (
               <div key={day} className="flex items-center gap-3">
                 <p className="w-20 shrink-0 text-[13px] font-semibold text-fg">{day}</p>
@@ -163,14 +172,14 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
           onChange={(e) => setNotes(e.target.value)}
           aria-label="Anything the coach should know (optional)"
           placeholder="Anything else? Must-have lifts, injuries… (optional)"
-          className="mt-4 h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition placeholder:text-fg-muted focus:border-primary/60"
+          className="mt-4 h-11 w-full shrink-0 rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition placeholder:text-fg-muted focus:border-primary/60"
         />
 
         <button
           type="button"
           disabled={schedule.length === 0 || building}
           onClick={() => onBuild(schedule, notes)}
-          className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-primary text-[14px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+          className="mt-4 inline-flex min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-[14px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
         >
           <Sparkles size={15} />
           {building

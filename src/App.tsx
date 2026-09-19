@@ -65,12 +65,24 @@ export const SidebarContext = createContext<{
 export const useSidebarState = () => useContext(SidebarContext);
 
 /* App shell: sidebar on desktop, bottom tab bar on phones. Content clears
-   the iOS status bar (pt-safe) and the tab bar + home indicator on mobile. */
+   the iOS status bar (pt-safe) and the tab bar + home indicator on mobile.
+
+   Every screen enters the same way: the page-enter wrapper (keyed on the
+   path, so it remounts per navigation) plays one 260ms fade + 10px rise.
+   The lazy chunk resolves INSIDE that wrapper, so the tab bar and sidebar
+   stay put while a screen loads — a route switch never flashes back to
+   the full-screen boot splash — and the entrance plays exactly once, not
+   again when the chunk lands. */
 const AppShell = ({ children }: { children: React.ReactNode }) => {
   const { collapsed } = useSidebarState();
+  const { pathname } = useLocation();
   // The live logging screen stays maximally quiet: not even the grain
-  // texture (dark-gym legibility at arm's length, zero distraction).
-  const isActiveWorkout = useLocation().pathname === "/workouts/active";
+  // texture (dark-gym legibility at arm's length, zero distraction). It
+  // also skips the page-enter wrapper: the logger owns its own scoreboard
+  // reveal, and its voice pill / rest bar are position:fixed — a wrapper
+  // mid-transform would anchor them to itself instead of the viewport.
+  const isActiveWorkout = pathname === "/workouts/active";
+  const page = <Suspense fallback={<BootSplash />}>{children}</Suspense>;
   return (
     <div className="relative flex min-h-screen w-full bg-background" style={{ isolation: "isolate", zIndex: 0 }}>
       {!isActiveWorkout && <FitnessBackground />}
@@ -90,7 +102,13 @@ const AppShell = ({ children }: { children: React.ReactNode }) => {
           collapsed ? "md:ml-[68px]" : "md:ml-[220px]"
         }`}
       >
-        {children}
+        {isActiveWorkout ? (
+          page
+        ) : (
+          <div key={pathname} className="page-enter">
+            {page}
+          </div>
+        )}
       </main>
     </div>
   );
