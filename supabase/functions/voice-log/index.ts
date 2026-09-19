@@ -58,6 +58,7 @@ Schema:
 }
 
 Rules:
+- UNILATERAL work never multiplies sets or reps. "each arm / each leg / each side / per side / both arms / one arm / single leg / alternating" describe HOW a set is done, not how many sets. "1 set of bicep curls on each arm" → ONE set. "3 sets of single-leg leg extension" → THREE sets (the lifter did it six times, it is still three sets). "10 reps each arm" → reps 10, not 20. Keep the unilateral wording in a NEW exercise's name ("Single-Leg Leg Extension"), never as extra sets.
 - Naming an exercise as performed with NO counts at all ("I did goblet squats", "goblet squats done", "finished my planks") → kind "sets", one action { exercise, isNew, done: true, sets: [] }. The logger completes that exercise's planned sets. This is common — it is NOT "unclear".
 - A SPECIFIC set reported done without effort numbers ("first set of bench done", "finished my second set of squats") → done: true with sets [ { "ordinal": N } ] — the logger completes only that set, never the whole exercise.
 - "first set / second set" → ordinal 1 / 2. No ordinal words → ordinal null (sets apply in order).

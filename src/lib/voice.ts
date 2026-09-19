@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { VoiceIntent } from "@/lib/voiceApply";
+import { foldUnilateralSets } from "@/lib/voiceUnilateral";
 
 /* ── Interpreter client. The voice-log edge function sees ONLY the
    transcript, the session's exercise names (+ tracking) and units —
@@ -20,5 +21,6 @@ export const interpretUtterance = async (
   if (!intent || !["sets", "note", "both", "unclear"].includes(intent.kind)) {
     return { kind: "unclear", note: null, actions: [], confidence: 0 };
   }
-  return intent;
+  // "Each arm" is one set, not two — deterministic guard over the model.
+  return foldUnilateralSets(intent, transcript);
 };
