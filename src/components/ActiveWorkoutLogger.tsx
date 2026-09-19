@@ -57,7 +57,7 @@ import {
   SkipForward,
   Timer,
   Trophy,
- HeartPulse } from "lucide-react";
+ HeartPulse, Weight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -342,6 +342,19 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const [newExerciseFocused, setNewExerciseFocused] = useState(false);
   // Cardio card → live vitals sheet (heart rate + calories via Health).
   const [vitalsFor, setVitalsFor] = useState<string | null>(null);
+  // Cardio card → inline "added weight" (vest / pack) editor; the value
+  // lives on the exercise, not the set — distance owns the set's slot.
+  const [vestEditing, setVestEditing] = useState<string | null>(null);
+  const setAddedWeight = (id: string, raw: string): void => {
+    const n = Number(raw);
+    setExercises((current) =>
+      current.map((e) =>
+        e.id === id
+          ? { ...e, addedWeight: Number.isFinite(n) && n > 0 ? Math.min(n, 500) : undefined }
+          : e,
+      ),
+    );
+  };
   const addExercise = (): void => {
     const name = newExerciseName.trim();
     if (!name) return;
@@ -801,6 +814,9 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         category: exercise.category,
         target: exercise.target,
         notes: exercise.notes,
+        ...(exercise.kind === "cardio" && exercise.addedWeight
+          ? { addedWeight: exercise.addedWeight }
+          : {}),
         sets: exercise.sets.map((set) => {
           // Cardio rows repurpose the weight field as DISTANCE (mi/km) —
           // save it as meters, never as a phantom 3.1 lb set.
@@ -1257,11 +1273,29 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   <button
                     type="button"
                     onClick={() => addSet(exercise.id)}
-                    className="relative inline-flex items-center gap-2 rounded-full border border-border px-3 py-2 text-xs text-fg-muted transition after:absolute after:-inset-1.5 after:content-[''] hover:border-primary/40 hover:text-fg"
+                    className="relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-3 py-2 text-xs text-fg-muted transition after:absolute after:-inset-1.5 after:content-[''] hover:border-primary/40 hover:text-fg"
                   >
                     <Plus size={14} />
-                    Add set
+                    {exercise.kind === "cardio" ? "Set" : "Add set"}
                   </button>
+                  {/* Optional added weight — vest / pack — for cardio. */}
+                  {exercise.kind === "cardio" && (
+                    <button
+                      type="button"
+                      onClick={() => setVestEditing((cur) => (cur === exercise.id ? null : exercise.id))}
+                      className={cn(
+                        "relative inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs transition after:absolute after:-inset-1 after:content-['']",
+                        exercise.addedWeight
+                          ? "border-foreground/40 font-semibold text-fg"
+                          : "border-border text-fg-muted hover:border-primary/40 hover:text-fg",
+                      )}
+                    >
+                      <Weight size={13} />
+                      {exercise.addedWeight
+                        ? `${formatWeightForDisplay(exercise.addedWeight)} ${weightUnit}`
+                        : "Vest"}
+                    </button>
+                  )}
                   {/* Live vitals (Pro) — bottom-right of every cardio card. */}
                   {exercise.kind === "cardio" && (
                     <button
@@ -1278,6 +1312,35 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     </button>
                   )}
                 </div>
+                {exercise.kind === "cardio" && vestEditing === exercise.id && (
+                  <div className="mt-2.5 flex items-center gap-2 rounded-[12px] bg-foreground/[0.04] px-3 py-2.5">
+                    <span className="text-[12.5px] font-medium text-fg-soft">Added weight</span>
+                    <div className="relative ml-auto w-28">
+                      <input
+                        autoFocus
+                        inputMode="decimal"
+                        defaultValue={exercise.addedWeight ? formatWeightForDisplay(exercise.addedWeight) : ""}
+                        onChange={(e) => setAddedWeight(exercise.id, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") setVestEditing(null);
+                        }}
+                        placeholder="0"
+                        aria-label="Added weight for cardio (vest or pack)"
+                        className="h-10 w-full rounded-lg border border-border bg-background px-3 pr-9 text-center text-[15px] font-semibold tabular-nums text-fg outline-none focus:border-primary/60"
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-[10px] uppercase tracking-wider text-fg-muted">
+                        {weightUnit}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVestEditing(null)}
+                      className="inline-flex min-h-9 items-center rounded-full bg-foreground px-3 text-[12.5px] font-semibold text-background active:scale-[0.97]"
+                    >
+                      Done
+                    </button>
+                  </div>
+                )}
               </article>
             );
           })}

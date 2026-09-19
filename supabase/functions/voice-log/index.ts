@@ -37,7 +37,36 @@ type Payload = {
   transcript?: unknown;
   exercises?: unknown; // [{ name, tracking }]
   units?: unknown;
+  /** "log" (default) applies to a live session; "plan" dictates a whole
+      workout into the builder. */
+  mode?: unknown;
 };
+
+const PLAN_SYSTEM = `You turn one spoken description of a WORKOUT PLAN into JSON for a workout builder. Respond with ONLY a JSON object, no prose.
+
+Schema:
+{
+  "name": string | null,          // the workout's name if spoken ("push day", "leg day") — Title Case; else null
+  "exercises": [
+    {
+      "name": string,             // clean Title Case exercise name ("Bench Press", "Single-Leg Leg Extension")
+      "kind": "lift" | "cardio",  // cardio = treadmill/bike/rowing/run/stairs/elliptical/swim/jump rope
+      "sets": int,                // default 3 when unspoken
+      "reps": int | null,         // lifts only; null when unspoken
+      "weight": number | null,    // lifts only; the number in the lifter's units; null when unspoken
+      "seconds": int | null,      // holds (planks) — duration per set
+      "minutes": int | null       // cardio blocks
+    }
+  ],
+  "confidence": number            // 0..1
+}
+
+Rules:
+- "four by eight" / "4 sets of 8" / "3x10" → sets 4/4/3, reps 8/8/10. "three sets" alone → sets 3, reps null.
+- Unilateral wording ("each arm", "single leg") never multiplies sets or reps.
+- "at 135" / "one thirty five" → weight 135 in the lifter's units. "two plates" → 225 (lb) or 100 (kg).
+- "twenty minutes on the bike" → kind cardio, minutes 20, sets 1.
+- Keep the order spoken. Never invent exercises that were not said. Fewer is better than wrong.`;
 
 const SYSTEM = `You convert one spoken gym utterance into JSON for a workout logger. Respond with ONLY a JSON object, no prose.
 
@@ -106,6 +135,41 @@ serve(async (req) => {
         }))
     : [];
   const units = payload.units === "kg" ? "kg" : "lb";
+  const mode = payload.mode === "plan" ? "plan" : "log";
+
+  if (mode === "plan") {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: VOICE_MODEL,
+        max_tokens: 900,
+        system: PLAN_SYSTEM,
+        messages: [{ role: "user", content: `UNITS: ${units}\n\nTRANSCRIPT: "${transcript}"` }],
+      }),
+    });
+    if (!res.ok) return json({ error: `interpreter failed: ${await res.text()}` }, 502);
+    const body = (await res.json()) as { content?: { type: string; text?: string }[] };
+    const text = body.content?.find((c) => c.type === "text")?.text ?? "";
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return json({ name: null, exercises: [], confidence: 0, transcript });
+    try {
+      const plan = JSON.parse(match[0]);
+      return json({
+        name: typeof plan.name === "string" ? plan.name.slice(0, 60) : null,
+        exercises: Array.isArray(plan.exercises) ? plan.exercises.slice(0, 20) : [],
+        confidence:
+          typeof plan.confidence === "number" ? Math.max(0, Math.min(1, plan.confidence)) : 0.5,
+        transcript,
+      });
+    } catch {
+      return json({ name: null, exercises: [], confidence: 0, transcript });
+    }
+  }
 
   const userMsg = `SESSION_EXERCISES (name · tracking):
 ${exercises.length > 0 ? exercises.map((e) => `- ${e.name} · ${e.tracking}`).join("\n") : "(none yet — blank session)"}

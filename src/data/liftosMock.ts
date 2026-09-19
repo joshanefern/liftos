@@ -25,6 +25,10 @@ export type WorkoutExercise = {
   category: string;
   target: string;
   notes?: string;
+  /** Cardio only: a weighted vest / pack worn for the block, in the user's
+      unit. Distance already lives in the set's weight slot, so this is
+      exercise-level. Optional — cardio stays weight-free by default. */
+  addedWeight?: number;
   sets: WorkoutSet[];
 };
 

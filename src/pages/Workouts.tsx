@@ -31,7 +31,11 @@ import {
   persistActiveSession,
 } from "@/lib/startSession";
 import { toast } from "@/components/ui/use-toast";
-import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X } from "lucide-react";
+import { useDictation } from "@/components/logging/useDictation";
+import { useUser } from "@/context/UserContext";
+import { cn } from "@/lib/utils";
+import { interpretPlan } from "@/lib/voice";
+import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X, Mic } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -283,6 +287,44 @@ const Workouts = () => {
     setExercises((current) => [...current, createExerciseDraft()]);
   };
 
+  const { profile } = useUser();
+  const units = profile?.units ?? "lb";
+
+  // ── Dictate a plan: "push day — bench four by eight at one thirty five,
+  // incline dumbbell three by ten, twenty minutes on the bike". Rows land
+  // in the builder exactly like typed ones; nothing saves until Save.
+  const [dictating, setDictating] = useState(false);
+  const dictation = useDictation((transcript) => {
+    setDictating(true);
+    void interpretPlan(transcript, units)
+      .then((plan) => {
+        if (plan.exercises.length === 0) {
+          toast({ title: "Didn’t catch a workout in that", description: `“${transcript}”`, variant: "destructive" });
+          return;
+        }
+        if (plan.name && !workoutName.trim()) setWorkoutName(plan.name);
+        setExercises((current) => {
+          // Replace the untouched starter row instead of stacking under it.
+          const base = current.filter((row) => row.name.trim() !== "" || row.dirty);
+          const rows = plan.exercises.map((e) =>
+            createExerciseDraft({
+              name: e.name,
+              mode: e.kind === "cardio" ? "cardio" : "lift",
+              sets: String(e.sets),
+              reps: e.reps !== null ? String(e.reps) : "",
+              weight: e.weight !== null ? String(e.weight) : "",
+              minutes: e.minutes !== null ? String(e.minutes) : "",
+              dirty: true,
+            }),
+          );
+          return [...base, ...rows].slice(0, 20);
+        });
+        toast({ title: `Added ${plan.exercises.length} exercise${plan.exercises.length === 1 ? "" : "s"} from voice` });
+      })
+      .catch(() => toast({ title: "Couldn’t interpret that — try again", variant: "destructive" }))
+      .finally(() => setDictating(false));
+  });
+
   const updateExercise = <K extends keyof ExerciseDraft>(id: string, key: K, value: ExerciseDraft[K]) => {
     setExercises((current) =>
       current.map((exercise) => {
@@ -379,16 +421,46 @@ const Workouts = () => {
   const builderBody = (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="px-5 pb-1 md:px-6">
-        <input
-          // No autofocus on phones: the keyboard popping on open makes iOS
-          // pan the sheet up under the status bar. Tap to name it instead.
-          autoFocus={!isMobile}
-          value={workoutName}
-          onChange={(event) => setWorkoutName(event.target.value)}
-          placeholder="Workout name — Push Day, Legs…"
-          aria-label="Workout name"
-          className="mt-1 h-12 w-full rounded-lg border border-border bg-card px-3 text-[15px] font-medium text-fg outline-none transition placeholder:font-normal focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
-        />
+        <div className="mt-1 flex items-center gap-2">
+          <input
+            // No autofocus on phones: the keyboard popping on open makes iOS
+            // pan the sheet up under the status bar. Tap to name it instead.
+            autoFocus={!isMobile}
+            value={workoutName}
+            onChange={(event) => setWorkoutName(event.target.value)}
+            placeholder="Workout name — Push Day, Legs…"
+            aria-label="Workout name"
+            className="h-12 w-full min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-[15px] font-medium text-fg outline-none transition placeholder:font-normal focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+          />
+          {dictation.supported && (
+            <button
+              type="button"
+              onClick={() => void dictation.start()}
+              disabled={dictating}
+              aria-label={dictation.state.at === "listening" ? "Stop dictating" : "Dictate this workout"}
+              className={cn(
+                "relative inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition after:absolute after:-inset-1 after:content-[''] disabled:opacity-50",
+                dictation.state.at === "listening"
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card text-primary",
+              )}
+            >
+              <Mic size={18} className={dictation.state.at === "listening" ? "animate-pulse" : ""} />
+            </button>
+          )}
+        </div>
+        {(dictation.state.at !== "idle" || dictating) && (
+          <p className="mt-2 min-h-[18px] text-[12.5px] leading-[18px] text-fg-muted">
+            {dictating
+              ? "Building your rows…"
+              : dictation.state.at === "starting"
+                ? "Opening the mic…"
+                : dictation.state.at === "blocked"
+                  ? dictation.state.reason
+                  : (dictation.state.at === "listening" && dictation.state.partial) ||
+                    "Say the whole workout — “bench four by eight, rows three by ten, twenty minutes bike”. Pausing finishes."}
+          </p>
+        )}
       </div>
 
       {/* data-vaul-no-drag: scrolling the exercise list never turns into a
