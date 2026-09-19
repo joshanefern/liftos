@@ -322,18 +322,21 @@ const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
             "h-full w-full min-w-0 bg-transparent font-semibold tabular-nums outline-none placeholder:font-medium placeholder:text-fg-muted",
             muted && "font-medium text-fg-muted",
             align === "center" ? "text-center" : "px-3",
+            // Symmetric padding even with a unit suffix: text-center centers
+            // within the content box, so uneven padding shoved every value
+            // (and the "—"/"BW" placeholder) 10px left of the cell's middle.
             scoreboard
               ? suffix
-                ? "stat-scoreboard pl-1 pr-6 text-[22px]"
+                ? "stat-scoreboard px-7 text-[22px]"
                 : "stat-scoreboard px-2 text-[22px]"
               : suffix
-                ? "pl-1 pr-6 text-[15px]"
+                ? "px-6 text-[15px]"
                 : "px-2 text-[15px]",
             "transition group-hover/hint:placeholder:text-primary/70 group-hover/hint:cursor-copy",
           )}
         />
         {suffix && (
-          <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center text-[10px] uppercase tracking-wider text-fg-muted">
+          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] font-medium uppercase leading-none tracking-wider text-fg-muted">
             {suffix}
           </span>
         )}

@@ -86,6 +86,11 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var latestTranscript = ""
+    // The longest transcript this session produced. iOS 26 can end a
+    // session with a "final" that is a fragment of what the partials
+    // already carried (35 chars heard → 2-char final); resolveStop hands
+    // back the longest unless the latest is a plausible refinement.
+    private var longestTranscript = ""
     private var stopCall: CAPPluginCall?
     private var finished = false
     private var contextual: [String] = []
@@ -153,6 +158,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         // runs for real.
         if let scripted = consumeScriptedTranscript() {
             latestTranscript = ""
+            longestTranscript = ""
             finished = false
             let words = scripted.split(separator: " ").map(String.init)
             let gen = generation
@@ -204,6 +210,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         #endif
         triedServerFallback = false
         latestTranscript = ""
+        longestTranscript = ""
         finished = false
 
         let input = audioEngine.inputNode
@@ -262,7 +269,10 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
                     if !text.isEmpty || self.latestTranscript.isEmpty {
                         self.latestTranscript = text
                     }
-                    SpeechPlugin.diag("task: partial len=\(text.count) kept=\(self.latestTranscript.count) final=\(result.isFinal)")
+                    if text.count > self.longestTranscript.count {
+                        self.longestTranscript = text
+                    }
+                    SpeechPlugin.diag("task: partial len=\(text.count) longest=\(self.longestTranscript.count) final=\(result.isFinal)")
                     self.notifyListeners("speechPartial", data: ["transcript": self.latestTranscript])
                     if result.isFinal { self.resolveStop() }
                 }
@@ -313,7 +323,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             // run) — hand back what was heard instead of waiting on a dead
             // recognizer.
             if self.finished || self.task == nil {
-                call.resolve(["transcript": self.latestTranscript])
+                call.resolve(["transcript": self.chosenTranscript()])
                 return
             }
             SpeechPlugin.diag("stopListening: heard=\(self.latestTranscript.count)")
@@ -342,11 +352,20 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.finished else { return }
             self.finished = true
-            let transcript = self.latestTranscript
+            let transcript = self.chosenTranscript()
+            SpeechPlugin.diag("resolveStop: latest=\(self.latestTranscript.count) longest=\(self.longestTranscript.count) → \(transcript.count)")
             self.teardown(cancelTask: false)
             self.stopCall?.resolve(["transcript": transcript])
             self.stopCall = nil
         }
+    }
+
+    /// Latest wins when it is at least half as long as the longest seen
+    /// (a refinement like "one thirty five" → "135"); anything shorter is a
+    /// truncated final and the longest transcript is the truth.
+    private func chosenTranscript() -> String {
+        if latestTranscript.count * 2 >= longestTranscript.count { return latestTranscript }
+        return longestTranscript
     }
 
     private func teardown(cancelTask: Bool) {

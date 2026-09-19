@@ -13,6 +13,7 @@ import {
   voiceDiag,
 } from "@/lib/speech";
 import { interpretUtterance } from "@/lib/voice";
+import { chooseTranscript, longerOf } from "@/lib/voiceTranscript";
 import { tapHaptic, successHaptic } from "@/lib/haptics";
 import {
   applyVoiceIntent,
@@ -82,6 +83,8 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
   const lastChangeAt = useRef(0);
   const startedAt = useRef(0);
   const lastTranscript = useRef("");
+  // Longest partial this session — the truth when iOS ends with a fragment.
+  const longestTranscript = useRef("");
   // The freshest exercises without re-binding handlers every render.
   const exercisesRef = useRef(exercises);
   exercisesRef.current = exercises;
@@ -124,12 +127,14 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     if (!activeRef.current) return;
     setPhase({ at: "listening", partial: "" });
     lastTranscript.current = "";
+    longestTranscript.current = "";
     startedAt.current = Date.now();
     lastChangeAt.current = Date.now();
     listenerRef.current?.remove();
     listenerRef.current = await onSpeechPartial((transcript) => {
       if (transcript !== lastTranscript.current) {
         lastTranscript.current = transcript;
+        longestTranscript.current = longerOf(transcript, longestTranscript.current);
         lastChangeAt.current = Date.now();
       }
       setPhase((current) =>
@@ -193,12 +198,12 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     } catch {
       /* fell through — the last partial below still counts */
     }
-    // Belt and braces: the last live partial is the truth if the native
-    // final came back empty (iOS 26 does this) or the stop call failed.
-    if (transcript.length < 3 && lastTranscript.current.trim().length >= 3) {
-      transcript = lastTranscript.current.trim();
-    }
-    voiceDiag(`transcript (${transcript.length} chars)`);
+    // Belt and braces (same rule as the native plugin): a final that is a
+    // fragment of what the partials carried is a truncation, not the
+    // answer — the longest transcript this session heard wins.
+    const longest = longerOf(lastTranscript.current, longestTranscript.current);
+    transcript = chooseTranscript(transcript, longest);
+    voiceDiag(`transcript (${transcript.length} chars, longest seen ${longest.length})`);
     if (gen !== sessionGen.current) return; // a newer session took over
     listenerRef.current?.remove();
     listenerRef.current = null;
