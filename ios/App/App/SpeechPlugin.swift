@@ -32,7 +32,54 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "startListening", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopListening", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelListening", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "logDiag", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readDiag", returnType: CAPPluginReturnPromise),
     ]
+
+    // ── Field diagnostics ──────────────────────────────────────────────
+    // Every native step appends one timestamped line to
+    // Documents/voice-diag.log. Console streaming from a physical iPhone
+    // proved unreliable (tunnel drops, no ⚡️ forwarding on iOS 26), so the
+    // log lives in the app container where `devicectl device copy from`
+    // can pull it — and JS breadcrumbs land in the same file via logDiag.
+    private static let diagURL: URL? = FileManager.default
+        .urls(for: .documentDirectory, in: .userDomainMask).first?
+        .appendingPathComponent("voice-diag.log")
+
+    private static let diagStamp: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f
+    }()
+
+    static func diag(_ line: String) {
+        guard let url = diagURL else { return }
+        let entry = "\(diagStamp.string(from: Date())) \(line)\n"
+        guard let data = entry.data(using: .utf8) else { return }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: url)
+        }
+        // Keep the file bounded — trim to the last 400 lines occasionally.
+        if let text = try? String(contentsOf: url, encoding: .utf8),
+           text.count > 60_000 {
+            let tail = text.split(separator: "\n").suffix(400).joined(separator: "\n") + "\n"
+            try? tail.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    @objc public func logDiag(_ call: CAPPluginCall) {
+        SpeechPlugin.diag("js  " + (call.getString("line") ?? ""))
+        call.resolve()
+    }
+
+    @objc public func readDiag(_ call: CAPPluginCall) {
+        let text = SpeechPlugin.diagURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+        call.resolve(["text": text])
+    }
 
     private let audioEngine = AVAudioEngine()
     private var recognizer: SFSpeechRecognizer?
@@ -50,6 +97,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc public func isAvailable(_ call: CAPPluginCall) {
         let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en_US"))
+        SpeechPlugin.diag("isAvailable: available=\(recognizer?.isAvailable ?? false) onDevice=\(recognizer?.supportsOnDeviceRecognition ?? false)")
         call.resolve([
             "available": recognizer?.isAvailable ?? false,
             "onDevice": recognizer?.supportsOnDeviceRecognition ?? false,
@@ -57,8 +105,10 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc public func requestSpeechPermissions(_ call: CAPPluginCall) {
+        SpeechPlugin.diag("requestPermissions: before speech=\(SFSpeechRecognizer.authorizationStatus().rawValue) mic=\(AVAudioSession.sharedInstance().recordPermission.rawValue)")
         SFSpeechRecognizer.requestAuthorization { speechStatus in
             AVAudioSession.sharedInstance().requestRecordPermission { micGranted in
+                SpeechPlugin.diag("requestPermissions: after speech=\(speechStatus.rawValue) (3=authorized,1=denied,2=restricted,0=undetermined) mic=\(micGranted)")
                 call.resolve([
                     "speech": speechStatus == .authorized,
                     "microphone": micGranted,
@@ -119,15 +169,20 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         #endif
 
+        SpeechPlugin.diag("beginSession: auth=\(SFSpeechRecognizer.authorizationStatus().rawValue) contextual=\(contextual.count)")
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
+            SpeechPlugin.diag("beginSession: REJECT speech_not_authorized")
             call.reject("speech_not_authorized")
             return
         }
         guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en_US")),
               recognizer.isAvailable else {
+            let r = SFSpeechRecognizer(locale: Locale(identifier: "en_US"))
+            SpeechPlugin.diag("beginSession: REJECT recognizer_unavailable (recognizer nil=\(r == nil) available=\(r?.isAvailable ?? false))")
             call.reject("recognizer_unavailable")
             return
         }
+        SpeechPlugin.diag("beginSession: recognizer ok, supportsOnDevice=\(recognizer.supportsOnDeviceRecognition)")
         self.recognizer = recognizer
         self.contextual = contextual
 
@@ -137,6 +192,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
                                     options: [.duckOthers, .allowBluetoothA2DP])
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
+            SpeechPlugin.diag("beginSession: REJECT audio_session_failed \((error as NSError).domain)/\((error as NSError).code) \(error.localizedDescription)")
             call.reject("audio_session_failed: \(error.localizedDescription)")
             return
         }
@@ -152,7 +208,9 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
+        SpeechPlugin.diag("beginSession: input sampleRate=\(format.sampleRate) channels=\(format.channelCount) onDeviceRequested=\(onDeviceRequested)")
         guard format.sampleRate > 0 else {
+            SpeechPlugin.diag("beginSession: REJECT no_input_device")
             call.reject("no_input_device")
             return
         }
@@ -161,11 +219,13 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             try audioEngine.start()
         } catch {
+            SpeechPlugin.diag("beginSession: REJECT audio_engine_failed \((error as NSError).domain)/\((error as NSError).code) \(error.localizedDescription)")
             teardown(cancelTask: true)
             call.reject("audio_engine_failed: \(error.localizedDescription)")
             return
         }
 
+        SpeechPlugin.diag("beginSession: started (engine running=\(audioEngine.isRunning))")
         call.resolve(["started": true])
     }
 
@@ -195,11 +255,22 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             DispatchQueue.main.async {
                 guard let self, gen == self.generation else { return }
                 if let result {
-                    self.latestTranscript = result.bestTranscription.formattedString
+                    let text = result.bestTranscription.formattedString
+                    // iOS 26 delivers an EMPTY final result after endAudio —
+                    // it must never erase what the partials already heard
+                    // (that exact clobber made a 173-char utterance vanish).
+                    if !text.isEmpty || self.latestTranscript.isEmpty {
+                        self.latestTranscript = text
+                    }
+                    SpeechPlugin.diag("task: partial len=\(text.count) kept=\(self.latestTranscript.count) final=\(result.isFinal)")
                     self.notifyListeners("speechPartial", data: ["transcript": self.latestTranscript])
                     if result.isFinal { self.resolveStop() }
                 }
-                if error != nil { self.handleTaskError() }
+                if let error {
+                    let ns = error as NSError
+                    SpeechPlugin.diag("task: ERROR \(ns.domain)/\(ns.code) \(ns.localizedDescription) onDevice=\(self.onDeviceRequested) heard=\(self.latestTranscript.count)")
+                    self.handleTaskError()
+                }
             }
         }
     }
@@ -215,6 +286,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         // On-device model died before any speech landed — retry via server.
         if onDeviceRequested && !triedServerFallback && latestTranscript.isEmpty
             && audioEngine.isRunning {
+            SpeechPlugin.diag("handleTaskError: on-device died before speech → retrying server-based")
             triedServerFallback = true
             onDeviceRequested = false
             generation += 1
@@ -226,6 +298,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         // Unrecoverable mid-listen death: tell JS — never go quiet while the
         // overlay says "Listening…".
+        SpeechPlugin.diag("handleTaskError: UNRECOVERABLE → speechError")
         finished = true
         teardown(cancelTask: true)
         notifyListeners("speechError", data: ["message": "recognition_failed"])
@@ -243,6 +316,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.resolve(["transcript": self.latestTranscript])
                 return
             }
+            SpeechPlugin.diag("stopListening: heard=\(self.latestTranscript.count)")
             self.stopCall = call
             self.audioEngine.stop()
             self.audioEngine.inputNode.removeTap(onBus: 0)

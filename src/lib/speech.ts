@@ -16,6 +16,8 @@ interface SpeechPluginIface {
   startListening(options: { contextualStrings?: string[] }): Promise<{ started: boolean }>;
   stopListening(): Promise<{ transcript: string }>;
   cancelListening(): Promise<void>;
+  logDiag(options: { line: string }): Promise<void>;
+  readDiag(): Promise<{ text: string }>;
   addListener(
     eventName: "speechPartial",
     listener: (data: { transcript: string }) => void,
@@ -37,6 +39,26 @@ export const speechSupported = (): boolean =>
 
 let permissionsGranted: boolean | null = null;
 
+/** One breadcrumb, two sinks: the JS console and the native diag file
+    (Documents/voice-diag.log) that `devicectl device copy from` can pull
+    off a physical iPhone — console streaming from a device is unreliable. */
+export const voiceDiag = (line: string): void => {
+  console.log(`[voice] ${line}`);
+  if (Capacitor.isNativePlatform()) {
+    Speech.logDiag({ line }).catch(() => {});
+  }
+};
+
+/** The whole native diag file — surfaced in-app for screenshot support. */
+export const readVoiceDiag = async (): Promise<string> => {
+  if (!Capacitor.isNativePlatform()) return "";
+  try {
+    return (await Speech.readDiag()).text;
+  } catch (err) {
+    return `readDiag failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+};
+
 /** Ask once per app boot; iOS shows each sheet only the first time ever.
     Every outcome logs — these breadcrumbs surface in a captured native
     console and are the fastest route to "why did voice do nothing". */
@@ -46,12 +68,10 @@ export const ensureSpeechPermissions = async (): Promise<boolean> => {
   try {
     const result = await Speech.requestSpeechPermissions();
     permissionsGranted = result.speech && result.microphone;
-    console.log(
-      `[voice] permissions: speech=${result.speech} microphone=${result.microphone}`,
-    );
+    voiceDiag(`permissions: speech=${result.speech} microphone=${result.microphone}`);
   } catch (err) {
     permissionsGranted = false;
-    console.log(`[voice] permission request FAILED: ${err instanceof Error ? err.message : err}`);
+    voiceDiag(`permission request FAILED: ${err instanceof Error ? err.message : String(err)}`);
   }
   return permissionsGranted;
 };

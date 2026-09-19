@@ -13,15 +13,16 @@ import "@fontsource/fraunces/500-italic.css";
 import { Capacitor } from "@capacitor/core";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+import { voiceDiag } from "@/lib/speech";
 import "./index.css";
 
-// Boot probe — forwarded to the native console by Capacitor. The Speech
+// Boot probe — lands in the native diag file (and the console). The Speech
 // plugin silently not being registered (stock CAPBridgeViewController
 // instead of LiftOSBridgeViewController) cost days of "voice doesn't work";
-// this line makes that failure mode visible in any captured launch.
+// this line makes that failure mode visible on every launch.
 if (Capacitor.isNativePlatform()) {
-  console.log(
-    `[boot] native plugins: speech=${Capacitor.isPluginAvailable("Speech")} healthkit=${Capacitor.isPluginAvailable("HealthKit")}`,
+  voiceDiag(
+    `boot: plugins speech=${Capacitor.isPluginAvailable("Speech")} healthkit=${Capacitor.isPluginAvailable("HealthKit")} platform=${Capacitor.getPlatform()}`,
   );
 }
 

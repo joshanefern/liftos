@@ -10,6 +10,7 @@ import {
   speechSupported,
   startListening,
   stopListening,
+  voiceDiag,
 } from "@/lib/speech";
 import { interpretUtterance } from "@/lib/voice";
 import { tapHaptic, successHaptic } from "@/lib/haptics";
@@ -104,18 +105,20 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     sessionGen.current += 1;
     window.clearTimeout(dismissTimer.current);
     tapHaptic();
+    voiceDiag(`tap: begin (exercises=${exercisesRef.current.length})`);
     // Visible from the FIRST millisecond — a hung permission call or a
     // denied mic must never read as a dead tap.
     setPhase({ at: "starting" });
     const granted = await ensureSpeechPermissions();
     if (!granted) {
+      voiceDiag("blocked: permissions not granted");
       activeRef.current = false;
       setPhase({
         at: "blocked",
         reason:
           "Microphone or Speech Recognition is off for LiftOS. iOS Settings → LiftOS → allow both, then try again.",
       });
-      scheduleDismiss(10_000);
+      scheduleDismiss(30_000);
       return;
     }
     if (!activeRef.current) return;
@@ -136,7 +139,8 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     // Recognizer died mid-listen (native emits instead of going silent):
     // keep whatever was heard, otherwise say so and reset.
     errorListenerRef.current?.remove();
-    errorListenerRef.current = await onSpeechError(() => {
+    errorListenerRef.current = await onSpeechError((message) => {
+      voiceDiag(`speechError event: ${message} heard=${lastTranscript.current.length}`);
       if (!activeRef.current) return;
       if (lastTranscript.current.trim().length >= 3) {
         void finish();
@@ -157,6 +161,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
       if ((heard && idle >= SILENCE_STOP_MS) || total >= HARD_CAP_MS) {
         void finish();
       } else if (!heard && total >= EMPTY_CANCEL_MS) {
+        voiceDiag("watchdog: heard nothing in 8s → missed");
         cancel();
         setPhase({ at: "missed", transcript: "" });
         scheduleDismiss(6000);
@@ -164,16 +169,16 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     }, 250);
     try {
       await startListening(exercisesRef.current.map((e) => e.name).slice(0, 60));
-      console.log("[voice] listening started");
+      voiceDiag("listening started");
     } catch (err) {
-      console.log(`[voice] startListening FAILED: ${err instanceof Error ? err.message : err}`);
+      voiceDiag(`startListening FAILED: ${err instanceof Error ? err.message : String(err)}`);
       activeRef.current = false;
       window.clearInterval(watchdog.current);
       setPhase({
         at: "blocked",
         reason: blockedReason(err instanceof Error ? err.message : String(err)),
       });
-      scheduleDismiss(10_000);
+      scheduleDismiss(30_000);
     }
   };
 
@@ -185,10 +190,15 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     let transcript = "";
     try {
       transcript = (await stopListening()).transcript.trim();
-      console.log(`[voice] transcript (${transcript.length} chars)`);
     } catch {
-      /* fell through — treated as empty */
+      /* fell through — the last partial below still counts */
     }
+    // Belt and braces: the last live partial is the truth if the native
+    // final came back empty (iOS 26 does this) or the stop call failed.
+    if (transcript.length < 3 && lastTranscript.current.trim().length >= 3) {
+      transcript = lastTranscript.current.trim();
+    }
+    voiceDiag(`transcript (${transcript.length} chars)`);
     if (gen !== sessionGen.current) return; // a newer session took over
     listenerRef.current?.remove();
     listenerRef.current = null;
@@ -224,7 +234,7 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
         scheduleDismiss(6000);
         return;
       }
-      console.log(`[voice] intent kind=${intent.kind} confidence=${intent.confidence ?? "?"} actions=${intent.actions?.length ?? 0}`);
+      voiceDiag(`intent kind=${intent.kind} confidence=${intent.confidence ?? "?"} actions=${intent.actions?.length ?? 0}`);
       const result = applyVoiceIntent(exercisesRef.current, intent);
       if (result.empty) {
         setPhase({ at: "missed", transcript });
@@ -235,7 +245,8 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
       successHaptic();
       setPhase({ at: "applied", result });
       scheduleDismiss(8000);
-    } catch {
+    } catch (err) {
+      voiceDiag(`interpret FAILED: ${err instanceof Error ? err.message : String(err)}`);
       if (gen !== sessionGen.current) return;
       setPhase({ at: "missed", transcript });
       scheduleDismiss(6000);
