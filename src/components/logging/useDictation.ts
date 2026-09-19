@@ -18,7 +18,11 @@ import { chooseTranscript, longerOf } from "@/lib/voiceTranscript";
    (the workout builder, notes, the coach) can take a transcript without
    owning the voice UI. The caller decides what the words mean. ── */
 
-const SILENCE_STOP_MS = 3000; // plans are dictated with thinking pauses
+// Jarvis-style: a short pause hands the caller what was said SO FAR (rows
+// land immediately), the mic stays open, and more speech becomes the next
+// chunk. The session closes on its own once a longer silence passes.
+const SILENCE_FIRE_MS = 2000; // pause → emit the new chunk, keep listening
+const LATE_GRACE_MS = 8000; // no more speech for this long → close the mic
 const EMPTY_CANCEL_MS = 8000;
 const HARD_CAP_MS = 180_000; // native chains segments; this is the safety net
 
@@ -38,6 +42,10 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
   const longest = useRef("");
   const lastChangeAt = useRef(0);
   const startedAt = useRef(0);
+  // Everything already handed to the caller — the next chunk is what
+  // follows it. Recognizers revise earlier words, so prefer prefix-strip
+  // and fall back to a length cut.
+  const emitted = useRef("");
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
 
@@ -59,6 +67,21 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
     errorRef.current = null;
   };
 
+  /** Hand the caller the words since the last emit. */
+  const emitChunk = (transcript: string): void => {
+    const prev = emitted.current;
+    const chunk = (
+      prev && transcript.startsWith(prev)
+        ? transcript.slice(prev.length)
+        : prev
+          ? transcript.slice(Math.min(prev.length, transcript.length))
+          : transcript
+    ).trim();
+    emitted.current = transcript;
+    voiceDiag(`dictation: chunk (${chunk.length} chars, total ${transcript.length})`);
+    if (chunk.length >= 3) onTranscriptRef.current(chunk);
+  };
+
   const finish = async (): Promise<void> => {
     if (!active.current) return;
     active.current = false;
@@ -70,9 +93,8 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
     }
     teardownListeners();
     transcript = chooseTranscript(transcript, longerOf(last.current, longest.current));
-    voiceDiag(`dictation: transcript (${transcript.length} chars)`);
     setState({ at: "idle" });
-    if (transcript.length >= 3) onTranscriptRef.current(transcript);
+    if (transcript !== emitted.current) emitChunk(transcript);
   };
 
   const cancel = (): void => {
@@ -101,6 +123,7 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
     }
     last.current = "";
     longest.current = "";
+    emitted.current = "";
     startedAt.current = Date.now();
     lastChangeAt.current = Date.now();
     setState({ at: "listening", partial: "" });
@@ -121,8 +144,12 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
       if (!active.current) return;
       const idle = Date.now() - lastChangeAt.current;
       const total = Date.now() - startedAt.current;
-      const heard = last.current.trim().length >= 3;
-      if ((heard && idle >= SILENCE_STOP_MS) || total >= HARD_CAP_MS) void finish();
+      const current = longerOf(last.current, longest.current).trim();
+      const heard = current.length >= 3;
+      const unemitted = current !== emitted.current;
+      if (total >= HARD_CAP_MS) void finish();
+      else if (heard && unemitted && idle >= SILENCE_FIRE_MS) emitChunk(current);
+      else if (heard && !unemitted && idle >= SILENCE_FIRE_MS + LATE_GRACE_MS) void finish();
       else if (!heard && total >= EMPTY_CANCEL_MS) cancel();
     }, 250);
     try {

@@ -458,7 +458,7 @@ const Workouts = () => {
                 : dictation.state.at === "blocked"
                   ? dictation.state.reason
                   : (dictation.state.at === "listening" && dictation.state.partial) ||
-                    "Say the whole workout — “bench four by eight, rows three by ten, twenty minutes bike”. Pausing finishes."}
+                    "Say it exercise by exercise — “bench four by eight… rows three by ten… twenty minutes bike”. Each pause adds rows; it closes after a longer silence."}
           </p>
         )}
       </div>

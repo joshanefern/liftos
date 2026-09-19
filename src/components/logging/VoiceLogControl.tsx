@@ -36,7 +36,13 @@ type Props = {
   onUndo: () => void;
 };
 
-const SILENCE_STOP_MS = 1700; // pause after speech → auto-log
+// Jarvis-style endpointing: a SHORT pause fires the log right away, but
+// the mic stays open for a grace window — speech that resumes inside it is
+// the same utterance ("3 sets of squats … [pause] … at 225"): the first
+// apply is undone and the merged sentence is re-interpreted. Fast when
+// you're done, forgiving when you're thinking.
+const SILENCE_FIRE_MS = 1700; // pause after speech → log it (mic stays open)
+const LATE_GRACE_MS = 6000; // more speech inside this window supersedes
 const EMPTY_CANCEL_MS = 8000; // heard nothing at all → quiet cancel
 const HARD_CAP_MS = 120_000; // native chains segments; this is the safety net
 
@@ -102,6 +108,12 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
   const lastTranscript = useRef("");
   // Longest partial this session — the truth when iOS ends with a fragment.
   const longestTranscript = useRef("");
+  // Fire bookkeeping: what was last interpreted, when, and which fire's
+  // result is currently applied (undoable) — the grace window supersedes it.
+  const firedTranscript = useRef("");
+  const firedAt = useRef(0);
+  const fireSeq = useRef(0);
+  const appliedFire = useRef<number | null>(null);
   // The freshest exercises without re-binding handlers every render.
   const exercisesRef = useRef(exercises);
   exercisesRef.current = exercises;
@@ -145,6 +157,9 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     setPhase({ at: "listening", partial: "" });
     lastTranscript.current = "";
     longestTranscript.current = "";
+    firedTranscript.current = "";
+    firedAt.current = 0;
+    appliedFire.current = null;
     startedAt.current = Date.now();
     lastChangeAt.current = Date.now();
     listenerRef.current?.remove();
@@ -154,8 +169,12 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
         longestTranscript.current = longerOf(transcript, longestTranscript.current);
         lastChangeAt.current = Date.now();
       }
+      // New words after a fire pull the card back to "Listening" — the
+      // merged sentence will supersede what was logged.
       setPhase((current) =>
-        current.at === "listening" ? { at: "listening", partial: transcript } : current,
+        current.at === "listening" || (firedAt.current > 0 && transcript.length > firedTranscript.current.length)
+          ? { at: "listening", partial: transcript }
+          : current,
       );
     });
     // Recognizer died mid-listen (native emits instead of going silent):
@@ -179,8 +198,16 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
       if (!activeRef.current) return;
       const idle = Date.now() - lastChangeAt.current;
       const total = Date.now() - startedAt.current;
-      const heard = lastTranscript.current.trim().length >= 3;
-      if ((heard && idle >= SILENCE_STOP_MS) || total >= HARD_CAP_MS) {
+      const current = longerOf(lastTranscript.current, longestTranscript.current);
+      const heard = current.trim().length >= 3;
+      const unfired = current.trim() !== firedTranscript.current;
+      if (total >= HARD_CAP_MS) {
+        void finish();
+      } else if (heard && unfired && idle >= SILENCE_FIRE_MS) {
+        // Pause → log it now, mic stays open for the grace window.
+        void fire(current.trim());
+      } else if (heard && !unfired && idle >= SILENCE_FIRE_MS + LATE_GRACE_MS) {
+        // Grace expired with nothing new — close the mic, keep the card.
         void finish();
       } else if (!heard && total >= EMPTY_CANCEL_MS) {
         voiceDiag("watchdog: heard nothing in 8s → missed");
@@ -204,6 +231,8 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     }
   };
 
+  /** Close the mic. Anything heard since the last fire is interpreted;
+      otherwise the card that's already up stands. */
   const finish = async (): Promise<void> => {
     if (!activeRef.current) return;
     activeRef.current = false;
@@ -227,12 +256,33 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     errorListenerRef.current?.remove();
     errorListenerRef.current = null;
 
+    if (transcript === firedTranscript.current && firedAt.current > 0) {
+      // Nothing new since the fire — the card is already up; let it rest.
+      scheduleDismiss(phase.at === "applied" ? 6000 : 5000);
+      return;
+    }
     if (transcript.length < 3) {
       // Never a silent reset — the only remaining quiet path was here.
       voiceDiag("finish: nothing usable heard → missed card");
       setPhase({ at: "missed", transcript: "" });
       scheduleDismiss(6000);
       return;
+    }
+    await fire(transcript, gen);
+  };
+
+  /** Interpret + apply one transcript. A fire that follows an applied one
+      inside the grace window undoes it first — the merged sentence is the
+      truth, never two half-logs. Stale results (a newer fire started) are
+      dropped. */
+  const fire = async (transcript: string, gen = sessionGen.current): Promise<void> => {
+    const seq = ++fireSeq.current;
+    firedTranscript.current = transcript;
+    firedAt.current = Date.now();
+    if (appliedFire.current !== null) {
+      voiceDiag(`fire #${seq}: superseding fire #${appliedFire.current} (undo)`);
+      onUndo();
+      appliedFire.current = null;
     }
     setPhase({ at: "thinking", transcript });
     try {
@@ -251,30 +301,33 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
           window.setTimeout(() => reject(new Error("voice interpret timeout")), 15_000),
         ),
       ]);
-      if (gen !== sessionGen.current) return; // user re-tapped mid-interpret
+      if (gen !== sessionGen.current || seq !== fireSeq.current) return; // superseded
       // Low-confidence interpretations don't auto-apply — a garbled
       // half-sentence writing sets into the log is worse than a re-ask.
       if ((intent.confidence ?? 1) < 0.5) {
         setPhase({ at: "missed", transcript });
-        scheduleDismiss(6000);
+        if (!activeRef.current) scheduleDismiss(6000);
         return;
       }
       voiceDiag(`intent kind=${intent.kind} confidence=${intent.confidence ?? "?"} actions=${intent.actions?.length ?? 0}`);
       const result = applyVoiceIntent(exercisesRef.current, intent);
       if (result.empty) {
         setPhase({ at: "missed", transcript });
-        scheduleDismiss(6000);
+        if (!activeRef.current) scheduleDismiss(6000);
         return;
       }
       onApply(result);
+      appliedFire.current = seq;
       successHaptic();
       setPhase({ at: "applied", result });
-      scheduleDismiss(8000);
+      // While the mic is still open the card stays for the grace window;
+      // once closed it lives its usual 8s.
+      if (!activeRef.current) scheduleDismiss(8000);
     } catch (err) {
       voiceDiag(`interpret FAILED: ${err instanceof Error ? err.message : String(err)}`);
-      if (gen !== sessionGen.current) return;
+      if (gen !== sessionGen.current || seq !== fireSeq.current) return;
       setPhase({ at: "missed", transcript });
-      scheduleDismiss(6000);
+      if (!activeRef.current) scheduleDismiss(6000);
     }
   };
 
