@@ -70,11 +70,14 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
   /** Hand the caller the words since the last emit. */
   const emitChunk = (transcript: string): void => {
     const prev = emitted.current;
+    // Three shapes: it grew (emit the tail); it's a shorter revision of what
+    // we already emitted (nothing new); or the recognizer restarted and
+    // these are all new words (emit the whole thing).
     const chunk = (
       prev && transcript.startsWith(prev)
         ? transcript.slice(prev.length)
-        : prev
-          ? transcript.slice(Math.min(prev.length, transcript.length))
+        : prev && prev.includes(transcript)
+          ? ""
           : transcript
     ).trim();
     emitted.current = transcript;

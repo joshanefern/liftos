@@ -321,7 +321,17 @@ const Workouts = () => {
         });
         toast({ title: `Added ${plan.exercises.length} exercise${plan.exercises.length === 1 ? "" : "s"} from voice` });
       })
-      .catch(() => toast({ title: "Couldn’t interpret that — try again", variant: "destructive" }))
+      .catch((err) =>
+        toast(
+          err instanceof Error && err.message === "plan-mode-not-deployed"
+            ? {
+                title: "Voice needs the latest server update",
+                description: "Deploy the voice-log function, then dictation builds rows.",
+                variant: "destructive",
+              }
+            : { title: "Couldn’t interpret that — try again", variant: "destructive" },
+        ),
+      )
       .finally(() => setDictating(false));
   });
 

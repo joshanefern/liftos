@@ -100,6 +100,13 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
     private var currentSegment = ""
     private var segmentRolls = 0
     private static let maxSegmentRolls = 20
+    // When the last partial arrived. iOS 26's on-device recognizer can
+    // silently restart its transcript after a long pause (395 chars → a
+    // fresh 208-char utterance, no final, no error). Revisions arrive
+    // within milliseconds of the previous partial; a SHORTER transcript
+    // that lands after a silence gap is new speech — bank the old one.
+    private var lastPartialAt: Date?
+    private static let resetGapSeconds: TimeInterval = 1.5
     private var stopCall: CAPPluginCall?
     private var finished = false
     private var contextual: [String] = []
@@ -223,6 +230,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         segmentPrefix = ""
         currentSegment = ""
         segmentRolls = 0
+        lastPartialAt = nil
         finished = false
 
         let input = audioEngine.inputNode
@@ -275,6 +283,20 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
                 guard let self, gen == self.generation else { return }
                 if let result {
                     let text = result.bestTranscription.formattedString
+                    let now = Date()
+                    let gap = self.lastPartialAt.map { now.timeIntervalSince($0) } ?? 0
+                    if !text.isEmpty,
+                       !self.currentSegment.isEmpty,
+                       gap >= Self.resetGapSeconds,
+                       text.count < self.currentSegment.count,
+                       !self.currentSegment.lowercased().hasPrefix(text.lowercased()) {
+                        // Recognizer restarted mid-task after a pause — what
+                        // it had is a finished segment, not a draft.
+                        self.segmentPrefix = Self.joined(self.segmentPrefix, self.currentSegment)
+                        self.currentSegment = ""
+                        SpeechPlugin.diag("in-task reset after \(String(format: "%.1f", gap))s → banked \(self.segmentPrefix.count)")
+                    }
+                    self.lastPartialAt = now
                     // iOS 26 delivers an EMPTY final result after endAudio —
                     // it must never erase what the partials already heard
                     // (that exact clobber made a 173-char utterance vanish).

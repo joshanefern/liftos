@@ -81,5 +81,10 @@ export const interpretPlan = async (transcript: string, units: string): Promise<
     body: { transcript, units, mode: "plan", exercises: [] },
   });
   if (error) throw error;
+  // The old interpreter answers every mode with the log schema — that's a
+  // deploy gap, not a bad utterance, and the builder should say so.
+  if (data && typeof data === "object" && "kind" in data && !("exercises" in data)) {
+    throw new Error("plan-mode-not-deployed");
+  }
   return sanitizePlan(data);
 };
