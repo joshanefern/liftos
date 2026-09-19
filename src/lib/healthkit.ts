@@ -44,6 +44,7 @@ type HealthKitPluginIface = {
   queryVitals(options: { startMs: number; endMs?: number }): Promise<{
     heartRate: { t: number; bpm: number }[];
     activeKcal: number;
+    distanceMeters?: number;
   }>;
   queryBodyMass(options: { daysBack: number }): Promise<{ samples: BodyMassSample[] }>;
   /** Registers the HKObserverQuery + background delivery; idempotent. */
@@ -293,6 +294,8 @@ export type VitalsWindow = {
   avg: number | null;
   max: number | null;
   activeKcal: number;
+  /** Walking/running + cycling distance the Watch recorded in the window. */
+  distanceMeters: number;
 };
 
 /** Heart rate + active calories between two instants — the cardio card's
@@ -303,7 +306,7 @@ export const fetchVitalsWindow = async (
 ): Promise<VitalsWindow | null> => {
   if (!healthKitSupported()) return null;
   try {
-    const { heartRate, activeKcal } = await HealthKit.queryVitals({ startMs, endMs });
+    const { heartRate, activeKcal, distanceMeters } = await HealthKit.queryVitals({ startMs, endMs });
     const samples = (heartRate ?? []).filter((s) => Number.isFinite(s.bpm) && s.bpm > 0);
     const bpms = samples.map((s) => s.bpm);
     return {
@@ -312,6 +315,7 @@ export const fetchVitalsWindow = async (
       avg: bpms.length > 0 ? Math.round(bpms.reduce((a, b) => a + b, 0) / bpms.length) : null,
       max: bpms.length > 0 ? Math.round(Math.max(...bpms)) : null,
       activeKcal: Math.round(activeKcal ?? 0),
+      distanceMeters: Math.max(0, Math.round(distanceMeters ?? 0)),
     };
   } catch {
     return null;

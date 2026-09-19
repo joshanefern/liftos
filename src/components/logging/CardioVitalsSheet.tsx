@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
-import { HeartPulse, Watch } from "lucide-react";
+import { HeartPulse, Route, Watch } from "lucide-react";
 import {
   Drawer,
   DrawerContent,
   DrawerDescription,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { fetchVitalsWindow, healthKitSupported, type VitalsWindow } from "@/lib/healthkit";
+import {
+  fetchVitalsWindow,
+  healthKitSupported,
+  requestHealthKitAuthorization,
+  type VitalsWindow,
+} from "@/lib/healthkit";
 
 /* ── Live vitals for a cardio block (Pro).
    Heart rate and active calories from Apple Health for this session's
@@ -22,7 +27,17 @@ type Props = {
   exerciseName: string;
   /** Session start — the window the numbers cover. */
   sinceMs: number;
+  /** "lb" → miles, "kg" → kilometers for the distance readout. */
+  units: string;
+  /** Write the Watch's distance (already in the user's unit, 2 decimals)
+      into the cardio card's DIST field. */
+  onUseDistance: (value: string) => void;
 };
+
+const formatDistance = (meters: number, units: string): { value: string; unit: string } =>
+  units === "kg"
+    ? { value: (meters / 1000).toFixed(2), unit: "km" }
+    : { value: (meters / 1609.34).toFixed(2), unit: "mi" };
 
 /** A minimal HR trace: last ~120 samples, scaled into a 240×56 box. */
 const Sparkline = ({ samples }: { samples: { t: number; bpm: number }[] }) => {
@@ -45,15 +60,60 @@ const Sparkline = ({ samples }: { samples: { t: number; bpm: number }[] }) => {
   );
 };
 
-export const CardioVitalsSheet = ({ open, onOpenChange, exerciseName, sinceMs }: Props) => {
+/** The Watch's distance for the window, with the one tap that writes it
+    into the card — manual entry always remains (treadmills, forgotten
+    Watch). */
+const DistanceRow = ({
+  distance,
+  onUse,
+}: {
+  distance: { value: string; unit: string };
+  onUse: (value: string) => void;
+}) => (
+  <div className="mt-3 flex items-center justify-between gap-3 rounded-[12px] bg-foreground/[0.04] px-3 py-3">
+    <div className="flex items-center gap-2.5">
+      <Route size={15} className="text-primary" />
+      <div>
+        <p className="mono text-[17px] font-semibold leading-5 text-fg">
+          {distance.value} <span className="text-[12px] font-medium text-fg-muted">{distance.unit}</span>
+        </p>
+        <p className="eyebrow mt-0.5 !text-[10px]">distance · watch</p>
+      </div>
+    </div>
+    <button
+      type="button"
+      onClick={() => onUse(distance.value)}
+      className="inline-flex min-h-9 items-center rounded-full bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.97]"
+    >
+      Use this
+    </button>
+  </div>
+);
+
+export const CardioVitalsSheet = ({
+  open,
+  onOpenChange,
+  exerciseName,
+  sinceMs,
+  units,
+  onUseDistance,
+}: Props) => {
   const [vitals, setVitals] = useState<VitalsWindow | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    let asked = false;
     const load = async (): Promise<void> => {
       setLoading(true);
+      // Distance types were added after early users connected Health —
+      // HealthKit only shows a sheet for types not yet decided, so this is
+      // silent for everyone already covered.
+      if (!asked) {
+        asked = true;
+        await requestHealthKitAuthorization().catch(() => {});
+      }
       const next = await fetchVitalsWindow(sinceMs);
       if (!cancelled) {
         setVitals(next);
@@ -70,6 +130,8 @@ export const CardioVitalsSheet = ({ open, onOpenChange, exerciseName, sinceMs }:
 
   const minutes = Math.max(1, Math.round((Date.now() - sinceMs) / 60_000));
   const hasHr = (vitals?.samples.length ?? 0) > 0;
+  const distance =
+    vitals && vitals.distanceMeters >= 50 ? formatDistance(vitals.distanceMeters, units) : null;
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -109,6 +171,7 @@ export const CardioVitalsSheet = ({ open, onOpenChange, exerciseName, sinceMs }:
                 </div>
               ))}
             </div>
+            {distance && <DistanceRow distance={distance} onUse={onUseDistance} />}
           </>
         ) : (
           <div className="mt-6 rounded-[14px] border border-dashed border-border px-4 py-5">
@@ -129,6 +192,7 @@ export const CardioVitalsSheet = ({ open, onOpenChange, exerciseName, sinceMs }:
                 <span className="mono font-semibold text-fg">{vitals.activeKcal}</span> kcal burned so far
               </p>
             )}
+            {distance && <DistanceRow distance={distance} onUse={onUseDistance} />}
           </div>
         )}
 

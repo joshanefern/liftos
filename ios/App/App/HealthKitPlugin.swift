@@ -55,10 +55,16 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
         // readiness engine (src/lib/recovery.ts) reads HRV, resting HR,
         // sleep, and respiratory rate via queryRecoveryMetrics. Body mass
         // powers the Fat Loss goal's progress hero.
-        let read: Set<HKObjectType> = [
+        // Distance types feed the cardio card's "Use watch distance"
+        // (queryVitals); HealthKit prompts only for types not yet decided.
+        let distanceTypes: [HKObjectType] = [
+            HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning),
+            HKQuantityType.quantityType(forIdentifier: .distanceCycling),
+        ].compactMap { $0 }
+        let read: Set<HKObjectType> = Set([
             HKObjectType.workoutType(), heartRate, energy,
             hrv, restingHeartRate, respiratoryRate, sleepAnalysis, bodyMass,
-        ]
+        ] + distanceTypes)
         // Write access exists only so debug builds can seed the simulator's
         // empty Health store for end-to-end QA.
         #if DEBUG
@@ -224,13 +230,44 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
                 options: .cumulativeSum
             ) { _, stats, _ in
                 let kcal = stats?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
-                DispatchQueue.main.async {
-                    call.resolve(["heartRate": Array(rows.suffix(900)), "activeKcal": kcal])
+                // Distance: walking/running + cycling, summed in meters.
+                self.sumDistance(predicate: predicate) { meters in
+                    DispatchQueue.main.async {
+                        call.resolve([
+                            "heartRate": Array(rows.suffix(900)),
+                            "activeKcal": kcal,
+                            "distanceMeters": meters,
+                        ])
+                    }
                 }
             }
             self.store.execute(energyQuery)
         }
         store.execute(hrQuery)
+    }
+
+    /// Meters covered in the window across the Watch's distance types.
+    private func sumDistance(predicate: NSPredicate, completion: @escaping (Double) -> Void) {
+        let types = [
+            HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning),
+            HKQuantityType.quantityType(forIdentifier: .distanceCycling),
+        ].compactMap { $0 }
+        var total = 0.0
+        var remaining = types.count
+        guard remaining > 0 else { completion(0); return }
+        for type in types {
+            let q = HKStatisticsQuery(
+                quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum
+            ) { _, stats, _ in
+                let meters = stats?.sumQuantity()?.doubleValue(for: .meter()) ?? 0
+                DispatchQueue.main.async {
+                    total += meters
+                    remaining -= 1
+                    if remaining == 0 { completion(total) }
+                }
+            }
+            store.execute(q)
+        }
     }
 
     /// Ascending {t, <valueKey>} rows for one quantity type since `since`.

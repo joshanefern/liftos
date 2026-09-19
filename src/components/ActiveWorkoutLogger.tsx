@@ -1207,19 +1207,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       )
                     )}
                   </button>
-                  {exercise.kind === "cardio" && (
-                    <button
-                      type="button"
-                      onClick={() => setVitalsFor(exercise.name)}
-                      aria-label={`Live vitals for ${exercise.name}`}
-                      className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-primary transition after:absolute after:-inset-1 after:content-[''] hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
-                    >
-                      <HeartPulse size={17} />
-                      <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1 text-[7.5px] font-bold uppercase leading-[11px] tracking-[0.08em] text-primary-foreground">
-                        Pro
-                      </span>
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => setAllSetsDone(exercise.id, !allDone)}
@@ -1266,14 +1253,31 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   ))}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => addSet(exercise.id)}
-                  className="relative mt-2.5 inline-flex items-center gap-2 rounded-full border border-border px-3 py-2 text-xs text-fg-muted transition after:absolute after:-inset-1.5 after:content-[''] hover:border-primary/40 hover:text-fg"
-                >
-                  <Plus size={14} />
-                  Add set
-                </button>
+                <div className="mt-2.5 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => addSet(exercise.id)}
+                    className="relative inline-flex items-center gap-2 rounded-full border border-border px-3 py-2 text-xs text-fg-muted transition after:absolute after:-inset-1.5 after:content-[''] hover:border-primary/40 hover:text-fg"
+                  >
+                    <Plus size={14} />
+                    Add set
+                  </button>
+                  {/* Live vitals (Pro) — bottom-right of every cardio card. */}
+                  {exercise.kind === "cardio" && (
+                    <button
+                      type="button"
+                      onClick={() => setVitalsFor(exercise.id)}
+                      aria-label={`Live vitals for ${exercise.name}`}
+                      className="relative inline-flex min-h-9 items-center gap-2 rounded-full bg-primary/[0.12] pl-3 pr-2 text-[12.5px] font-semibold text-primary transition after:absolute after:-inset-1 after:content-[''] active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-ring/40"
+                    >
+                      <HeartPulse size={15} />
+                      Vitals
+                      <span className="rounded-full bg-primary px-1.5 text-[8.5px] font-bold uppercase leading-[15px] tracking-[0.1em] text-primary-foreground">
+                        Pro
+                      </span>
+                    </button>
+                  )}
+                </div>
               </article>
             );
           })}
@@ -1460,8 +1464,28 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         onOpenChange={(open) => {
           if (!open) setVitalsFor(null);
         }}
-        exerciseName={vitalsFor ?? ""}
+        exerciseName={exercises.find((e) => e.id === vitalsFor)?.name ?? ""}
         sinceMs={startedAt.current.getTime()}
+        units={weightUnit}
+        onUseDistance={(value) => {
+          // The Watch's distance lands in the first open DIST cell (the
+          // last one when all are filled) — the cardio row stores distance
+          // in the weight slot, saved as meters by the finish path.
+          if (!vitalsFor) return;
+          setExercises((current) =>
+            current.map((e) => {
+              if (e.id !== vitalsFor || e.sets.length === 0) return e;
+              const empty = e.sets.findIndex((set) => set.weight.trim() === "");
+              const target = empty >= 0 ? empty : e.sets.length - 1;
+              return {
+                ...e,
+                sets: e.sets.map((set, i) => (i === target ? { ...set, weight: value } : set)),
+              };
+            }),
+          );
+          setVitalsFor(null);
+          toast({ title: "Distance filled from your watch" });
+        }}
       />
 
       {/* Plate math bottom sheet — opened by tapping a filled weight value.
