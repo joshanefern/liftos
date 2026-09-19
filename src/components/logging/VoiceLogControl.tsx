@@ -211,7 +211,10 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     errorListenerRef.current = null;
 
     if (transcript.length < 3) {
-      setPhase({ at: "idle" });
+      // Never a silent reset — the only remaining quiet path was here.
+      voiceDiag("finish: nothing usable heard → missed card");
+      setPhase({ at: "missed", transcript: "" });
+      scheduleDismiss(6000);
       return;
     }
     setPhase({ at: "thinking", transcript });
