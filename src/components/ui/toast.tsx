@@ -14,7 +14,9 @@ const ToastViewport = React.forwardRef<
   <ToastPrimitives.Viewport
     ref={ref}
     className={cn(
-      "fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
+      // iOS-style banner: below the Dynamic Island (safe-top), centered,
+      // never full-bleed — a system notification, not a web toast.
+      "pointer-events-none fixed inset-x-0 top-[calc(var(--safe-top)+0.625rem)] z-[100] flex flex-col items-center gap-2 px-4 md:inset-x-auto md:right-6 md:top-6 md:items-end",
       className,
     )}
     {...props}
@@ -23,12 +25,14 @@ const ToastViewport = React.forwardRef<
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName;
 
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full",
+  // A compact capsule: warm card, hairline, soft lift, blurred edge. Slides
+  // down from under the island and swipes back up to dismiss.
+  "group pointer-events-auto relative flex w-auto max-w-[min(100%,26rem)] items-center gap-3 rounded-[18px] border border-border bg-card/95 py-3 pl-3.5 pr-3 text-fg shadow-[0_10px_30px_rgba(16,22,35,0.16)] backdrop-blur-[14px] dark:shadow-[0_10px_30px_rgba(0,0,0,0.5)] data-[swipe=cancel]:translate-y-0 data-[swipe=end]:translate-y-[var(--radix-toast-swipe-end-y)] data-[swipe=move]:translate-y-[var(--radix-toast-swipe-move-y)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-full data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-4 data-[state=open]:duration-300 data-[state=closed]:duration-200",
   {
     variants: {
       variant: {
-        default: "border bg-background text-foreground",
-        destructive: "destructive group border-destructive bg-destructive text-destructive-foreground",
+        default: "",
+        destructive: "destructive border-destructive/30",
       },
     },
     defaultVariants: {

@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
-import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createContext, lazy, Suspense, useContext, useEffect, useState } from "react";
@@ -140,7 +139,6 @@ const App = () => {
       <CaptureProviderForApp>
       <TooltipProvider>
         <Toaster />
-        <Sonner />
         {/* Mount-once: HealthKit observer + catch-up sync (iOS native only). */}
         <HealthKitAutoSync />
         <SidebarContext.Provider value={{ collapsed, setCollapsed }}>
