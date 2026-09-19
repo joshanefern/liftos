@@ -18,9 +18,9 @@ import { chooseTranscript, longerOf } from "@/lib/voiceTranscript";
    (the workout builder, notes, the coach) can take a transcript without
    owning the voice UI. The caller decides what the words mean. ── */
 
-const SILENCE_STOP_MS = 2200; // plans are longer sentences — a beat more patience
+const SILENCE_STOP_MS = 3000; // plans are dictated with thinking pauses
 const EMPTY_CANCEL_MS = 8000;
-const HARD_CAP_MS = 45_000;
+const HARD_CAP_MS = 180_000; // native chains segments; this is the safety net
 
 export type DictationState =
   | { at: "idle" }

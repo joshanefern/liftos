@@ -38,7 +38,7 @@ type Props = {
 
 const SILENCE_STOP_MS = 1700; // pause after speech → auto-log
 const EMPTY_CANCEL_MS = 8000; // heard nothing at all → quiet cancel
-const HARD_CAP_MS = 30_000;
+const HARD_CAP_MS = 120_000; // native chains segments; this is the safety net
 
 type Phase =
   | { at: "idle" }

@@ -91,6 +91,15 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
     // already carried (35 chars heard → 2-char final); resolveStop hands
     // back the longest unless the latest is a plausible refinement.
     private var longestTranscript = ""
+    // Long dictation: iOS ends a recognition task on its own (server-based
+    // recognition caps near a minute; on-device finalizes on long pauses).
+    // When that happens while the lifter is still talking, the finished
+    // segment is banked in `segmentPrefix`, a fresh task starts on the same
+    // running audio engine, and partials stream as prefix + current.
+    private var segmentPrefix = ""
+    private var currentSegment = ""
+    private var segmentRolls = 0
+    private static let maxSegmentRolls = 20
     private var stopCall: CAPPluginCall?
     private var finished = false
     private var contextual: [String] = []
@@ -211,6 +220,9 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         triedServerFallback = false
         latestTranscript = ""
         longestTranscript = ""
+        segmentPrefix = ""
+        currentSegment = ""
+        segmentRolls = 0
         finished = false
 
         let input = audioEngine.inputNode
@@ -266,15 +278,25 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
                     // iOS 26 delivers an EMPTY final result after endAudio —
                     // it must never erase what the partials already heard
                     // (that exact clobber made a 173-char utterance vanish).
-                    if !text.isEmpty || self.latestTranscript.isEmpty {
-                        self.latestTranscript = text
+                    if !text.isEmpty || self.currentSegment.isEmpty {
+                        self.currentSegment = text
                     }
-                    if text.count > self.longestTranscript.count {
-                        self.longestTranscript = text
+                    let combined = Self.joined(self.segmentPrefix, self.currentSegment)
+                    self.latestTranscript = combined
+                    if combined.count > self.longestTranscript.count {
+                        self.longestTranscript = combined
                     }
-                    SpeechPlugin.diag("task: partial len=\(text.count) longest=\(self.longestTranscript.count) final=\(result.isFinal)")
-                    self.notifyListeners("speechPartial", data: ["transcript": self.latestTranscript])
-                    if result.isFinal { self.resolveStop() }
+                    SpeechPlugin.diag("task: partial seg=\(text.count) total=\(combined.count) final=\(result.isFinal)")
+                    self.notifyListeners("speechPartial", data: ["transcript": combined])
+                    if result.isFinal {
+                        // A final while JS never asked to stop = iOS ended the
+                        // segment, not the lifter. Keep listening.
+                        if self.stopCall != nil || self.finished || !self.audioEngine.isRunning {
+                            self.resolveStop()
+                        } else {
+                            self.rollSegment(reason: "final while still listening")
+                        }
+                    }
                 }
                 if let error {
                     let ns = error as NSError
@@ -304,6 +326,13 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             task = nil
             request = nil
             launchTask(onDevice: false)
+            return
+        }
+        // The task died mid-dictation (server-based recognition's ~1 min cap,
+        // a transient recognizer error) but the mic is still running — bank
+        // what was heard and start a fresh segment.
+        if stopCall == nil && audioEngine.isRunning && segmentRolls < Self.maxSegmentRolls {
+            rollSegment(reason: "task error")
             return
         }
         // Unrecoverable mid-listen death: tell JS — never go quiet while the
@@ -358,6 +387,33 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
             self.stopCall?.resolve(["transcript": transcript])
             self.stopCall = nil
         }
+    }
+
+    private static func joined(_ a: String, _ b: String) -> String {
+        if a.isEmpty { return b }
+        if b.isEmpty { return a }
+        return a + " " + b
+    }
+
+    /// Bank the current segment and start a new recognition task on the
+    /// still-running engine. Bounded so a persistently failing recognizer
+    /// can't spin forever — past the cap the session resolves with what it
+    /// has.
+    private func rollSegment(reason: String) {
+        guard segmentRolls < Self.maxSegmentRolls else {
+            SpeechPlugin.diag("rollSegment: cap reached → resolving")
+            resolveStop()
+            return
+        }
+        segmentRolls += 1
+        segmentPrefix = Self.joined(segmentPrefix, currentSegment)
+        currentSegment = ""
+        SpeechPlugin.diag("rollSegment #\(segmentRolls) (\(reason)) banked=\(segmentPrefix.count)")
+        generation += 1
+        task?.cancel()
+        task = nil
+        request = nil
+        launchTask(onDevice: onDeviceRequested)
     }
 
     /// Latest wins when it is at least half as long as the longest seen
