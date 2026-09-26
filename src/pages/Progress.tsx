@@ -8,6 +8,7 @@ import { formatHold, inferTracking } from "@/lib/exerciseTracking";
 import { allTimePRs, bestWeight, type WeightRecord } from "@/lib/prs";
 import { fetchBodyMass, type BodyMassSample } from "@/lib/healthkit";
 import { buildCoachContext, streamCoach } from "@/lib/coach";
+import { compactVolume, CONSISTENCY_WEEKS, volumeComparison, weeksTrained } from "@/lib/consistency";
 import { buildProgressHero } from "@/lib/progressHero";
 import {
   cacheInsight,
@@ -24,13 +25,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 /* ── Progress — answers ONE question: "am I getting stronger?" — and reads
-     top-to-bottom like a spoken summary (research round 2, Aug 2026):
-     interpreted hero → Strength trends (beat-last-time + sparklines, never
-     silently missing) → Your records (real names only, no invented maxes)
-     → This week (neutral count, no quota grades, no gray-corpse body map)
-     → total-weight chart demoted behind a tap. Every number is plain
-     English with visible provenance; junk imported names surface only as
-     one fix-it row. ── */
+     top-to-bottom like a spoken summary (research round 2, Aug 2026;
+     design review Sep 2026): interpreted hero → Improvement + Consistency
+     tiles (never silently missing — each says what unlocks it) → Your
+     records (per-lift, real names only, no invented maxes; each opens its
+     own trend) → Total lifted (aggregate volume, demoted below the per-lift
+     story) → Coach insight. Every number is plain English with visible
+     provenance; junk imported names surface only as one fix-it row. ── */
 
 const DAY_MS = 86_400_000;
 const PR_RECENT_DAYS = 7;
@@ -73,6 +74,12 @@ const Progress = () => {
   // The Improvement card is ONE number: this session vs the previous time
   // the same lifts were trained, averaged into a single signed %.
   const improvement = useMemo(() => sessionImprovement(logs), [logs]);
+  // Consistency sits beside it: weeks with at least one session, out of
+  // the last eight — the number that stays honest through a plateau.
+  const consistency = useMemo(() => weeksTrained(logs, CONSISTENCY_WEEKS), [logs]);
+  // Aggregate volume is deliberately the last card: more weight moved is
+  // not the same as stronger lifts, so it reads below the per-lift records.
+  const volume = useMemo(() => volumeComparison(logs), [logs]);
 
   // Records, most recently improved first — real names only.
   const prs = useMemo(
@@ -227,28 +234,31 @@ const Progress = () => {
           </>
         ) : (
           /* Nothing logged yet: a bare "0" read as broken. Show what this
-             page becomes — ghost tiles for the three numbers it will hold —
-             and the one door in. */
+             page becomes — ghost rows for the three numbers it will hold,
+             each saying in plain words what unlocks it — and the one door
+             in. */
           <>
             <p className="eyebrow !text-primary">Your progress</p>
-            <p className="heading-lg mt-2 max-w-sm">Every set you log becomes a number here.</p>
+            <p className="heading-lg mt-2 max-w-sm">See yourself getting stronger.</p>
             <p className="body-md mt-3 max-w-sm text-fg-muted">
-              Improvement against your last session, all-time records, and a
-              weekly rhythm — all from what you actually lift.
+              Track your lifts, personal records, and weekly consistency.
             </p>
-            <div className="mt-6 grid max-w-sm grid-cols-3 gap-2.5">
+            <div className="mt-6 max-w-sm divide-y divide-border rounded-[14px] border border-dashed border-border">
               {[
-                { value: "+—%", label: "vs last" },
-                { value: "—", label: "Records" },
-                { value: "0 / wk", label: "Rhythm" },
-              ].map((tile, i) => (
+                { label: "vs last session", value: "Available after two comparable sessions." },
+                { label: "Records", value: "Starts with your first logged lift." },
+                {
+                  label: "Consistency",
+                  value: `0 of the last ${CONSISTENCY_WEEKS} weeks trained`,
+                },
+              ].map((row, i) => (
                 <div
-                  key={tile.label}
-                  className="rounded-[12px] border border-dashed border-border px-3 py-3 animate-reveal-up"
+                  key={row.label}
+                  className="px-4 py-3 animate-reveal-up"
                   style={{ animationDelay: `${120 + i * 70}ms` }}
                 >
-                  <p className="mono text-[17px] font-semibold text-fg-muted/60">{tile.value}</p>
-                  <p className="eyebrow mt-1 !text-[10px]">{tile.label}</p>
+                  <p className="eyebrow !text-[10px]">{row.label}</p>
+                  <p className="mt-1 text-[13px] leading-5 text-fg-muted">{row.value}</p>
                 </div>
               ))}
             </div>
@@ -260,22 +270,45 @@ const Progress = () => {
         )}
       </section>
 
-      {/* ── Card 1 · IMPROVEMENT — one number: this session vs the previous
-          time the same lifts were trained. Signed and honest. ── */}
-      {improvement && (
-        <section className={`${CARD_CLASS} mt-10 animate-reveal-up`} style={{ animationDelay: "120ms" }}>
-          <p className="eyebrow">Improvement</p>
-          <p
-            className={`mt-2 stat-scoreboard text-[34px] leading-10 tabular-nums ${
-              improvement.pct > 0 ? "text-primary" : "text-fg"
-            }`}
-          >
-            {improvement.pct > 0 ? "+" : ""}
-            {improvement.pct}%
-            <span className="ml-2 text-[13px] font-medium tracking-normal text-fg-muted">
-              vs last session
-            </span>
-          </p>
+      {/* ── Card 1 · IMPROVEMENT + CONSISTENCY — two tiles, one number
+          each. Improvement is this session vs the previous time the same
+          lifts were trained, signed and honest; until two comparable
+          sessions exist it says so instead of vanishing. Consistency is
+          weeks trained out of the last eight. ── */}
+      {logs.length > 0 && (
+        <section
+          className="mt-10 grid grid-cols-2 gap-3 animate-reveal-up"
+          style={{ animationDelay: "120ms" }}
+        >
+          <div className={CARD_CLASS}>
+            <p className="eyebrow">Improvement</p>
+            {improvement ? (
+              <>
+                <p
+                  className={`mt-2 stat-scoreboard text-[34px] leading-10 tabular-nums ${
+                    improvement.pct > 0 ? "text-primary" : "text-fg"
+                  }`}
+                >
+                  {improvement.pct > 0 ? "+" : ""}
+                  {improvement.pct}%
+                </p>
+                <p className="caption mt-0.5">vs last session</p>
+              </>
+            ) : (
+              <p className="mt-2 text-[13px] leading-5 text-fg-muted">
+                Available after two comparable sessions.
+              </p>
+            )}
+          </div>
+          <div className={CARD_CLASS}>
+            <p className="eyebrow">Consistency</p>
+            <p className="mt-2 stat-scoreboard text-[34px] leading-10 tabular-nums text-fg">
+              {consistency.trained}
+            </p>
+            <p className="caption mt-0.5">
+              of the last {consistency.weeks} weeks trained
+            </p>
+          </div>
         </section>
       )}
 
@@ -379,7 +412,37 @@ const Progress = () => {
         </section>
       )}
 
-      {/* ── Card 3 · COACH INSIGHT — the AI reads your training (and your
+      {/* ── Card 3 · TOTAL LIFTED — aggregate volume, kept below the
+          per-lift records on purpose: weight moved adds up whatever you
+          do with it, so it's a gauge, not the verdict. ── */}
+      {volume.recent > 0 && (
+        <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "210ms" }}>
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="eyebrow">Total lifted</p>
+            <p className="caption">Last 4 weeks</p>
+          </div>
+          <p className="mt-2 stat-scoreboard text-[34px] leading-10 tabular-nums text-fg">
+            {compactVolume(volume.recent)}
+            <span className="ml-1.5 text-[13px] font-medium tracking-normal text-fg-muted">
+              {units}
+            </span>
+          </p>
+          <p className="caption mt-0.5">
+            {volume.pct === null
+              ? "Nothing to compare against yet"
+              : volume.pct > 0
+                ? `Up ${volume.pct}% on the 4 weeks before`
+                : volume.pct < 0
+                  ? `Down ${Math.abs(volume.pct)}% on the 4 weeks before`
+                  : "Even with the 4 weeks before"}
+          </p>
+          <p className="mt-2 text-[12px] leading-4 text-fg-muted">
+            A rough gauge — the lifts above tell the real story.
+          </p>
+        </section>
+      )}
+
+      {/* ── Card 4 · COACH INSIGHT — the AI reads your training (and your
           recent coach chats) and says what's working and what to push next.
           Cached for the day; refreshes when a new session lands. ── */}
       {logs.length > 0 && (

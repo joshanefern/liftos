@@ -16,7 +16,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { toast } from "@/components/ui/use-toast";
 import { useUser } from "@/context/UserContext";
 import type { WorkoutExercise } from "@/data/liftosMock";
@@ -49,15 +54,18 @@ import { isMetricUnits } from "@/lib/review/inputFormatters";
 import type { WeightUnit } from "@/lib/warmup";
 import type { ActiveSession } from "@/pages/ActiveWorkout";
 import { cn } from "@/lib/utils";
-import { Capacitor } from "@capacitor/core";
 import {
   Check,
   ChevronDown,
+  HeartPulse,
+  MoreHorizontal,
   Plus,
   SkipForward,
   Timer,
+  Trash2,
   Trophy,
- HeartPulse, Weight } from "lucide-react";
+  Weight,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -99,6 +107,38 @@ type SessionPR =
   // shared weight-first sort. Keeps the recap consistent with the live
   // PR banner, which has always celebrated these.
   | { name: string; kind: "reps"; reps: number; weight: number; isFirst: boolean };
+
+/** Shape lib/voiceApply is adding to VoiceApplyResult.touched — read
+    defensively here so the logger builds either way. */
+type VoiceTouch = { exerciseId: string; setId: string };
+
+/** The set the "Now" block is pointed at: the first open WORKING set of the
+    first exercise that still has one. Warm-ups are never "now" — they sit
+    outside the set count, and a skipped ramp must not pin the block to an
+    exercise the lifter has already moved past. */
+type CurrentSet = {
+  exercise: LoggedExercise;
+  set: LoggedSet;
+  setIndex: number;
+  /** 1-based among working sets. */
+  ordinal: number;
+  workingTotal: number;
+};
+
+const findCurrentSet = (exercises: LoggedExercise[]): CurrentSet | null => {
+  for (const exercise of exercises) {
+    let workingTotal = 0;
+    let found: { set: LoggedSet; setIndex: number; ordinal: number } | null = null;
+    for (let i = 0; i < exercise.sets.length; i++) {
+      const set = exercise.sets[i];
+      if (set.isWarmup) continue;
+      workingTotal++;
+      if (found === null && !set.completed) found = { set, setIndex: i, ordinal: workingTotal };
+    }
+    if (found !== null) return { exercise, ...found, workingTotal };
+  }
+  return null;
+};
 
 type SessionSummary = {
   durationSeconds: number;
@@ -299,6 +339,40 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     setNotes(snapshot.notes);
   };
 
+  // DOM handles for "take me there" jumps: the receipt's Edit lands on the
+  // touched row, the toolbar's + lands on the add-exercise field.
+  const exerciseCardRefs = useRef<Record<string, HTMLElement | null>>({});
+  const repsInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const addExerciseInputRef = useRef<HTMLInputElement | null>(null);
+
+  /** Receipt → Edit: scroll the first touched exercise into view and put
+      the cursor in that set's reps cell. `touched` is being added to the
+      apply result by lib/voiceApply; until it lands, the first summary
+      line's exercise name is the fallback target. */
+  const handleVoiceEdit = (result: VoiceApplyResult): void => {
+    const touched = (result as VoiceApplyResult & { touched?: VoiceTouch[] }).touched?.[0];
+    let exerciseId = touched?.exerciseId ?? null;
+    if (!exerciseId) {
+      const firstLine = result.summary[0] ?? "";
+      const name = firstLine.split(" · ")[0].trim().toLowerCase();
+      exerciseId =
+        exercises.find((e) => e.name.trim().toLowerCase() === name)?.id ?? null;
+    }
+    if (!exerciseId) return;
+    const card = exerciseCardRefs.current[exerciseId] ?? null;
+    const input = touched ? (repsInputRefs.current[touched.setId] ?? null) : null;
+    // Focus first (iOS opens the keyboard only inside the tap), then scroll.
+    input?.focus({ preventScroll: true });
+    (card ?? input)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  const focusAddExercise = (): void => {
+    const el = addExerciseInputRef.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
   // ── Save what was actually done as a workout (create-vs-start split).
   // Quick starts have no templateId → "Save as workout"; template sessions
   // whose exercise LIST drifted (the planks case) can update the saved
@@ -382,9 +456,9 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     setNewExerciseName("");
   };
 
-  // Every edit lands in localStorage so navigating away (tab bar stays
-  // visible mid-workout) and coming back through the resume banner restores
-  // the session exactly. Skipped once the recap is up — the session is over.
+  // Every edit lands in localStorage so Minimize (or the app being killed)
+  // and coming back through the Home resume banner restores the session
+  // exactly. Skipped once the recap is up — the session is over.
   useEffect(() => {
     if (summary) return;
     try {
@@ -399,14 +473,20 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     } catch {
       /* storage full/unavailable — resume just falls back to the bare seed */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exercises, notes, session.startedAt, summary]);
   // Plate math sheet: weight sticks around while the drawer animates closed.
   const [plateWeight, setPlateWeight] = useState<number | null>(null);
   const [plateOpen, setPlateOpen] = useState(false);
-  // Discard confirmation — opened by the quiet header button, or by Finish
-  // when nothing was completed (an empty log has no value to save).
+  // Discard confirmation — reached through the header's ⋯ sheet, or by
+  // Finish when nothing was completed (an empty log has no value to save).
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  /** Sheet → dialog. The sheet must finish closing first: opening a Radix
+      dialog while vaul is still animating leaves the body pointer-locked. */
+  const discardFromMenu = (): void => {
+    setMenuOpen(false);
+    window.setTimeout(() => setDiscardOpen(true), 520);
+  };
   const navigate = useNavigate();
   const startedAt = useRef(new Date(session.startedAt));
 
@@ -609,11 +689,53 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     return { exercises: exercises.length, completedSets, totalSets, volume };
   }, [exercises]);
 
+  // ── "Now" — the one set to do next ──
+
+  const current = useMemo(() => findCurrentSet(exercises), [exercises]);
+
+  /** One line under the Now heading: what this lift looked like last time,
+      or the plan, or an honest "first time". */
+  const previousLine = (exercise: LoggedExercise, set: LoggedSet): string => {
+    const mode = effortModeFor(exercise);
+    const hist = historyFor.get(exercise.name.trim().toLowerCase());
+    if (hist) {
+      if (mode === "reps") {
+        if (hist.weight != null && hist.weight > 0 && hist.reps != null && hist.reps > 0) {
+          return `Last session: ${formatWeightForDisplay(hist.weight)} ${units} × ${hist.reps}`;
+        }
+        if (hist.reps != null && hist.reps > 0) return `Last session: ${hist.reps} reps`;
+      } else if (hist.duration != null && hist.duration > 0) {
+        const loaded =
+          mode === "time" && hist.weight != null && hist.weight > 0
+            ? ` at ${formatWeightForDisplay(hist.weight)} ${units}`
+            : "";
+        return `Last session: ${formatHold(hist.duration)}${loaded}`;
+      }
+    }
+    const targetEffort = mode === "reps" ? set.targetReps : set.targetTime;
+    if (targetEffort != null && targetEffort > 0) {
+      if (mode !== "reps") return `Plan: ${formatHold(targetEffort)}`;
+      return set.targetWeight != null && set.targetWeight > 0
+        ? `Plan: ${formatWeightForDisplay(set.targetWeight)} ${units} × ${targetEffort}`
+        : `Plan: ${targetEffort} reps`;
+    }
+    return "First time — whatever you do sets the bar";
+  };
+
   // ── Focus auto-advance (reps → weight → next set, across exercises) ──
 
   const allSetIds = exercises.flatMap((exercise) => exercise.sets.map((set) => set.id));
   const { registerRepsRef, registerWeightRef, focusWeight, focusNextReps } =
     useEnterAdvance(allSetIds);
+  /** List rows register with the advance hook AND the jump map. */
+  const registerListRepsRef = (id: string) => (el: HTMLInputElement | null) => {
+    repsInputRefs.current[id] = el;
+    registerRepsRef(id)(el);
+  };
+  // The Now block's own cells — kept off the advance hook so the list's
+  // registrations stay canonical; Enter travels within the block instead.
+  const nowRepsRef = useRef<HTMLInputElement | null>(null);
+  const nowWeightRef = useRef<HTMLInputElement | null>(null);
 
   // ── Mutations ──
 
@@ -679,6 +801,12 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         celebrateIfRecord(exercise, weight, reps);
       }
     }
+  };
+
+  /** The Now block's primary action — exactly the row's done control. */
+  const completeCurrentSet = (): void => {
+    if (!current) return;
+    toggleSetDone(current.exercise.id, current.set.id);
   };
 
   /** Exercise-level Done: complete (or reopen) every set, filling hints in order. */
@@ -1138,35 +1266,53 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         </div>
       )}
 
-      {/* THE NUMBER: elapsed time. One eyebrow above, one CTA beside, one line under. */}
-      <header className="relative mb-8 animate-reveal-up md:mb-10">
-        <p className="eyebrow flex min-w-0 items-center gap-2">
-          <span
-            aria-hidden
-            className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary"
-          />
-          <span className="min-w-0 truncate">Active session · {session.name}</span>
-        </p>
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-5">
-          <h1 className="stat-scoreboard whitespace-nowrap text-[84px] leading-none text-fg md:text-[96px]">
-            <RollingNumber value={formatClock(elapsed)} />
-          </h1>
-          <div className="flex shrink-0 items-center gap-5">
-            {/* Quiet exit for abandoned sessions — always confirms first */}
+      {/* Header: session name with the clock as a small detail beside it,
+          Finish as a quiet secondary control, everything else behind ⋯.
+          The big number this screen is about is the NEXT SET, below. */}
+      <header className="relative mb-5 animate-reveal-up">
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="eyebrow flex items-center gap-2">
+              <span
+                aria-hidden
+                className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary"
+              />
+              Active session
+            </p>
+            <div className="mt-1 flex min-w-0 items-baseline gap-2.5">
+              <h1 className="min-w-0 truncate text-[17px] font-semibold leading-snug tracking-tight text-fg">
+                {session.name}
+              </h1>
+              <span
+                role="timer"
+                aria-label={`Elapsed ${formatClock(elapsed)}`}
+                className="mono shrink-0 text-[13px] font-medium tabular-nums text-fg-muted"
+              >
+                <RollingNumber value={formatClock(elapsed)} />
+              </span>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              onClick={() => setDiscardOpen(true)}
-              className="relative rounded-md text-xs font-medium text-fg-muted transition after:absolute after:-inset-x-2 after:-inset-y-3.5 after:content-[''] hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/30"
+              onClick={() => void handleFinish()}
+              disabled={saving}
+              className="relative inline-flex min-h-10 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 text-[13px] font-semibold text-fg transition after:absolute after:-inset-1 after:content-[''] hover:border-fg-soft active:scale-[0.97] disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
-              Discard
-            </button>
-            <CTAButton onClick={handleFinish} disabled={saving} className="shrink-0">
-              <Check size={16} />
+              <Check size={14} />
               {saving ? "Saving…" : "Finish"}
-            </CTAButton>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              aria-label="More session options"
+              className="relative inline-flex h-10 w-10 items-center justify-center rounded-full text-fg-muted transition after:absolute after:-inset-1 after:content-[''] hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <MoreHorizontal size={20} />
+            </button>
           </div>
         </div>
-        <p className="body-sm mt-3">
+        <p className="body-sm mt-2">
           {stats.completedSets} of {stats.totalSets} sets done
           {stats.volume > 0 && (
             <>
@@ -1176,6 +1322,103 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           )}
         </p>
       </header>
+
+      {/* NOW — the one set to do next, with its cells and one primary
+          button. The full list below stays for people who work from it. */}
+      {exercises.length > 0 && (
+        <section
+          className="relative mb-6 overflow-hidden rounded-[18px] border border-primary/35 bg-card p-4 animate-reveal-up md:p-5"
+          style={{ animationDelay: "60ms" }}
+        >
+          {current ? (
+            <>
+              <p className="eyebrow !text-primary">Now</p>
+              <div className="mt-1 flex items-baseline justify-between gap-3">
+                <h2 className="min-w-0 truncate text-[20px] font-semibold capitalize leading-tight tracking-tight text-fg">
+                  {current.exercise.name}
+                </h2>
+                <span className="mono shrink-0 text-[12px] font-medium text-fg-muted">
+                  Set {current.ordinal} of {current.workingTotal}
+                </span>
+              </div>
+              <p className="caption mt-1">{previousLine(current.exercise, current.set)}</p>
+              <div className="mt-3">
+                <SetInputRow
+                  key={current.set.id}
+                  idx={current.ordinal - 1}
+                  showLabels
+                  scoreboard
+                  hideDone
+                  effort={
+                    current.exercise.kind === "cardio" ? "cardio" : trackingFor(current.exercise)
+                  }
+                  reps={current.set.reps}
+                  weight={current.set.weight}
+                  done={false}
+                  unitsLabel={
+                    current.exercise.kind === "cardio" ? (isMetric ? "km" : "mi") : units
+                  }
+                  repsHint={hintFor(current.exercise, current.setIndex, "reps")}
+                  weightHint={hintFor(current.exercise, current.setIndex, "weight")}
+                  registerRepsRef={(el) => {
+                    nowRepsRef.current = el;
+                  }}
+                  registerWeightRef={(el) => {
+                    nowWeightRef.current = el;
+                  }}
+                  onRepsChange={(v) =>
+                    updateSetField(current.exercise.id, current.set.id, "reps", v)
+                  }
+                  onWeightChange={(v) =>
+                    updateSetField(current.exercise.id, current.set.id, "weight", v)
+                  }
+                  onRepsEnter={() => nowWeightRef.current?.focus()}
+                  onDoneTap={completeCurrentSet}
+                  onWeightEnter={() => {
+                    completeCurrentSet();
+                    // The block re-points to the next set on commit; keep
+                    // the keyboard flow going from its reps cell.
+                    requestAnimationFrame(() => nowRepsRef.current?.focus());
+                  }}
+                  onWeightValueTap={
+                    current.exercise.kind !== "cardio" && current.exercise.kind !== "bodyweight"
+                      ? openPlateMath
+                      : undefined
+                  }
+                />
+              </div>
+              <button
+                type="button"
+                onClick={completeCurrentSet}
+                className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-primary text-[14.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <Check size={16} strokeWidth={2.5} />
+                Complete set
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="eyebrow !text-primary">Now</p>
+              <h2 className="mt-1 text-[20px] font-semibold leading-tight tracking-tight text-fg">
+                All sets done
+              </h2>
+              <p className="caption mt-1">
+                Nice work. Finish to save it — or add a set below if you have more in you.
+              </p>
+              <CTAButton
+                onClick={() => void handleFinish()}
+                disabled={saving}
+                variant="accent"
+                fullWidth
+                className="mt-3"
+              >
+                <Check size={16} strokeWidth={2.5} />
+                {saving ? "Saving…" : "Finish workout"}
+              </CTAButton>
+            </>
+          )}
+        </section>
+      )}
 
       <div className="relative grid gap-6 xl:grid-cols-[1fr_340px]">
         <section className="space-y-3">
@@ -1189,10 +1432,17 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
             const ordinals = exercise.sets.map((set) =>
               set.isWarmup ? 0 : workingOrdinal++,
             );
+            const isCurrent = current?.exercise.id === exercise.id;
             return (
               <article
                 key={exercise.id}
-                className="relative overflow-hidden rounded-lg border border-border bg-card p-4 md:p-5 animate-reveal-up"
+                ref={(el) => {
+                  exerciseCardRefs.current[exercise.id] = el;
+                }}
+                className={cn(
+                  "relative overflow-hidden rounded-lg border bg-card p-4 md:p-5 animate-reveal-up",
+                  isCurrent ? "border-primary/35" : "border-border",
+                )}
                 style={{ animationDelay: `${exerciseIndex * 60 + 100}ms` }}
               >
                 {/* Header = the exercise name and one Done button. Nothing
@@ -1253,7 +1503,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       repsHint={hintFor(exercise, setIndex, "reps")}
                       weightHint={hintFor(exercise, setIndex, "weight")}
                       isWarmup={set.isWarmup === true}
-                      registerRepsRef={registerRepsRef(set.id)}
+                      registerRepsRef={registerListRepsRef(set.id)}
                       registerWeightRef={registerWeightRef(set.id)}
                       onRepsChange={(v) => updateSetField(exercise.id, set.id, "reps", v)}
                       onWeightChange={(v) => updateSetField(exercise.id, set.id, "weight", v)}
@@ -1278,38 +1528,42 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     <Plus size={14} />
                     {exercise.kind === "cardio" ? "Set" : "Add set"}
                   </button>
-                  {/* Optional added weight — vest / pack — for cardio. */}
+                  {/* Cardio extras as compact icon chips: added weight
+                      (vest / pack) and live vitals (Pro). The chip grows a
+                      value only once a vest weight is set. */}
                   {exercise.kind === "cardio" && (
-                    <button
-                      type="button"
-                      onClick={() => setVestEditing((cur) => (cur === exercise.id ? null : exercise.id))}
-                      className={cn(
-                        "relative inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs transition after:absolute after:-inset-1 after:content-['']",
-                        exercise.addedWeight
-                          ? "border-foreground/40 font-semibold text-fg"
-                          : "border-border text-fg-muted hover:border-primary/40 hover:text-fg",
-                      )}
-                    >
-                      <Weight size={13} />
-                      {exercise.addedWeight
-                        ? `${formatWeightForDisplay(exercise.addedWeight)} ${weightUnit}`
-                        : "Vest"}
-                    </button>
-                  )}
-                  {/* Live vitals (Pro) — bottom-right of every cardio card. */}
-                  {exercise.kind === "cardio" && (
-                    <button
-                      type="button"
-                      onClick={() => setVitalsFor(exercise.id)}
-                      aria-label={`Live vitals for ${exercise.name}`}
-                      className="relative inline-flex min-h-9 items-center gap-2 rounded-full bg-primary/[0.12] pl-3 pr-2 text-[12.5px] font-semibold text-primary transition after:absolute after:-inset-1 after:content-[''] active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-ring/40"
-                    >
-                      <HeartPulse size={15} />
-                      Vitals
-                      <span className="rounded-full bg-primary px-1.5 text-[8.5px] font-bold uppercase leading-[15px] tracking-[0.1em] text-primary-foreground">
-                        Pro
-                      </span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setVestEditing((cur) => (cur === exercise.id ? null : exercise.id))}
+                        aria-label={
+                          exercise.addedWeight
+                            ? `Added weight: ${formatWeightForDisplay(exercise.addedWeight)} ${weightUnit}. Edit`
+                            : "Add vest or pack weight"
+                        }
+                        className={cn(
+                          "relative inline-flex h-9 min-w-9 items-center justify-center gap-1 whitespace-nowrap rounded-full border text-xs transition after:absolute after:-inset-1 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                          exercise.addedWeight
+                            ? "border-foreground/40 px-2.5 font-semibold text-fg"
+                            : "border-border text-fg-muted hover:border-primary/40 hover:text-fg",
+                        )}
+                      >
+                        <Weight size={14} />
+                        {exercise.addedWeight && (
+                          <span className="mono">
+                            {formatWeightForDisplay(exercise.addedWeight)} {weightUnit}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVitalsFor(exercise.id)}
+                        aria-label={`Live vitals for ${exercise.name} (Pro)`}
+                        className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary/[0.12] text-primary transition after:absolute after:-inset-1 after:content-[''] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      >
+                        <HeartPulse size={15} />
+                      </button>
+                    </div>
                   )}
                 </div>
                 {exercise.kind === "cardio" && vestEditing === exercise.id && (
@@ -1369,6 +1623,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
             )}
             <div className="flex items-center gap-2">
               <input
+                ref={addExerciseInputRef}
                 value={newExerciseName}
                 onChange={(e) => setNewExerciseName(e.target.value)}
                 onFocus={() => setNewExerciseFocused(true)}
@@ -1482,20 +1737,79 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         </div>
       )}
 
-      {/* Hold-to-talk voice logging — global pill above the tab bar. */}
-      <VoiceLogControl
-        exercises={exercises}
-        units={units}
-        onApply={handleVoiceApply}
-        onUndo={handleVoiceUndo}
-      />
+      {/* Session toolbar — takes the tab bar's slot for the whole session
+          (same 4rem + safe-bottom footprint, so the rest bar and receipt
+          math above it hold). Minimize → Home, where the resume banner
+          brings you back; + → the add-exercise field; the mic in between.
+          Solid canvas, no blur: battery and arm's-length legibility. */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background pb-[var(--safe-bottom)] md:inset-x-auto md:bottom-6 md:left-1/2 md:w-[440px] md:-translate-x-1/2 md:rounded-full md:border md:pb-0">
+        <div className="flex h-16 items-center gap-2 px-3">
+          <button
+            type="button"
+            onClick={() => {
+              tapHaptic();
+              navigate("/dashboard");
+            }}
+            aria-label="Minimize workout"
+            className="flex h-full w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-[14px] text-fg-muted transition hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <ChevronDown size={20} />
+            <span className="text-[10px] font-semibold tracking-wide">Minimize</span>
+          </button>
+          <div className="flex min-w-0 flex-1 justify-center">
+            <VoiceLogControl
+              exercises={exercises}
+              units={units}
+              onApply={handleVoiceApply}
+              onUndo={handleVoiceUndo}
+              onEdit={handleVoiceEdit}
+              raised={restTimer.running || restPulse}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              tapHaptic();
+              focusAddExercise();
+            }}
+            aria-label="Add exercise"
+            className="flex h-full w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-[14px] text-fg-muted transition hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <Plus size={20} />
+            <span className="text-[10px] font-semibold tracking-wide">Exercise</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ⋯ — the rare actions. Discard lives here, never beside Finish. */}
+      <Drawer open={menuOpen} onOpenChange={setMenuOpen}>
+        <DrawerContent className="px-5 pb-[calc(var(--safe-bottom)+1.5rem)]">
+          <DrawerTitle className="eyebrow mt-3 truncate pr-12 text-[10px] leading-4 tracking-[0.14em]">
+            {session.name}
+          </DrawerTitle>
+          <DrawerDescription className="sr-only">More options for this session.</DrawerDescription>
+          <div className="mt-3 space-y-2.5">
+            <button
+              type="button"
+              onClick={discardFromMenu}
+              className="flex min-h-[64px] w-full items-center justify-between gap-3 rounded-[16px] border border-border bg-card px-5 text-left transition-transform duration-150 active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <span>
+                <span className="block text-[15px] font-semibold text-destructive">Discard session</span>
+                <span className="mt-0.5 block text-[12px] text-fg-muted">
+                  Walk away without saving anything
+                </span>
+              </span>
+              <Trash2 size={18} className="shrink-0 text-destructive" />
+            </button>
+          </div>
+        </DrawerContent>
+      </Drawer>
 
       {/* Discard confirmation — Finish with zero completed sets routes here
           too. No "save anyway": an empty log has no value. */}
       <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
-        {/* Portals render outside ForceDarkScope — the `dark` class keeps
-            the sheet on the scoreboard palette instead of a white slab. */}
-        <AlertDialogContent className="dark w-[calc(100%-2.5rem)] max-w-sm rounded-[18px] border-border bg-card p-6 text-fg">
+        <AlertDialogContent className="w-[calc(100%-2.5rem)] max-w-sm rounded-[18px] border-border bg-card p-6 text-fg">
           <AlertDialogHeader className="space-y-2 text-left sm:text-left">
             <AlertDialogTitle className="text-[20px] font-semibold tracking-[-0.01em] text-fg">
               {stats.completedSets === 0 ? "Nothing logged yet" : "Discard this session?"}

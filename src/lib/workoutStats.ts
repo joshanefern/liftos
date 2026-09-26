@@ -1,7 +1,11 @@
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
+import { detectSessionPRs } from "@/lib/prs";
 
 // Mon=0, Sun=6
 const dayIndex = (date: Date) => (date.getDay() + 6) % 7;
+
+/** Today's Mon=0 … Sun=6 index — the ring on the week-card day dots. */
+export const todayDayIndex = (now: Date = new Date()): number => dayIndex(now);
 
 const localMidnight = (date: Date) => {
   const d = new Date(date);
@@ -34,6 +38,74 @@ export const getWeekStats = (logs: WorkoutLog[]): WeekStats => {
     totalVolume: weekLogs.reduce((s, l) => s + l.total_volume, 0),
     totalMinutes: weekLogs.reduce((s, l) => s + (l.duration_minutes ?? 0), 0),
   };
+};
+
+/** Planned training days per week from the onboarding answer — "3–4 days"
+    → 3, "7 days" → 7, "4" → 4. A range reads at its LOW end: that's the
+    commitment the user actually made, so "2 of 3" never nags someone who
+    said "3–4" for a fourth day. null when the answer is missing or has no
+    number, and the caller falls back to a plain session count. */
+export const plannedSessionsPerWeek = (frequency: string | null | undefined): number | null => {
+  const n = parseInt(frequency?.match(/\d+/)?.[0] ?? "", 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(n, 7);
+};
+
+/** Lifts that beat a PREVIOUS best in a session this calendar month, one
+    per lift per session. First-ever performances are excluded on purpose —
+    every lift is a "record" the first time you do it, and a week-one user
+    reading "12 PRs this month" learns the number means nothing. */
+export const countPRsThisMonth = (logs: WorkoutLog[], now: Date = new Date()): number => {
+  let count = 0;
+  for (const log of logs) {
+    const finished = new Date(log.finished_at);
+    if (Number.isNaN(finished.getTime())) continue;
+    if (finished.getMonth() !== now.getMonth() || finished.getFullYear() !== now.getFullYear()) {
+      continue;
+    }
+    // Only history BEFORE this session can be beaten by it — a later
+    // session's bigger number must not erase an earlier record.
+    const before = logs.filter(
+      (l) => l.id !== log.id && new Date(l.finished_at).getTime() < finished.getTime(),
+    );
+    const lifts = new Set(
+      detectSessionPRs(before, log)
+        .filter((e) => !e.isFirst)
+        .map((e) => e.exerciseName),
+    );
+    count += lifts.size;
+  }
+  return count;
+};
+
+export type WeekObservationInput = {
+  sessions: number;
+  planned: number | null;
+  weeklyStreak: number;
+  prsThisMonth: number;
+  prevWeekSessions: number;
+};
+
+/** The one line under the week card — freshest news first: this week's
+    plan done, then records this month, then the consistency streak, then a
+    neutral last-week comparison. null when history says nothing yet; the
+    card shows no line rather than a filler. */
+export const getWeekObservation = ({
+  sessions,
+  planned,
+  weeklyStreak,
+  prsThisMonth,
+  prevWeekSessions,
+}: WeekObservationInput): string | null => {
+  if (planned !== null && sessions > 0 && sessions >= planned) return "This week's plan is done";
+  if (prsThisMonth > 0) {
+    return `${prsThisMonth} personal record${prsThisMonth === 1 ? "" : "s"} this month`;
+  }
+  if (weeklyStreak >= 2) return `${weeklyStreak} weeks in a row`;
+  if (prevWeekSessions > 0) {
+    return `Last week: ${prevWeekSessions} workout${prevWeekSessions === 1 ? "" : "s"}`;
+  }
+  return null;
 };
 
 /** Session count for last week (the full Mon–Sun before this one) — the

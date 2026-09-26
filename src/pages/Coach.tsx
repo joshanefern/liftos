@@ -16,7 +16,6 @@ import {
   setCoachTone,
   streamCoach,
   type ChatMessage,
-  type CoachContext,
   type CoachTone,
 } from "@/lib/coach";
 import {
@@ -25,7 +24,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Muscle } from "@/lib/muscleMap";
 import {
   Activity,
   ArrowUp,
@@ -50,49 +48,22 @@ import {
   type CoachConversation,
 } from "@/lib/coachStore";
 
-const MUSCLE_LABELS: Partial<Record<Muscle, string>> = {
-  "back-deltoids": "rear delts",
-  "front-deltoids": "front delts",
-  "upper-back": "upper back",
-  "lower-back": "lower back",
-  gluteal: "glutes",
-  quadriceps: "quads",
-  hamstring: "hamstrings",
-  trapezius: "traps",
-  abs: "abs",
-};
-
-const muscleLabel = (muscle: Muscle): string =>
-  MUSCLE_LABELS[muscle] ?? muscle.replace(/-/g, " ");
-
 /* Compact numeral for the context chip — "12.4k", never "12,400". */
 const compactNum = (n: number): string =>
   n >= 10_000
     ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`
     : n.toLocaleString();
 
-/** Data-aware suggestion chips generated from the live context. */
-const buildSuggestions = (context: CoachContext): string[] => {
-  const out: string[] = [];
-  // The engine's pick leads — tapping it makes the coach argue for the same
-  // workout the Dashboard CTA names.
-  const pick = context.today_suggestion;
-  if (pick && pick.kind !== "rest") {
-    out.push(`Why ${pick.title} today?`);
-  }
-  const topLift = context.top_lifts[0];
-  if (topLift) out.push(`Why did my ${topLift.name.toLowerCase()} stall?`);
-  const behind = context.muscles_behind[0];
-  if (behind) {
-    out.push(`Plan a session to catch up on ${muscleLabel(behind.muscle)}`);
-  }
-  if (context.hr_sessions.some((s) => s.set_count > 0)) {
-    out.push("How was my rest between sets last session?");
-  }
-  out.push("What should I train tomorrow?");
-  if (out.length < 2) out.push("Build me a training week from my data");
-  return out.slice(0, 2);
-};
+/** Four ways into a blank chat. Each lands in the composer as a draft —
+    sent as-is or edited — so the first message never starts from nothing.
+    They're things a training partner actually gets asked, not questions
+    that need the user to already know what to say. */
+const STARTING_POINTS = [
+  "Adjust today's workout",
+  "I only have 30 minutes",
+  "Find a replacement for an exercise",
+  "Review my last week",
+] as const;
 
 /** Honest failure state — user-facing, with a retry. The deploy hint is
     developer noise and only renders in dev builds. */
@@ -231,11 +202,26 @@ const Coach = () => {
     [logs, profile, hrDetailSessions, suggestion],
   );
 
-  const suggestions = useMemo(() => buildSuggestions(context), [context]);
-
   useEffect(() => {
     if (started) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, started, offline]);
+
+  // A starting-point chip drafts, never sends: the sentence lands in the
+  // composer with the caret at its end. focus() runs inside the tap so iOS
+  // raises the keyboard; the height fix waits a frame for React to commit
+  // the new value.
+  const draftStartingPoint = (text: string): void => {
+    if (streaming) return;
+    setInput(text);
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    requestAnimationFrame(() => {
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  };
 
   const sendPrompt = async (prompt: string) => {
     if (streaming) return;
@@ -511,15 +497,15 @@ const Coach = () => {
         <div className="mx-auto w-full max-w-4xl">
           {!started && (
             <div className="mb-3 flex flex-wrap justify-center gap-2">
-              {suggestions.map((prompt) => (
+              {STARTING_POINTS.map((text) => (
                 <button
-                  key={prompt}
+                  key={text}
                   type="button"
                   disabled={streaming}
-                  onClick={() => sendPrompt(prompt)}
-                  className="min-h-11 rounded-full border border-border px-4 py-2 text-xs text-fg-muted transition hover:border-primary/50 hover:text-gold disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => draftStartingPoint(text)}
+                  className="min-h-11 rounded-full border border-border bg-card px-4 py-2 text-[13px] font-medium text-fg-soft transition hover:border-primary/50 hover:text-fg active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {prompt}
+                  {text}
                 </button>
               ))}
             </div>

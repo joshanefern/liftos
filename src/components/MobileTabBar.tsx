@@ -38,9 +38,6 @@ const MobileTabBar = () => {
   // Nested-route truth: the active session and review screens belong to the
   // Workouts tab — start a workout and you're still "in Workouts".
   const workoutsActive = pathname.startsWith("/workouts");
-  // Mid-workout the whole screen is the black scoreboard (Split Shift) —
-  // the bar flips with it so the frame reads as one surface.
-  const scoreboard = pathname === "/workouts/active";
 
   const handlePlus = (): void => {
     tapHaptic();
@@ -68,6 +65,12 @@ const MobileTabBar = () => {
     setChooserOpen(false);
     navigate("/workouts?new=1");
   };
+
+  // Mid-workout the logger mounts its own session toolbar (voice, add
+  // exercise, minimize) in this slot — two bars stacked here was the "too
+  // many controls at the bottom" problem. Minimize brings people back to
+  // Home, where the resume banner is the way back in.
+  if (pathname === "/workouts/active") return null;
 
   const left = tabs.slice(0, 2);
   const right = tabs.slice(2);
@@ -97,11 +100,7 @@ const MobileTabBar = () => {
 
   return (
     <>
-      <nav
-        className={`fixed inset-x-0 bottom-0 z-40 md:hidden border-t border-border bg-background/95 backdrop-blur-[10px] pb-safe text-fg ${
-          scoreboard ? "dark" : ""
-        }`}
-      >
+      <nav className="fixed inset-x-0 bottom-0 z-40 md:hidden border-t border-border bg-background/95 backdrop-blur-[10px] pb-safe text-fg">
         <div className="flex items-stretch justify-around h-16">
           {left.map(renderTab)}
           <button

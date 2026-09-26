@@ -3,12 +3,19 @@
    VoiceIntent; this module applies that intent to the logger's live
    exercise state. Pure and heavily tested — every hallucination guard
    lives HERE, not in the model: unknown exercise names never touch
-   existing rows, ordinals clamp, numbers are bounded sane.
+   existing rows, ordinals clamp, numbers are bounded sane, and a
+   correction never adds a set.
 
    The logger's own types stay in the component; we type structurally
    against the exact shape it holds so state passes straight through. */
 
-import { formatHoldInput, inferKind, inferTracking, trackingFor } from "@/lib/exerciseTracking";
+import {
+  formatHoldInput,
+  inferKind,
+  inferTracking,
+  parseHoldSeconds,
+  trackingFor,
+} from "@/lib/exerciseTracking";
 
 export type VoiceLoggedSet = {
   id: string;
@@ -47,6 +54,14 @@ export type VoiceAction = {
   /** "I did my goblet squats" — performed, no numbers spoken. The apply
       engine completes that exercise's planned sets from its targets. */
   done?: boolean;
+  /** "actually that was 12 reps" — fix the set that was JUST logged.
+      The engine rewrites that row with the spoken fields; it never adds
+      a set. An empty/unmatched exercise name means the last set logged
+      anywhere in the session. */
+  correct?: boolean;
+  /** "scratch that" — with `correct`, un-complete the last logged set
+      and clear what was spoken into it (targets stay). */
+  undo?: boolean;
   sets: VoiceSet[];
 };
 
@@ -58,10 +73,23 @@ export type VoiceIntent = {
   confidence?: number | null;
 };
 
+/** A set row the apply wrote or completed — the receipt's Edit button
+    focuses the first one. */
+export type VoiceTouchedSet = { exerciseId: string; setId: string };
+
+export type VoiceApplyOptions = {
+  /** Weight unit for receipt lines ("lb" | "kg"); defaults to "lb". */
+  units?: string;
+};
+
 export type VoiceApplyResult = {
   exercises: VoiceLoggedExercise[];
-  /** Human recap of what changed — the confirmation card + Undo label. */
+  /** Human recap of what changed — the confirmation card + Undo label.
+      Each line is "<Exercise> · <detail>"; the UI splits on the first
+      " · ". A note line has no separator. */
   summary: string[];
+  /** Every set row written or completed, in the order it happened. */
+  touched: VoiceTouchedSet[];
   setsLogged: number;
   addedExercises: string[];
   note: string | null;
@@ -73,6 +101,11 @@ const MAX_REPS = 200;
 const MAX_WEIGHT = 2000;
 const MAX_SECONDS = 3600;
 const MAX_NEW_SETS = 20;
+
+/** Name/detail separator on receipt lines. The UI splits on the FIRST
+    one, so details may contain it only after the name. */
+const SEP = " · ";
+const line = (name: string, detail: string): string => `${name}${SEP}${detail}`;
 
 const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, " ");
 
@@ -115,7 +148,8 @@ const emptySet = (like?: VoiceLoggedSet): VoiceLoggedSet => ({
 });
 
 /** Write one spoken set into a concrete row. Voice-logged sets are DONE
-    sets — the lifter is reporting what happened. */
+    sets — the lifter is reporting what happened. Unspoken fields keep
+    whatever the row already held, which is what makes corrections work. */
 const writeSet = (
   row: VoiceLoggedSet,
   spoken: VoiceSet,
@@ -145,28 +179,112 @@ const hasContent = (s: VoiceSet): boolean =>
   sane(s.weight, MAX_WEIGHT) !== null ||
   sane(s.seconds, MAX_SECONDS) !== null;
 
-const describeSet = (s: VoiceSet, timed: boolean): string => {
-  const secs = sane(s.seconds, MAX_SECONDS);
-  const reps = sane(s.reps, MAX_REPS);
-  const weight = sane(s.weight, MAX_WEIGHT);
-  if (timed && secs !== null) {
-    const m = Math.floor(secs / 60);
-    const rest = Math.round(secs % 60);
-    const hold = m > 0 ? `${m}:${String(rest).padStart(2, "0")}` : `${rest}s`;
-    return weight !== null ? `${hold} @ ${weight}` : hold;
+/** A spoken set that can land in the exercise's effort column: a hold or
+    weight on a timed exercise, reps or weight on a reps one. Anything else
+    would mark a row completed while writing nothing. */
+const writable = (s: VoiceSet, timed: boolean): boolean =>
+  timed
+    ? sane(s.seconds, MAX_SECONDS) !== null || sane(s.weight, MAX_WEIGHT) !== null
+    : sane(s.reps, MAX_REPS) !== null || sane(s.weight, MAX_WEIGHT) !== null;
+
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+type SetValues = { reps: number | null; weight: number | null; seconds: number | null };
+
+/** Receipt detail for one set, units and meaning spelled out:
+    "135 lb × 8 reps", "10 reps", "0:45 hold", "0:45 hold at 25 lb". */
+const describeValues = (v: SetValues, timed: boolean, units: string): string => {
+  const weight = v.weight !== null ? `${v.weight} ${units}` : null;
+  if (timed) {
+    if (v.seconds === null) return weight ?? "";
+    const hold = `${formatHoldInput(Math.round(v.seconds))} hold`;
+    return weight ? `${hold} at ${weight}` : hold;
   }
-  if (reps !== null && weight !== null) return `${weight} × ${reps}`;
-  if (reps !== null) return `${reps} reps`;
-  if (weight !== null) return `@ ${weight}`;
-  return "";
+  const reps = v.reps !== null ? plural(Math.round(v.reps), "rep") : null;
+  if (reps && weight) return `${weight} × ${reps}`;
+  return reps ?? weight ?? "";
+};
+
+const describeSet = (s: VoiceSet, timed: boolean, units: string): string =>
+  describeValues(
+    {
+      reps: sane(s.reps, MAX_REPS),
+      weight: sane(s.weight, MAX_WEIGHT),
+      seconds: sane(s.seconds, MAX_SECONDS),
+    },
+    timed,
+    units,
+  );
+
+/** What a stored row now says — the "corrected to …" recap reads the
+    merged row, not just the fields that were spoken. */
+const describeRow = (row: VoiceLoggedSet, timed: boolean, units: string): string =>
+  describeValues(
+    {
+      reps: timed ? null : sane(Number(row.reps), MAX_REPS),
+      weight: sane(Number(row.weight), MAX_WEIGHT),
+      seconds: timed ? sane(parseHoldSeconds(row.reps), MAX_SECONDS) : null,
+    },
+    timed,
+    units,
+  );
+
+/** Several sets on one line. Identical sets collapse ("3 sets of 135 lb ×
+    8 reps") so the detail column stays readable on a phone. */
+const describeSets = (details: string[]): string => {
+  const d = details.filter(Boolean);
+  if (d.length === 0) return "";
+  if (d.length > 1 && d.every((x) => x === d[0])) return `${d.length} sets of ${d[0]}`;
+  return d.join(", ");
+};
+
+/** Indexes of working (non-warmup) rows, in order — what "first set" counts. */
+const workingIndexes = (rows: VoiceLoggedSet[]): number[] =>
+  rows.map((r, i) => (r.isWarmup ? -1 : i)).filter((i) => i >= 0);
+
+/** The most recently completed working row: the logger keeps no
+    timestamps, so "most recent" is the last completed row in DOM order. */
+const lastCompletedIndex = (rows: VoiceLoggedSet[]): number => {
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    if (rows[i].completed && !rows[i].isWarmup) return i;
+  }
+  return -1;
+};
+
+/** Which row a correction means. A named exercise → its last completed
+    set (or the spoken ordinal's row when that row exists). No name, or a
+    name that matches nothing → the last completed set anywhere in the
+    session. Null when nothing has been logged to fix. */
+const correctionTarget = (
+  exercises: VoiceLoggedExercise[],
+  action: VoiceAction,
+): { exercise: VoiceLoggedExercise; index: number } | null => {
+  const named = findExercise(exercises, action.exercise);
+  if (named) {
+    const ordinal = sane(action.sets?.find((s) => sane(s.ordinal, 200) !== null)?.ordinal, 200);
+    if (ordinal !== null) {
+      const idx = workingIndexes(named.sets)[ordinal - 1];
+      return idx === undefined ? null : { exercise: named, index: idx };
+    }
+    const idx = lastCompletedIndex(named.sets);
+    return idx < 0 ? null : { exercise: named, index: idx };
+  }
+  for (let i = exercises.length - 1; i >= 0; i -= 1) {
+    const idx = lastCompletedIndex(exercises[i].sets);
+    if (idx >= 0) return { exercise: exercises[i], index: idx };
+  }
+  return null;
 };
 
 export const applyVoiceIntent = (
   exercises: VoiceLoggedExercise[],
   intent: VoiceIntent,
+  options?: VoiceApplyOptions,
 ): VoiceApplyResult => {
+  const units = options?.units?.trim() || "lb";
   const note = intent.note?.trim() ? intent.note.trim() : null;
   const summary: string[] = [];
+  const touched: VoiceTouchedSet[] = [];
   const addedExercises: string[] = [];
   let setsLogged = 0;
   let next = exercises;
@@ -175,11 +293,54 @@ export const applyVoiceIntent = (
     intent.kind === "note" || intent.kind === "unclear"
       ? []
       : (intent.actions ?? []).filter(
-          (a) => a && (a.done === true || a.sets?.some(hasContent)),
+          (a) =>
+            a &&
+            (a.done === true ||
+              a.correct === true ||
+              a.undo === true ||
+              a.sets?.some(hasContent)),
         );
 
   for (const action of actions) {
     const spokenSets = (action.sets ?? []).filter(hasContent).slice(0, MAX_NEW_SETS);
+
+    // "Actually that was 12 reps" / "scratch that" — fix the set that was
+    // just logged. Rewrites one existing row; never adds a set or an
+    // exercise, whatever the interpreter put in `isNew`.
+    if (action.correct === true || action.undo === true) {
+      const target = correctionTarget(next, action);
+      const spokenName = action.exercise.trim();
+      if (!target) {
+        summary.push(line(spokenName || "Last set", "nothing logged yet to fix"));
+        continue;
+      }
+      const { exercise, index } = target;
+      const row = exercise.sets[index];
+      const timed = trackingFor(exercise) === "time";
+      let updated: VoiceLoggedSet;
+      let detail: string;
+      if (action.undo === true) {
+        const ordinal = sane(action.sets?.[0]?.ordinal, 200);
+        updated = { ...row, reps: "", weight: "", completed: false };
+        detail = ordinal !== null ? `set ${ordinal} scratched` : "last set scratched";
+      } else {
+        const spoken = spokenSets.find((s) => writable(s, timed));
+        if (!spoken) {
+          summary.push(line(exercise.name, "didn’t catch what to change"));
+          continue;
+        }
+        updated = writeSet(row, spoken, timed);
+        detail = `corrected to ${describeRow(updated, timed, units)}`;
+      }
+      next = next.map((e) =>
+        e.id === exercise.id
+          ? { ...e, sets: e.sets.map((r, i) => (i === index ? updated : r)) }
+          : e,
+      );
+      touched.push({ exerciseId: exercise.id, setId: row.id });
+      summary.push(line(exercise.name, detail));
+      continue;
+    }
 
     // "Did my goblet squats" — no numbers spoken. Complete the exercise's
     // planned sets: typed values stay, blank rows fill from their targets,
@@ -194,7 +355,7 @@ export const applyVoiceIntent = (
         const timed = trackingFor(existing) === "time";
         const openRows = existing.sets.filter((r) => !r.isWarmup && !r.completed);
         if (openRows.length === 0) {
-          summary.push(`${existing.name} — already done`);
+          summary.push(line(existing.name, "already done"));
           continue;
         }
         // "First set of bench done" — done with ordinal-only set refs
@@ -202,9 +363,7 @@ export const applyVoiceIntent = (
         const ordinals = (action.sets ?? [])
           .map((s) => sane(s.ordinal, 200))
           .filter((o): o is number => o !== null);
-        const workingIdxs = existing.sets
-          .map((r, i) => (r.isWarmup ? -1 : i))
-          .filter((i) => i >= 0);
+        const workingIdxs = workingIndexes(existing.sets);
         const onlyIdxs =
           ordinals.length > 0
             ? new Set(
@@ -234,6 +393,7 @@ export const applyVoiceIntent = (
               : null;
           if (!typedEffort && fillEffort === null) return row;
           doneCount += 1;
+          touched.push({ exerciseId: existing.id, setId: row.id });
           return {
             ...row,
             reps: typedEffort ? row.reps : fillEffort ?? row.reps,
@@ -244,14 +404,12 @@ export const applyVoiceIntent = (
         if (doneCount === 0) {
           // Open rows exist but nothing honest to fill — say so instead of
           // letting an empty result read as "didn't catch that".
-          summary.push(`${existing.name} — no planned numbers to fill; type them in`);
+          summary.push(line(existing.name, "no planned numbers to fill; type them in"));
           continue;
         }
         next = next.map((e) => (e.id === existing.id ? { ...e, sets: rows } : e));
         setsLogged += doneCount;
-        summary.push(
-          `${existing.name} — ${doneCount} set${doneCount === 1 ? "" : "s"} done`,
-        );
+        summary.push(line(existing.name, `${plural(doneCount, "set")} done`));
         continue;
       }
       // Named something not in the session: add it so the words are never
@@ -272,7 +430,7 @@ export const applyVoiceIntent = (
         },
       ];
       addedExercises.push(name);
-      summary.push(`${name} (added) — fill in your sets`);
+      summary.push(line(name, "(added) fill in your sets"));
       continue;
     }
     const existing = action.isNew ? null : findExercise(next, action.exercise);
@@ -293,23 +451,17 @@ export const applyVoiceIntent = (
       // Drop spoken sets whose content can't land in the final mode: a
       // seconds-only set on a reps exercise, or a reps-only set on a timed
       // one, would mark rows completed while writing nothing.
-      const writableSets = spokenSets.filter((s) =>
-        timed
-          ? sane(s.seconds, MAX_SECONDS) !== null || sane(s.weight, MAX_WEIGHT) !== null
-          : sane(s.reps, MAX_REPS) !== null || sane(s.weight, MAX_WEIGHT) !== null,
-      );
+      const writableSets = spokenSets.filter((s) => writable(s, timed));
       if (writableSets.length === 0) continue;
       let rows = [...existing.sets];
       // Sequential fill pointer: first non-warmup, not-completed row.
-      const lines: string[] = [];
+      const details: string[] = [];
       for (const spoken of writableSets) {
         const ordinal = sane(spoken.ordinal, 200);
         let index: number;
         if (ordinal !== null) {
           // "first set" counts working rows only; clamp to appending.
-          const workingIdxs = rows
-            .map((r, i) => (r.isWarmup ? -1 : i))
-            .filter((i) => i >= 0);
+          const workingIdxs = workingIndexes(rows);
           index =
             ordinal <= workingIdxs.length ? workingIdxs[ordinal - 1] : rows.length;
         } else {
@@ -319,7 +471,8 @@ export const applyVoiceIntent = (
         if (index >= rows.length) rows = [...rows, emptySet(rows.at(-1))];
         rows = rows.map((r, i) => (i === index ? writeSet(r, spoken, timed) : r));
         setsLogged += 1;
-        lines.push(describeSet(spoken, timed));
+        touched.push({ exerciseId: existing.id, setId: rows[index].id });
+        details.push(describeSet(spoken, timed, units));
       }
       next = next.map((e) =>
         e.id === existing.id
@@ -330,7 +483,7 @@ export const applyVoiceIntent = (
             }
           : e,
       );
-      summary.push(`${existing.name} — ${lines.filter(Boolean).join(", ")}`);
+      summary.push(line(existing.name, describeSets(details)));
       continue;
     }
 
@@ -353,8 +506,12 @@ export const applyVoiceIntent = (
     setsLogged += spokenSets.length;
     addedExercises.push(name);
     next = [...next, newExercise];
+    for (const s of newExercise.sets) touched.push({ exerciseId: newExercise.id, setId: s.id });
     summary.push(
-      `${name} (added) — ${spokenSets.map((s) => describeSet(s, timed)).filter(Boolean).join(", ")}`,
+      line(
+        name,
+        `(added) ${describeSets(spokenSets.map((s) => describeSet(s, timed, units)))}`,
+      ),
     );
   }
 
@@ -363,6 +520,7 @@ export const applyVoiceIntent = (
   return {
     exercises: next,
     summary,
+    touched,
     setsLogged,
     addedExercises,
     note,

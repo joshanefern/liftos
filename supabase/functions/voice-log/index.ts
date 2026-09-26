@@ -85,6 +85,8 @@ Schema:
       "isNew": boolean,        // true ONLY when it is not in SESSION_EXERCISES
       "tracking": "reps" | "time" | null,   // "time" for holds (planks, wall sits, carries measured in seconds)
       "done": boolean,         // true when the exercise was reported finished with NO numbers spoken
+      "correct": boolean,      // true when the lifter is FIXING the set that was just logged (see Rules) — never a new set
+      "undo": boolean,         // with correct: true when they want that last set scratched / undone
       "sets": [ { "ordinal": int|null, "reps": int|null, "weight": number|null, "seconds": number|null } ]
     }
   ],
@@ -101,6 +103,7 @@ Rules:
 - "only 2" / "just 5" → the number is reps. Bodyweight speech usually has no weight — leave weight null, never invent one.
 - Weights: "one thirty five" → 135. "two plates" → 225 if units are lb (45-lb plates each side of a 45-lb bar), 100 if kg (20-kg plates, 20-kg bar). Units are ${"the user's units"} — do not convert, echo the number they mean.
 - Corrections win: "5 reps... no wait, 8" → reps 8 only.
+- A correction of what was JUST logged ("actually that was 12 reps", "no wait 185", "make that 8", "scratch that / undo the last one") → correct: true (plus undo: true for scratch/undo), with only the corrected fields; NEVER a new set. The original numbers are not in this utterance — they were logged a moment ago. Exercise: the EXACT session name if one was said, else "" (the logger fixes the most recent set). isNew false, done false. "scratch that" → { exercise: "", correct: true, undo: true, sets: [] }. "actually that was 12 reps" → { exercise: "", correct: true, sets: [ { "reps": 12 } ] }. "make the curls 25" → { exercise: "<session name>", correct: true, sets: [ { "weight": 25 } ] }. "actually my second set was 10" → correct: true, sets: [ { "ordinal": 2, "reps": 10 } ].
 - Feelings, aches, comparisons to previous sessions, gear notes → "note" (verbatim-ish, first person cleaned up). Numbers inside a feeling ("not able to do as much as last session") are NOT set data.
 - An utterance can be both ("shoulder hurt on the last one, still got 8 at 185" → kind "both").
 - If you genuinely cannot tell what they meant, kind "unclear", actions [], note null.

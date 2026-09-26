@@ -17,6 +17,83 @@ export type StarterProgram = WorkoutTemplate & {
   equipment: StarterEquipment;
 };
 
+// ── Library filters ──────────────────────────────────────────────────────
+// The Workouts page filters starters by what the lifter HAS, not by an exact
+// tag: dumbbells run every bodyweight program too, a full gym runs
+// everything. Ranked so "runs on" is a single comparison.
+
+export const STARTER_EQUIPMENT_OPTIONS: { id: StarterEquipment; label: string }[] = [
+  { id: "gym", label: "Full gym" },
+  { id: "dumbbells", label: "Dumbbells" },
+  { id: "none", label: "Bodyweight" },
+];
+
+const EQUIPMENT_RANK: Record<StarterEquipment, number> = { none: 0, dumbbells: 1, gym: 2 };
+
+/** True when the program is runnable with the equipment the lifter has. */
+export const starterRunsOn = (program: StarterProgram, have: StarterEquipment): boolean =>
+  EQUIPMENT_RANK[program.equipment] <= EQUIPMENT_RANK[have];
+
+/** Onboarding's "What equipment do you have?" as a starter tag — the same
+    reading the suggestion engine uses: "None" and "Dumbbells only" gate,
+    "Full gym" / "Home gym" / unset gate nothing (null). */
+export const equipmentFromProfile = (declared: string | null | undefined): StarterEquipment | null => {
+  const normalized = declared?.trim().toLowerCase();
+  if (normalized === "none") return "none";
+  if (normalized === "dumbbells only") return "dumbbells";
+  return null;
+};
+
+/** Duration chips: ≤30 is a cap, 60+ is a floor, everything between rounds
+    to the nearer of 45 and 60 (40 and 50 read as "about 45", 55 as 60). */
+export type StarterDurationBucket = "30" | "45" | "60";
+
+export const STARTER_DURATION_BUCKETS: { id: StarterDurationBucket; label: string }[] = [
+  { id: "30", label: "≤30 min" },
+  { id: "45", label: "45 min" },
+  { id: "60", label: "60+ min" },
+];
+
+export const starterDurationBucket = (minutes: number): StarterDurationBucket => {
+  if (minutes <= 30) return "30";
+  if (minutes >= 60) return "60";
+  return Math.abs(minutes - 45) <= Math.abs(minutes - 60) ? "45" : "60";
+};
+
+/** "Push Pull Legs" (onboarding) and "Push / Pull / Legs" (starter) are the
+    same split — compare letters only. Mirrors the suggestion engine. */
+const normalizeSplit = (split: string): string => split.toLowerCase().replace(/[^a-z]/g, "");
+
+/** The one starter the library flags "Recommended". The suggestion engine's
+    pick wins when it is a starter; otherwise (the engine scored the
+    lifter's own templates) the first program in their declared split that
+    runs on their equipment; otherwise the first program that runs on their
+    equipment. Never undefined while any program ships. */
+export const recommendedStarter = (
+  programs: StarterProgram[],
+  pickId: string | null,
+  profile: { split?: string | null; equipment?: string | null } | null | undefined,
+): StarterProgram | undefined => {
+  const pick = pickId ? programs.find((p) => p.id === pickId) : undefined;
+  if (pick) return pick;
+  const have = equipmentFromProfile(profile?.equipment);
+  const runnable = have ? programs.filter((p) => starterRunsOn(p, have)) : programs;
+  const pool = runnable.length > 0 ? runnable : programs;
+  const split = profile?.split ? normalizeSplit(profile.split) : "";
+  const inSplit = split ? pool.find((p) => normalizeSplit(p.split) === split) : undefined;
+  return inSplit ?? pool[0];
+};
+
+/** The preview's per-exercise summary: "3 × 10", or "20 min" for a timed
+    block, or "3 sets" when reps are left to the lifter. */
+export const starterSetsLabel = (exercise: WorkoutExercise): string => {
+  const first = exercise.sets[0];
+  const count = exercise.sets.length;
+  if (first?.duration_seconds) return `${Math.round(first.duration_seconds / 60)} min`;
+  const reps = first?.reps ?? 0;
+  return reps > 0 ? `${count} × ${reps}` : `${count} set${count === 1 ? "" : "s"}`;
+};
+
 // Weight stays undefined: the user fills in their own numbers on first log,
 // and this works for both lb and kg accounts.
 const repSets = (exerciseId: string, count: number, reps: number): WorkoutSet[] =>

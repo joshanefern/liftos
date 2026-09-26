@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import type { PluginListenerHandle } from "@capacitor/core";
-import { Check, Mic, MicOff, Undo2 } from "lucide-react";
+import { Check, CircleHelp, Loader2, Mic, MicOff, Pencil, Undo2 } from "lucide-react";
 import {
   cancelListening,
   ensureSpeechPermissions,
@@ -23,17 +23,25 @@ import {
 import { cn } from "@/lib/utils";
 
 /* ── Tap-to-speak voice logging.
-   Tap the pill → live transcript streams into the overlay. A pause after
-   speech (or a second tap) → interpret → apply → confirmation card with
-   Undo (8s). Hearing nothing, or the recognizer dying mid-listen, always
-   ends in a visible card — never a silent vanish. All row mutations run
-   through lib/voiceApply — the model never touches state directly. ── */
+   Tap the pill → live transcript streams into the receipt card. A pause
+   after speech (or a second tap) → interpret → apply → "Logged" card with
+   Edit + Undo (8s). Hearing nothing, or the recognizer dying mid-listen,
+   always ends in a visible card — never a silent vanish. All row mutations
+   run through lib/voiceApply — the model never touches state directly.
+
+   The pill renders INLINE (the logger seats it in its session toolbar);
+   only the receipt card is portalled, fixed above that toolbar. ── */
 
 type Props = {
   exercises: VoiceLoggedExercise[];
   units: string;
   onApply: (result: VoiceApplyResult) => void;
   onUndo: () => void;
+  /** "Edit" on the receipt: the card closes and the logger jumps to the
+      first row the apply touched. */
+  onEdit?: (result: VoiceApplyResult) => void;
+  /** The rest bar is up in the slot above the toolbar — lift the card over it. */
+  raised?: boolean;
 };
 
 // Jarvis-style endpointing: a SHORT pause fires the log right away, but
@@ -45,6 +53,9 @@ const SILENCE_FIRE_MS = 1700; // pause after speech → log it (mic stays open)
 const LATE_GRACE_MS = 6000; // more speech inside this window supersedes
 const EMPTY_CANCEL_MS = 8000; // heard nothing at all → quiet cancel
 const HARD_CAP_MS = 120_000; // native chains segments; this is the safety net
+// A "Logged" card shows its rows for a beat, then folds to a one-line pill
+// for the rest of the undo window — the workout stays visible underneath.
+const COLLAPSE_MS = 2500;
 
 type Phase =
   | { at: "idle" }
@@ -74,7 +85,58 @@ const blockedReason = (message: string): string => {
   return `Voice couldn't start (${message || "unknown error"}). Try again in a moment.`;
 };
 
-export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) => {
+/** Summary lines arrive as "Bicep Curl · 25 lb × 10 reps" — split on the
+    FIRST separator only (a detail may carry its own " · "). Older " — "
+    lines still split, so a stale receipt never renders as one blob. */
+const splitSummaryLine = (line: string): { name: string; detail: string | null } => {
+  for (const sep of [" · ", " — "]) {
+    const at = line.indexOf(sep);
+    if (at >= 0) return { name: line.slice(0, at), detail: line.slice(at + sep.length) };
+  }
+  return { name: line, detail: null };
+};
+
+/** One mark per state — a glance tells listening from logging from logged
+    from "say that again". */
+const markFor = (
+  at: Phase["at"],
+): { className: string; icon: ReactElement } => {
+  switch (at) {
+    case "applied":
+      return {
+        className: "bg-primary text-primary-foreground",
+        icon: <Check size={15} strokeWidth={2.6} />,
+      };
+    case "listening":
+      return {
+        className: "bg-primary/[0.12] text-primary ring-[3px] ring-primary/20",
+        icon: <Mic size={14} className="animate-pulse" />,
+      };
+    case "thinking":
+      return {
+        className: "bg-foreground/[0.06] text-fg",
+        icon: <Loader2 size={15} className="animate-spin" />,
+      };
+    case "missed":
+      return {
+        className: "bg-[hsl(var(--warning)/0.16)] text-[hsl(var(--warning))]",
+        icon: <CircleHelp size={16} />,
+      };
+    case "blocked":
+      return {
+        className: "bg-destructive/10 text-destructive",
+        icon: <MicOff size={14} />,
+      };
+    default:
+      // "starting" (and the never-rendered idle) — the mic, not yet live.
+      return {
+        className: "bg-foreground/[0.06] text-fg-muted",
+        icon: <Mic size={14} />,
+      };
+  }
+};
+
+export const VoiceLogControl = ({ exercises, units, onApply, onUndo, onEdit, raised = false }: Props) => {
   // DEV preview: `localStorage.liftos-voice-dev-phase = "applied"` mounts
   // the receipt card in the browser so its design can be QA'd without a mic.
   const [phase, setPhase] = useState<Phase>(() => {
@@ -83,7 +145,8 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
         at: "applied",
         result: {
           exercises: [],
-          summary: ["Bicep Curl — 25 × 10", "Goblet Squat — 3 sets done", "Note: “felt strong today”"],
+          summary: ["Bicep Curl · 25 lb × 10 reps", "Goblet Squat · 3 sets done", "Note: “felt strong today”"],
+          touched: [],
           setsLogged: 4,
           addedExercises: [],
           note: null,
@@ -117,6 +180,17 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
   // The freshest exercises without re-binding handlers every render.
   const exercisesRef = useRef(exercises);
   exercisesRef.current = exercises;
+
+  // Fold the "Logged" card to one line after a beat. Keyed on the result
+  // object so a superseding apply (grace-window merge) re-expands.
+  const appliedResult = phase.at === "applied" ? phase.result : null;
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    setCollapsed(false);
+    if (!appliedResult) return;
+    const id = window.setTimeout(() => setCollapsed(true), COLLAPSE_MS);
+    return () => window.clearTimeout(id);
+  }, [appliedResult]);
 
   useEffect(
     () => () => {
@@ -349,158 +423,220 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo }: Props) =>
     dismissTimer.current = window.setTimeout(() => setPhase({ at: "idle" }), ms);
   };
 
+  const undoNow = (): void => {
+    onUndo();
+    setPhase({ at: "idle" });
+  };
+
+  const editNow = (result: VoiceApplyResult): void => {
+    window.clearTimeout(dismissTimer.current);
+    setPhase({ at: "idle" });
+    onEdit?.(result);
+  };
+
   const listening = phase.at === "listening";
+  const compact = phase.at === "applied" && collapsed;
+  const mark = markFor(phase.at);
+  // The one-line fold: "Logged · Bicep Curl +2".
+  const compactLabel = (() => {
+    if (phase.at !== "applied") return "";
+    const lines = phase.result.summary;
+    if (lines.length === 0) return "Logged";
+    const extra = lines.length > 1 ? ` +${lines.length - 1}` : "";
+    return `Logged · ${splitSummaryLine(lines[0]).name}${extra}`;
+  })();
 
-  return createPortal(
+  const smallActionClass =
+    "relative inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold transition after:absolute after:-inset-1.5 after:content-[''] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
+
+  return (
     <>
-      {/* Voice receipt — one card for every phase, above the pill. A leading
-          state mark, structured rows, and (after a log) an Undo whose window
-          visibly drains. Slides up from the pill; never full-bleed. */}
-      {phase.at !== "idle" && (
-        <div className="pointer-events-none fixed inset-x-5 bottom-[calc(4rem+var(--safe-bottom)+4.5rem)] z-40 flex justify-center">
+      {createPortal(
+        // Voice receipt — one card for every phase, fixed in the slot above
+        // the session toolbar (over the rest bar when that's up). A leading
+        // state mark, structured rows, and (after a log) Edit + Undo with a
+        // window that visibly drains. Never full-bleed.
+        phase.at !== "idle" ? (
           <div
-            key={phase.at}
-            className="voice-card pointer-events-auto w-full max-w-md overflow-hidden rounded-[20px] border border-border bg-card/95 shadow-[0_14px_40px_rgba(16,22,35,0.18)] backdrop-blur-[14px] dark:shadow-[0_14px_40px_rgba(0,0,0,0.55)]"
-          >
-            <div className="flex items-start gap-3 px-4 pt-3.5 pb-3.5">
-              {/* State mark */}
-              <span
-                aria-hidden
-                className={cn(
-                  "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                  phase.at === "applied" && "bg-primary text-primary-foreground",
-                  (phase.at === "listening" || phase.at === "starting" || phase.at === "thinking") &&
-                    "bg-primary/[0.12] text-primary",
-                  (phase.at === "missed" || phase.at === "blocked") &&
-                    "bg-foreground/[0.06] text-fg-muted",
-                )}
-              >
-                {phase.at === "applied" ? (
-                  <Check size={15} strokeWidth={2.6} />
-                ) : phase.at === "missed" || phase.at === "blocked" ? (
-                  <MicOff size={14} />
-                ) : (
-                  <Mic size={14} className={listening ? "animate-pulse" : ""} />
-                )}
-              </span>
-
-              <div className="min-w-0 flex-1">
-                {phase.at === "starting" && (
-                  <>
-                    <p className="text-[14px] font-semibold leading-5 text-fg">Opening the mic…</p>
-                    <p className="mt-0.5 text-[12.5px] leading-[18px] text-fg-muted">
-                      First time, iOS asks for mic and speech permission.
-                    </p>
-                  </>
-                )}
-                {phase.at === "blocked" && (
-                  <>
-                    <p className="text-[14px] font-semibold leading-5 text-fg">Voice can’t start</p>
-                    <p className="mt-0.5 text-[12.5px] leading-[18px] text-fg-muted">{phase.reason}</p>
-                  </>
-                )}
-                {listening && (
-                  <>
-                    <p className="text-[14px] font-semibold leading-5 text-fg">
-                      {phase.partial ? "Listening" : "Listening…"}
-                    </p>
-                    <p
-                      className={cn(
-                        "mt-0.5 min-h-[18px] text-[13.5px] leading-[19px]",
-                        phase.partial ? "text-fg-soft" : "text-fg-muted",
-                      )}
-                    >
-                      {phase.partial || "Say it like you’d say it to a friend — pausing logs it."}
-                    </p>
-                  </>
-                )}
-                {phase.at === "thinking" && (
-                  <>
-                    <p className="text-[14px] font-semibold leading-5 text-fg">
-                      Logging
-                      <span className="voice-dots" aria-hidden />
-                    </p>
-                    <p className="mt-0.5 text-[13px] leading-[18px] text-fg-muted">“{phase.transcript}”</p>
-                  </>
-                )}
-                {phase.at === "applied" && (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[14px] font-semibold leading-5 text-fg">Logged</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onUndo();
-                          setPhase({ at: "idle" });
-                        }}
-                        className="-my-1 -mr-1 inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full bg-foreground/[0.06] px-3 text-[12.5px] font-semibold text-fg transition hover:bg-foreground/[0.1] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                      >
-                        <Undo2 size={13} />
-                        Undo
-                      </button>
-                    </div>
-                    <div className="mt-1.5 space-y-1.5">
-                      {phase.result.summary.map((line) => {
-                        const split = line.indexOf(" — ");
-                        const name = split >= 0 ? line.slice(0, split) : line;
-                        const detail = split >= 0 ? line.slice(split + 3) : null;
-                        return (
-                          <div key={line} className="flex items-baseline justify-between gap-3">
-                            <span className="min-w-0 truncate text-[13.5px] font-medium text-fg">{name}</span>
-                            {detail && (
-                              <span className="mono shrink-0 text-[12.5px] text-fg-soft">{detail}</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-                {phase.at === "missed" && (
-                  <>
-                    <p className="text-[14px] font-semibold leading-5 text-fg">
-                      {phase.transcript ? "Didn’t catch that" : "Didn’t hear anything"}
-                    </p>
-                    <p className="mt-0.5 text-[12.5px] leading-[18px] text-fg-muted">
-                      {phase.transcript
-                        ? `“${phase.transcript}” — try “3 sets of 8 at 185 on bench” or “note: shoulder felt tight”.`
-                        : "Check the mic is on, then tap and try again."}
-                    </p>
-                  </>
-                )}
-              </div>
-
-            </div>
-
-            {/* The undo window, draining — nothing to read, just seen. */}
-            {phase.at === "applied" && (
-              <div className="h-[3px] w-full bg-foreground/[0.06]">
-                <div className="voice-undo-bar h-full bg-primary" />
-              </div>
+            className={cn(
+              "pointer-events-none fixed inset-x-5 z-40 flex justify-center",
+              raised
+                ? "bottom-[calc(4rem+var(--safe-bottom)+6rem)] md:bottom-[11.5rem]"
+                : "bottom-[calc(4rem+var(--safe-bottom)+0.75rem)] md:bottom-[6.25rem]",
             )}
+          >
+            <div
+              key={phase.at}
+              className={cn(
+                "voice-card pointer-events-auto overflow-hidden border border-border bg-card/95 shadow-[0_14px_40px_rgba(16,22,35,0.18)] backdrop-blur-[14px] dark:shadow-[0_14px_40px_rgba(0,0,0,0.55)]",
+                compact ? "w-auto max-w-full rounded-[16px]" : "w-full max-w-md rounded-[20px]",
+              )}
+            >
+              {compact && phase.at === "applied" ? (
+                <div className="flex items-center gap-2 py-1.5 pl-2 pr-1.5">
+                  <span
+                    aria-hidden
+                    className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full", mark.className)}
+                  >
+                    <Check size={13} strokeWidth={2.6} />
+                  </span>
+                  <p className="min-w-0 truncate pr-1 text-[13.5px] font-semibold text-fg">{compactLabel}</p>
+                  {onEdit && (
+                    <button
+                      type="button"
+                      onClick={() => editNow(phase.result)}
+                      className={cn(smallActionClass, "bg-foreground/[0.06] text-fg hover:bg-foreground/[0.1]")}
+                    >
+                      <Pencil size={12} />
+                      Edit
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={undoNow}
+                    className={cn(smallActionClass, "bg-foreground/[0.06] text-fg hover:bg-foreground/[0.1]")}
+                  >
+                    <Undo2 size={13} />
+                    Undo
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 px-4 pt-3.5 pb-3.5">
+                  {/* State mark */}
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                      mark.className,
+                    )}
+                  >
+                    {mark.icon}
+                  </span>
+
+                  <div className="min-w-0 flex-1">
+                    {phase.at === "starting" && (
+                      <>
+                        <p className="text-[14px] font-semibold leading-5 text-fg">Opening the mic…</p>
+                        <p className="mt-0.5 text-[12.5px] leading-[18px] text-fg-muted">
+                          First time, iOS asks for mic and speech permission.
+                        </p>
+                      </>
+                    )}
+                    {phase.at === "blocked" && (
+                      <>
+                        <p className="text-[14px] font-semibold leading-5 text-fg">Voice can’t start</p>
+                        <p className="mt-0.5 text-[12.5px] leading-[18px] text-fg-muted">{phase.reason}</p>
+                      </>
+                    )}
+                    {listening && (
+                      <>
+                        <p className="text-[14px] font-semibold leading-5 text-primary">
+                          {phase.partial ? "Listening" : "Listening…"}
+                        </p>
+                        <p
+                          className={cn(
+                            "mt-0.5 min-h-[18px] text-[13.5px] leading-[19px]",
+                            phase.partial ? "text-fg" : "text-fg-muted",
+                          )}
+                        >
+                          {phase.partial || "Say it like you’d say it to a friend — pausing logs it."}
+                        </p>
+                      </>
+                    )}
+                    {phase.at === "thinking" && (
+                      <>
+                        <p className="text-[14px] font-semibold leading-5 text-fg">
+                          Logging
+                          <span className="voice-dots" aria-hidden />
+                        </p>
+                        <p className="mt-0.5 text-[13px] leading-[18px] text-fg-muted">“{phase.transcript}”</p>
+                      </>
+                    )}
+                    {phase.at === "applied" && (
+                      <>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[14px] font-semibold leading-5 text-fg">Logged</p>
+                          <div className="-my-1 -mr-1 flex items-center gap-1.5">
+                            {onEdit && (
+                              <button
+                                type="button"
+                                onClick={() => editNow(phase.result)}
+                                className={cn(smallActionClass, "bg-foreground/[0.06] text-fg hover:bg-foreground/[0.1]")}
+                              >
+                                <Pencil size={12} />
+                                Edit
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={undoNow}
+                              className={cn(smallActionClass, "bg-foreground/[0.06] text-fg hover:bg-foreground/[0.1]")}
+                            >
+                              <Undo2 size={13} />
+                              Undo
+                            </button>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 space-y-1.5">
+                          {phase.result.summary.map((line) => {
+                            const { name, detail } = splitSummaryLine(line);
+                            return (
+                              <div key={line} className="flex items-baseline justify-between gap-3">
+                                <span className="min-w-0 truncate text-[13.5px] font-medium text-fg">{name}</span>
+                                {detail && (
+                                  <span className="mono shrink-0 text-[12.5px] text-fg-soft">{detail}</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                    {phase.at === "missed" && (
+                      <>
+                        <p className="text-[14px] font-semibold leading-5 text-fg">
+                          {phase.transcript ? "Didn’t catch that" : "Didn’t hear anything"}
+                        </p>
+                        <p className="mt-0.5 text-[12.5px] leading-[18px] text-fg-muted">
+                          {phase.transcript
+                            ? `“${phase.transcript}” — try “3 sets of 8 at 185 on bench” or “note: shoulder felt tight”.`
+                            : "Check the mic is on, then tap and try again."}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* The undo window, draining — nothing to read, just seen. Same
+                  element in both layouts, so the fold never restarts it. */}
+              {phase.at === "applied" && (
+                <div className="h-[3px] w-full bg-foreground/[0.06]">
+                  <div className="voice-undo-bar h-full bg-primary" />
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        ) : null,
+        document.body,
       )}
 
-      {/* The pill — hold to talk */}
-      <div className="fixed inset-x-0 bottom-[calc(4rem+var(--safe-bottom)+0.75rem)] z-40 flex justify-center">
-        <button
-          type="button"
-          onClick={() => (activeRef.current ? void finish() : void begin())}
-          onContextMenu={(e) => e.preventDefault()}
-          aria-label={listening ? "Stop and log" : "Log by voice"}
-          className={cn(
-            "inline-flex min-h-12 select-none items-center gap-2.5 rounded-full px-6 text-[14px] font-semibold shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition-[transform,background-color] duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-            listening
-              ? "scale-105 bg-primary text-primary-foreground"
-              : "border border-border bg-card text-fg active:scale-[0.98]",
-          )}
-        >
-          <Mic size={16} className={listening ? "animate-pulse" : "text-primary"} />
-          {listening ? "Listening — tap when done" : "Tap to speak"}
-        </button>
-      </div>
-    </>,
-    document.body,
+      {/* The pill — tap to talk. Inline: the toolbar owns its position. */}
+      <button
+        type="button"
+        onClick={() => (activeRef.current ? void finish() : void begin())}
+        onContextMenu={(e) => e.preventDefault()}
+        aria-label={listening ? "Stop and log" : "Log by voice"}
+        className={cn(
+          "inline-flex min-h-12 w-full min-w-0 select-none items-center justify-center gap-2 rounded-full px-4 text-[14px] font-semibold transition-[transform,background-color] duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          listening
+            ? "bg-primary text-primary-foreground"
+            : "border border-border bg-card text-fg active:scale-[0.98]",
+        )}
+      >
+        <Mic size={16} className={listening ? "shrink-0 animate-pulse" : "shrink-0 text-primary"} />
+        <span className="truncate">{listening ? "Tap when done" : "Tap to speak"}</span>
+      </button>
+    </>
   );
 };

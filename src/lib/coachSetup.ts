@@ -40,21 +40,38 @@ export type ScheduleDay = {
   focus: string;
 };
 
+/** The intake sheet's two free-text fields. Kept apart so the coach reads
+    "must include" and "avoid" as two different instructions instead of one
+    ambiguous note ("no squats" next to "front squats" is a coin flip). */
+export type IntakeNotes = {
+  /** Lifts the week has to include — "front squat, weighted pull-ups". */
+  mustHave: string;
+  /** Injuries, missing equipment, movements to leave out. */
+  avoid: string;
+};
+
+const NOTE_LIMIT = 300;
+
 /** The experienced lifter's 30-second intake: they told us WHEN they train
     and WHAT each day hits — the coach only fills in the exercises. Day
     headers double as template names ("Monday · Push"). */
 export const buildSchedulePrompt = (
   profile: UserProfile | null,
   schedule: ScheduleDay[],
-  notes: string,
+  notes: IntakeNotes,
 ): string => {
   const context: string[] = [];
   if (profile?.goal) context.push(`goal: ${profile.goal}`);
   if (profile?.experience) context.push(`experience: ${profile.experience}`);
   if (profile?.equipment) context.push(`equipment: ${profile.equipment}`);
-  const noteLine = notes.trim() ? `\nAlso: ${notes.trim().slice(0, 400)}` : "";
+  const mustHave = notes.mustHave.trim().slice(0, NOTE_LIMIT);
+  const avoid = notes.avoid.trim().slice(0, NOTE_LIMIT);
+  const extras: string[] = [];
+  if (mustHave) extras.push(`Must include: ${mustHave}`);
+  if (avoid) extras.push(`Avoid (injuries, missing equipment, movements to skip): ${avoid}`);
+  const noteBlock = extras.length > 0 ? `\n${extras.join("\n")}` : "";
   return `Write my training week. This is MY schedule — keep every day exactly as given${context.length > 0 ? ` (${context.join(", ")})` : ""}:
-${schedule.map((s) => `- ${s.day}: ${s.focus}`).join("\n")}${noteLine}
+${schedule.map((s) => `- ${s.day}: ${s.focus}`).join("\n")}${noteBlock}
 
 Reply with NOTHING but one section per day above, in EXACTLY this format:
 

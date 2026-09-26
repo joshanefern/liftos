@@ -44,7 +44,7 @@ describe("applyVoiceIntent — done-without-numbers ('I did goblet squats')", ()
     expect(rows.every((r) => r.completed)).toBe(true);
     expect(rows[0]).toMatchObject({ reps: "8", weight: "185" });
     expect(result.setsLogged).toBe(3);
-    expect(result.summary[0]).toBe("Incline Curl — 3 sets done");
+    expect(result.summary[0]).toBe("Incline Curl · 3 sets done");
     expect(result.empty).toBe(false);
   });
 
@@ -83,7 +83,7 @@ describe("applyVoiceIntent — done-without-numbers ('I did goblet squats')", ()
     expect(result.addedExercises).toEqual(["Goblet Squat"]);
     expect(result.exercises.at(-1)?.name).toBe("Goblet Squat");
     expect(result.exercises.at(-1)?.sets[0].completed).toBe(false);
-    expect(result.summary[0]).toContain("fill in your sets");
+    expect(result.summary[0]).toBe("Goblet Squat · (added) fill in your sets");
     expect(result.empty).toBe(false);
   });
 
@@ -98,7 +98,7 @@ describe("applyVoiceIntent — done-without-numbers ('I did goblet squats')", ()
       actions: [{ exercise: "Incline Curl", done: true, sets: [] }],
     };
     const result = applyVoiceIntent(exercises, intent);
-    expect(result.summary[0]).toBe("Incline Curl — already done");
+    expect(result.summary[0]).toBe("Incline Curl · already done");
     expect(result.setsLogged).toBe(0);
     expect(result.empty).toBe(false);
   });
@@ -135,7 +135,7 @@ describe("applyVoiceIntent — done-without-numbers ('I did goblet squats')", ()
     expect(rows[1].completed).toBe(false);
     expect(rows[2].completed).toBe(false);
     expect(result.setsLogged).toBe(1);
-    expect(result.summary[0]).toBe("Incline Curl — 1 set done");
+    expect(result.summary[0]).toBe("Incline Curl · 1 set done");
   });
 
   it("zero-valued targets never complete rows", () => {
@@ -225,7 +225,7 @@ describe("applyVoiceIntent — the owner's exact utterances", () => {
     // holds always store colon format now.
     expect(planks.sets.every((s) => s.completed && s.reps === "0:40")).toBe(true);
     expect(result.addedExercises).toEqual(["Planks"]);
-    expect(result.summary[0]).toContain("Planks (added)");
+    expect(result.summary[0]).toBe("Planks · (added) 3 sets of 0:40 hold");
   });
 
   it("'legs feel tired…' becomes a note and touches no rows", () => {
@@ -379,5 +379,462 @@ describe("applyVoiceIntent — blocked tracking flip", () => {
     expect(result.exercises[0].tracking ?? "reps").toBe("reps");
     expect(result.exercises[0].sets.filter((s) => s.completed)).toHaveLength(1);
     expect(result.empty).toBe(true);
+  });
+});
+
+describe("applyVoiceIntent — receipt lines say units and meaning", () => {
+  it("weight × reps reads '185 lb × 8 reps'", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Bench Press", sets: [{ reps: 8, weight: 185 }] }],
+    };
+    expect(applyVoiceIntent(session(), intent).summary[0]).toBe("Bench Press · 185 lb × 8 reps");
+  });
+
+  it("honours the lifter's units", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Bench Press", sets: [{ reps: 8, weight: 80 }] }],
+    };
+    expect(applyVoiceIntent(session(), intent, { units: "kg" }).summary[0]).toBe(
+      "Bench Press · 80 kg × 8 reps",
+    );
+  });
+
+  it("bodyweight sets read as reps only, singular for one", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Incline Curl", sets: [{ reps: 10 }, { reps: 1 }] }],
+    };
+    expect(applyVoiceIntent(session(), intent).summary[0]).toBe("Incline Curl · 10 reps, 1 rep");
+  });
+
+  it("weight with no reps reads as the weight alone", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Incline Curl", sets: [{ weight: 25 }] }],
+    };
+    expect(applyVoiceIntent(session(), intent).summary[0]).toBe("Incline Curl · 25 lb");
+  });
+
+  it("holds read '0:45 hold', with the weight when one was spoken", () => {
+    const plank: VoiceLoggedExercise[] = [
+      {
+        id: "p",
+        name: "Plank",
+        tracking: "time",
+        category: "",
+        target: "",
+        sets: [set({ targetReps: null, targetWeight: null }), set({ targetReps: null, targetWeight: null })],
+      },
+    ];
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Plank", sets: [{ seconds: 45 }, { seconds: 45, weight: 25 }] }],
+    };
+    expect(applyVoiceIntent(plank, intent).summary[0]).toBe(
+      "Plank · 0:45 hold, 0:45 hold at 25 lb",
+    );
+  });
+
+  it("a hold of a minute or more keeps m:ss", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Wall Sit", isNew: true, tracking: "time", sets: [{ seconds: 90 }] }],
+    };
+    expect(applyVoiceIntent(session(), intent).summary[0]).toBe("Wall Sit · (added) 1:30 hold");
+  });
+
+  it("identical sets collapse to '3 sets of …' so the line fits a phone", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [
+        { exercise: "Bench Press", sets: [{ reps: 8, weight: 185 }, { reps: 8, weight: 185 }, { reps: 8, weight: 185 }] },
+      ],
+    };
+    expect(applyVoiceIntent(session(), intent).summary[0]).toBe(
+      "Bench Press · 3 sets of 185 lb × 8 reps",
+    );
+  });
+
+  it("differing sets are listed in order", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Bench Press", sets: [{ reps: 8, weight: 185 }, { reps: 6, weight: 185 }] }],
+    };
+    expect(applyVoiceIntent(session(), intent).summary[0]).toBe(
+      "Bench Press · 185 lb × 8 reps, 185 lb × 6 reps",
+    );
+  });
+
+  it("a new exercise is marked (added) in the detail, not the name", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Cable Row", sets: [{ reps: 12, weight: 120 }] }],
+    };
+    expect(applyVoiceIntent(session(), intent).summary[0]).toBe("Cable Row · (added) 120 lb × 12 reps");
+  });
+
+  it("note lines carry no separator; every other line has exactly one name/detail split", () => {
+    const intent: VoiceIntent = {
+      kind: "both",
+      note: "Shoulder felt off.",
+      actions: [{ exercise: "Bench Press", sets: [{ reps: 8, weight: 185 }] }],
+    };
+    const { summary } = applyVoiceIntent(session(), intent);
+    expect(summary).toEqual(["Bench Press · 185 lb × 8 reps", "Note: “Shoulder felt off.”"]);
+    expect(summary[0].indexOf(" · ")).toBe("Bench Press".length);
+    expect(summary[1]).not.toContain(" · ");
+  });
+});
+
+describe("applyVoiceIntent — touched rows", () => {
+  it("lists every row written, in order, so Edit can focus the first", () => {
+    const base = session();
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [
+        { exercise: "Bench Press", sets: [{ reps: 8, weight: 185 }, { reps: 8, weight: 185 }] },
+      ],
+    };
+    const result = applyVoiceIntent(base, intent);
+    expect(result.touched).toEqual([
+      { exerciseId: "e2", setId: base[1].sets[1].id },
+      { exerciseId: "e2", setId: base[1].sets[2].id },
+    ]);
+  });
+
+  it("an appended row is touched by its fresh id", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Incline Curl", sets: [{ ordinal: 9, reps: 6 }] }],
+    };
+    const result = applyVoiceIntent(session(), intent);
+    const rows = result.exercises[0].sets;
+    expect(result.touched).toEqual([{ exerciseId: "e1", setId: rows[3].id }]);
+  });
+
+  it("done-without-numbers touches each row it completed", () => {
+    const base = session();
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Incline Curl", done: true, sets: [] }],
+    };
+    const result = applyVoiceIntent(base, intent);
+    expect(result.touched.map((t) => t.setId)).toEqual(base[0].sets.map((r) => r.id));
+    expect(result.touched.every((t) => t.exerciseId === "e1")).toBe(true);
+  });
+
+  it("a new exercise's sets are touched under its new id", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Cable Row", sets: [{ reps: 12, weight: 120 }, { reps: 10, weight: 120 }] }],
+    };
+    const result = applyVoiceIntent(session(), intent);
+    const added = result.exercises.at(-1)!;
+    expect(result.touched).toEqual(added.sets.map((s) => ({ exerciseId: added.id, setId: s.id })));
+  });
+
+  it("a note alone touches nothing", () => {
+    const result = applyVoiceIntent(session(), { kind: "note", note: "Tired." });
+    expect(result.touched).toEqual([]);
+  });
+
+  it("'already done' and 'no planned numbers' touch nothing", () => {
+    const exercises = session().map((e) =>
+      e.id === "e1"
+        ? { ...e, sets: e.sets.map((r) => ({ ...r, reps: "8", completed: true })) }
+        : e,
+    );
+    const result = applyVoiceIntent(exercises, {
+      kind: "sets",
+      actions: [{ exercise: "Incline Curl", done: true, sets: [] }],
+    });
+    expect(result.touched).toEqual([]);
+  });
+});
+
+describe("applyVoiceIntent — corrections ('actually that was 12 reps')", () => {
+  /** Session where Bicep Curl's first set was just voice-logged 25 × 10
+      and Bench's first working set 185 × 8 — bench logged last. */
+  const logged = (): VoiceLoggedExercise[] => [
+    {
+      id: "c",
+      name: "Bicep Curl",
+      category: "Arms",
+      target: "",
+      sets: [
+        set({ id: "c1", reps: "10", weight: "25", completed: true, targetReps: 10, targetWeight: 25 }),
+        set({ id: "c2", targetReps: 10, targetWeight: 25 }),
+      ],
+    },
+    {
+      id: "b",
+      name: "Bench Press",
+      category: "Chest",
+      target: "",
+      sets: [
+        set({ id: "b0", isWarmup: true, reps: "10", weight: "95", completed: true }),
+        set({ id: "b1", reps: "8", weight: "185", completed: true }),
+        set({ id: "b2" }),
+      ],
+    },
+  ];
+
+  it("with a name: rewrites that exercise's last completed set, keeping unspoken fields", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Bicep Curl", correct: true, sets: [{ reps: 12 }] }],
+    };
+    const result = applyVoiceIntent(logged(), intent);
+    const curl = result.exercises[0];
+    expect(curl.sets).toHaveLength(2); // never a new set
+    expect(curl.sets[0]).toMatchObject({ reps: "12", weight: "25", completed: true });
+    expect(curl.sets[1].completed).toBe(false);
+    expect(result.summary).toEqual(["Bicep Curl · corrected to 25 lb × 12 reps"]);
+    expect(result.touched).toEqual([{ exerciseId: "c", setId: "c1" }]);
+    expect(result.setsLogged).toBe(0);
+    expect(result.empty).toBe(false);
+  });
+
+  it("'no wait, 185' with a name changes only the weight", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Bicep Curl", correct: true, sets: [{ weight: 30 }] }],
+    };
+    const result = applyVoiceIntent(logged(), intent);
+    expect(result.exercises[0].sets[0]).toMatchObject({ reps: "10", weight: "30", completed: true });
+    expect(result.summary[0]).toBe("Bicep Curl · corrected to 30 lb × 10 reps");
+  });
+
+  it("without a name: fixes the last completed set in the session (bench, not the curl)", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "", correct: true, sets: [{ reps: 6 }] }],
+    };
+    const result = applyVoiceIntent(logged(), intent);
+    expect(result.exercises[0].sets[0].reps).toBe("10"); // curl untouched
+    expect(result.exercises[1].sets[1]).toMatchObject({ reps: "6", weight: "185", completed: true });
+    expect(result.exercises[1].sets).toHaveLength(3);
+    expect(result.summary).toEqual(["Bench Press · corrected to 185 lb × 6 reps"]);
+    expect(result.touched).toEqual([{ exerciseId: "b", setId: "b1" }]);
+  });
+
+  it("without a name: skips a trailing exercise that has nothing completed", () => {
+    const base = [
+      ...logged(),
+      { id: "r", name: "Cable Row", category: "", target: "", sets: [set(), set()] },
+    ];
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "", correct: true, sets: [{ reps: 6 }] }],
+    };
+    const result = applyVoiceIntent(base, intent);
+    expect(result.exercises[2].sets.every((s) => !s.completed)).toBe(true);
+    expect(result.exercises[1].sets[1].reps).toBe("6");
+  });
+
+  it("never picks a warm-up as the set to correct", () => {
+    const base = logged();
+    base[1].sets[1] = set({ id: "b1" }); // only the warm-up is completed on bench
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "", correct: true, sets: [{ reps: 6 }] }],
+    };
+    const result = applyVoiceIntent(base, intent);
+    expect(result.exercises[1].sets[0]).toMatchObject({ reps: "10", weight: "95" }); // warm-up untouched
+    expect(result.exercises[0].sets[0].reps).toBe("6"); // curl was the last real set
+    expect(result.summary[0]).toBe("Bicep Curl · corrected to 25 lb × 6 reps");
+  });
+
+  it("an unmatched name falls back to the session's last set and says which one it changed", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Hammer Curl", isNew: true, correct: true, sets: [{ reps: 9 }] }],
+    };
+    const result = applyVoiceIntent(logged(), intent);
+    expect(result.exercises).toHaveLength(2); // no exercise added
+    expect(result.addedExercises).toEqual([]);
+    expect(result.summary[0]).toBe("Bench Press · corrected to 185 lb × 9 reps");
+  });
+
+  it("nothing logged yet → honest line, no rows touched, not 'empty'", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Incline Curl", correct: true, sets: [{ reps: 12 }] }],
+    };
+    const base = session();
+    const result = applyVoiceIntent(base, intent);
+    expect(result.exercises).toEqual(base);
+    expect(result.summary).toEqual(["Incline Curl · nothing logged yet to fix"]);
+    expect(result.touched).toEqual([]);
+    expect(result.empty).toBe(false);
+  });
+
+  it("nothing logged and no name → the line still reads as a sentence", () => {
+    const result = applyVoiceIntent(session(), {
+      kind: "sets",
+      actions: [{ exercise: "", correct: true, sets: [{ reps: 12 }] }],
+    });
+    expect(result.summary).toEqual(["Last set · nothing logged yet to fix"]);
+  });
+
+  it("'actually my second set was 10' targets that set by ordinal", () => {
+    const base = logged();
+    base[0].sets[1] = set({ id: "c2", reps: "8", weight: "25", completed: true });
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Bicep Curl", correct: true, sets: [{ ordinal: 1, reps: 12 }] }],
+    };
+    const result = applyVoiceIntent(base, intent);
+    expect(result.exercises[0].sets[0].reps).toBe("12");
+    expect(result.exercises[0].sets[1].reps).toBe("8");
+    expect(result.touched).toEqual([{ exerciseId: "c", setId: "c1" }]);
+  });
+
+  it("an ordinal past the last row corrects nothing (never appends)", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Bicep Curl", correct: true, sets: [{ ordinal: 5, reps: 12 }] }],
+    };
+    const base = logged();
+    const result = applyVoiceIntent(base, intent);
+    expect(result.exercises).toEqual(base);
+    expect(result.summary[0]).toBe("Bicep Curl · nothing logged yet to fix");
+  });
+
+  it("holds correct as holds", () => {
+    const plank: VoiceLoggedExercise[] = [
+      {
+        id: "p",
+        name: "Plank",
+        tracking: "time",
+        category: "",
+        target: "",
+        sets: [set({ id: "p1", reps: "0:40", completed: true, targetReps: null, targetWeight: null })],
+      },
+    ];
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Plank", correct: true, sets: [{ seconds: 50 }] }],
+    };
+    const result = applyVoiceIntent(plank, intent);
+    expect(result.exercises[0].sets[0]).toMatchObject({ reps: "0:50", completed: true });
+    expect(result.summary[0]).toBe("Plank · corrected to 0:50 hold");
+  });
+
+  it("reps spoken for a hold can't land → says so, changes nothing", () => {
+    const plank: VoiceLoggedExercise[] = [
+      {
+        id: "p",
+        name: "Plank",
+        tracking: "time",
+        category: "",
+        target: "",
+        sets: [set({ id: "p1", reps: "0:40", completed: true, targetReps: null, targetWeight: null })],
+      },
+    ];
+    const result = applyVoiceIntent(plank, {
+      kind: "sets",
+      actions: [{ exercise: "Plank", correct: true, sets: [{ reps: 8 }] }],
+    });
+    expect(result.exercises).toEqual(plank);
+    expect(result.summary[0]).toBe("Plank · didn’t catch what to change");
+    expect(result.touched).toEqual([]);
+  });
+
+  it("a correction reports in the lifter's units", () => {
+    const result = applyVoiceIntent(
+      logged(),
+      { kind: "sets", actions: [{ exercise: "Bicep Curl", correct: true, sets: [{ reps: 12 }] }] },
+      { units: "kg" },
+    );
+    expect(result.summary[0]).toBe("Bicep Curl · corrected to 25 kg × 12 reps");
+  });
+
+  it("a correction plus a fresh set in one utterance applies both, in order", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [
+        { exercise: "Bench Press", correct: true, sets: [{ reps: 7 }] },
+        { exercise: "Bench Press", sets: [{ reps: 6, weight: 185 }] },
+      ],
+    };
+    const result = applyVoiceIntent(logged(), intent);
+    const bench = result.exercises[1];
+    expect(bench.sets[1].reps).toBe("7");
+    expect(bench.sets[2]).toMatchObject({ reps: "6", weight: "185", completed: true });
+    expect(bench.sets).toHaveLength(3);
+    expect(result.summary).toEqual([
+      "Bench Press · corrected to 185 lb × 7 reps",
+      "Bench Press · 185 lb × 6 reps",
+    ]);
+    expect(result.setsLogged).toBe(1);
+  });
+});
+
+describe("applyVoiceIntent — 'scratch the last one' (correct + undo)", () => {
+  const logged = (): VoiceLoggedExercise[] => [
+    {
+      id: "c",
+      name: "Bicep Curl",
+      category: "Arms",
+      target: "",
+      sets: [
+        set({ id: "c1", reps: "10", weight: "25", completed: true, targetReps: 10, targetWeight: 25 }),
+        set({ id: "c2", reps: "9", weight: "25", completed: true, targetReps: 10, targetWeight: 25 }),
+      ],
+    },
+  ];
+
+  it("un-completes the last logged set and clears what was spoken in; targets stay", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "", correct: true, undo: true, sets: [] }],
+    };
+    const result = applyVoiceIntent(logged(), intent);
+    const rows = result.exercises[0].sets;
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({
+      reps: "",
+      weight: "",
+      completed: false,
+      targetReps: 10,
+      targetWeight: 25,
+    });
+    expect(rows[0]).toMatchObject({ reps: "10", weight: "25", completed: true });
+    expect(result.summary).toEqual(["Bicep Curl · last set scratched"]);
+    expect(result.touched).toEqual([{ exerciseId: "c", setId: "c2" }]);
+    expect(result.setsLogged).toBe(0);
+    expect(result.empty).toBe(false);
+  });
+
+  it("undo alone (interpreter forgot `correct`) still means scratch, never a set", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Bicep Curl", undo: true, sets: [] }],
+    };
+    const result = applyVoiceIntent(logged(), intent);
+    expect(result.exercises[0].sets).toHaveLength(2);
+    expect(result.exercises[0].sets[1].completed).toBe(false);
+  });
+
+  it("undo wins over numbers spoken alongside it", () => {
+    const intent: VoiceIntent = {
+      kind: "sets",
+      actions: [{ exercise: "Bicep Curl", correct: true, undo: true, sets: [{ reps: 12 }] }],
+    };
+    const result = applyVoiceIntent(logged(), intent);
+    expect(result.exercises[0].sets[1]).toMatchObject({ reps: "", completed: false });
+  });
+
+  it("nothing to scratch → honest line", () => {
+    const base = session();
+    const result = applyVoiceIntent(base, {
+      kind: "sets",
+      actions: [{ exercise: "", correct: true, undo: true, sets: [] }],
+    });
+    expect(result.exercises).toEqual(base);
+    expect(result.summary).toEqual(["Last set · nothing logged yet to fix"]);
   });
 });

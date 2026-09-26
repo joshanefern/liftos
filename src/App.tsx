@@ -88,12 +88,8 @@ const AppShell = ({ children }: { children: React.ReactNode }) => {
       {/* iOS overlays the status bar on the webview: without a mask, scrolled
           content collides with the clock. This strip fades content out behind
           it like a native app — zero-height on web where --safe-top is 0.
-          Mid-workout it flips dark with the scoreboard (Split Shift). */}
-      <div
-        className={`pointer-events-none fixed inset-x-0 top-0 z-30 h-[var(--safe-top)] bg-background/90 backdrop-blur-[10px] ${
-          isActiveWorkout ? "dark" : ""
-        }`}
-      />
+          It follows the theme everywhere, the active session included. */}
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-30 h-[var(--safe-top)] bg-background/90 backdrop-blur-[10px]" />
       <AppSidebar />
       <MobileTabBar />
       <main

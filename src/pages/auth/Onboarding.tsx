@@ -8,8 +8,16 @@ import { useMemo, useState } from "react";
 import { toast } from "@/components/ui/use-toast";
 import { useNavigate } from "react-router-dom";
 
+/* What the user READS for a stored value. The stored value stays as-is:
+   profiles.goal already holds "Hypertrophy" for every existing account, the
+   Progress hero keys off it (progressHero.focusFor), and the coach prompt
+   quotes it verbatim — so only the label changes, never the value. */
+const labels: Record<string, string> = {
+  "Hypertrophy": "Build muscle",
+};
+
 const descriptions: Record<string, string> = {
-  "Hypertrophy": "Build muscle size",
+  "Hypertrophy": "Add size (hypertrophy)",
   "Strength": "Lift heavier loads",
   "Fat Loss": "Burn body fat",
   "General Fitness": "Overall health focus",
@@ -119,7 +127,11 @@ const Onboarding = () => {
   };
 
   return (
-    <AuthLayout eyebrow="Onboarding" title="Personalize LiftOS around your actual training style.">
+    <AuthLayout
+      eyebrow="Onboarding"
+      title="Personalize LiftOS around your actual training style."
+      preview={false}
+    >
       <div className="mb-5">
         <div className="mb-1.5 flex items-center justify-between">
           <p className="label-xs">Step {index + 1} of {totalSteps}</p>
@@ -194,7 +206,7 @@ const Onboarding = () => {
                   : "border-border bg-background text-fg-soft hover:border-primary/40 hover:text-fg"
               }`}
             >
-              <span className="shrink-0 text-sm font-medium">{option}</span>
+              <span className="shrink-0 text-sm font-medium">{labels[option] ?? option}</span>
               <div className="flex min-w-0 items-center gap-3">
                 {desc && <span className="min-w-0 text-right text-xs text-fg-muted">{desc}</span>}
                 <span className={`flex h-5 w-5 shrink-0 items-center justify-center transition-all duration-200 ${

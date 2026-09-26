@@ -70,7 +70,17 @@ export type SetInputRowProps = {
    * typing path (tap-to-fill → select → overwrite) survives.
    */
   onWeightValueTap?: (weight: number) => void;
+  /**
+   * Drop the done column — the logger's "Now" block renders the current
+   * set's cells under one primary "Complete set" button, so a second
+   * completion control on the same row would be noise.
+   */
+  hideDone?: boolean;
 };
+
+/* Both grids spelled out in full so Tailwind's scanner sees them. */
+const GRID_WITH_DONE = "grid-cols-[28px_minmax(0,1fr)_minmax(0,1.2fr)_36px]";
+const GRID_NO_DONE = "grid-cols-[28px_minmax(0,1fr)_minmax(0,1.2fr)]";
 
 export const SetInputRow = ({
   idx,
@@ -93,9 +103,14 @@ export const SetInputRow = ({
   onDoneTap,
   onWeightEnter,
   onWeightValueTap,
+  hideDone = false,
 }: SetInputRowProps) => {
   const isTimed = effort !== "reps";
   const isCardio = effort === "cardio";
+  const grid = hideDone ? GRID_NO_DONE : GRID_WITH_DONE;
+  // A logged working set reads as logged: raspberry tint, quieter values.
+  // Warm-ups complete in ink, never raspberry.
+  const logged = done && !isWarmup;
   const repsEmpty = reps === "";
   const weightEmpty = weight === "";
   // In time mode the "reps" channel carries the duration text — hints are
@@ -156,16 +171,24 @@ export const SetInputRow = ({
   return (
     <div className="space-y-1">
       {showLabels && (
-        <div className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1.2fr)_36px] items-end gap-2 px-1 text-[10px] uppercase tracking-widest text-fg-muted">
+        <div
+          className={cn(
+            "grid items-end gap-2 px-1 text-[10px] uppercase tracking-widest text-fg-muted",
+            grid,
+          )}
+        >
           <span>Set</span>
           <span>{isCardio ? "Min" : isTimed ? "Time" : "Reps"}</span>
           <span>{isCardio ? "Dist" : "Weight"}</span>
-          <span />
+          {!hideDone && <span />}
         </div>
       )}
       <div
         className={cn(
-          "grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1.2fr)_36px] items-center gap-2 rounded-[0.875rem] py-0.5 transition",
+          "-mx-1 grid items-center gap-2 rounded-[0.875rem] px-1 py-0.5 transition-colors",
+          grid,
+          logged && "bg-primary/[0.06]",
+          done && isWarmup && "bg-foreground/[0.03]",
         )}
       >
         {isWarmup ? (
@@ -176,7 +199,14 @@ export const SetInputRow = ({
             W
           </span>
         ) : (
-          <span className="text-center text-xs text-fg-muted">{idx + 1}</span>
+          <span
+            className={cn(
+              "text-center text-xs tabular-nums",
+              logged ? "font-semibold text-primary" : "text-fg-muted",
+            )}
+          >
+            {idx + 1}
+          </span>
         )}
 
         {/* Effort: reps, or hold time ("90" reads as seconds → 1:30) */}
@@ -198,6 +228,7 @@ export const SetInputRow = ({
           }
           align="center"
           muted={isWarmup}
+          logged={logged}
         />
 
         {/* Weight — same quiet cell as the effort column */}
@@ -216,32 +247,34 @@ export const SetInputRow = ({
           align="center"
           suffix={unitsLabel}
           muted={isWarmup}
+          logged={logged}
         />
 
-        {/* Done toggle — warm-ups complete in quiet ink, never terracotta */}
-        <button
-          ref={registerDoneRef}
-          type="button"
-          onClick={onDoneTap}
-          aria-label={done ? "Mark set incomplete" : "Mark set done"}
-          className={cn(
-            "relative inline-flex h-9 w-9 items-center justify-center rounded-full border transition after:absolute after:-inset-1 after:content-[''] focus:outline-none focus:ring-2",
-            done && isWarmup && "border-border bg-secondary text-fg-soft focus:ring-primary/30",
-            done && !isWarmup && "check-pop border-primary bg-primary text-primary-foreground focus:ring-primary/40",
-            !done &&
-              (isWarmup
-                ? "border-border bg-secondary text-fg-muted hover:text-fg-soft focus:ring-primary/30"
-                : "border-border bg-secondary text-fg-muted hover:border-primary/50 hover:text-primary focus:ring-primary/30"),
-          )}
-        >
-          {/* keyed remount replays the 200ms draw each completion */}
-          <Check
-            key={done ? "done" : "todo"}
-            size={14}
-            strokeWidth={2.5}
-            className={done && !isWarmup ? "check-draw" : undefined}
-          />
-        </button>
+        {/* Done control — an EMPTY ring until the set is logged (a
+            pre-drawn check next to "0 of 5 sets done" read as already
+            done), then a filled raspberry check. Warm-ups fill in quiet
+            ink, never raspberry. */}
+        {!hideDone && (
+          <button
+            ref={registerDoneRef}
+            type="button"
+            onClick={onDoneTap}
+            aria-label={done ? "Mark set incomplete" : "Mark set done"}
+            aria-pressed={done}
+            className={cn(
+              "relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors after:absolute after:-inset-1 after:content-[''] focus:outline-none focus:ring-2",
+              logged && "check-pop border border-primary bg-primary text-primary-foreground focus:ring-primary/40",
+              done && isWarmup && "border border-foreground/50 bg-foreground/[0.08] text-fg-soft focus:ring-primary/30",
+              !done &&
+                "border-2 border-foreground/25 bg-transparent hover:border-primary/60 focus:ring-primary/30",
+            )}
+          >
+            {/* mounts fresh on each completion so the 200ms draw replays */}
+            {done && (
+              <Check size={14} strokeWidth={2.5} className={logged ? "check-draw" : undefined} />
+            )}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -269,6 +302,8 @@ type NumericInputProps = {
   transparent?: boolean;
   /** Warm-up rows: value renders in the muted tier instead of full ink. */
   muted?: boolean;
+  /** Logged working set: raspberry-tinted cell, value steps back to soft. */
+  logged?: boolean;
 };
 
 const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
@@ -290,6 +325,7 @@ const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
       suffix,
       transparent,
       muted,
+      logged,
     },
     ref,
   ) {
@@ -302,7 +338,8 @@ const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
       <div
         className={cn(
           scoreboard ? "relative flex h-12 min-w-0 flex-1 items-center" : "relative flex h-11 min-w-0 flex-1 items-center",
-          !transparent && "rounded-[0.875rem] bg-secondary",
+          !transparent && "rounded-[0.875rem] transition-colors",
+          !transparent && (logged ? "bg-primary/[0.08]" : "bg-secondary"),
           isEmpty && hint !== null && "group/hint",
         )}
       >
@@ -321,6 +358,7 @@ const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
           className={cn(
             "h-full w-full min-w-0 bg-transparent font-semibold tabular-nums outline-none placeholder:font-medium placeholder:text-fg-muted",
             muted && "font-medium text-fg-muted",
+            logged && !muted && "text-fg-soft",
             align === "center" ? "text-center" : "px-3",
             // Symmetric padding even with a unit suffix: text-center centers
             // within the content box, so uneven padding shoved every value

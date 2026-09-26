@@ -132,11 +132,12 @@ describe("buildSchedulePrompt → parseWeekPlan round trip", () => {
         { day: "Monday", focus: "Push" },
         { day: "Thursday", focus: "Legs" },
       ],
-      "I love front squats",
+      { mustHave: "front squats", avoid: "" },
     );
     expect(prompt).toContain("- Monday: Push");
     expect(prompt).toContain("- Thursday: Legs");
-    expect(prompt).toContain("front squats");
+    expect(prompt).toContain("Must include: front squats");
+    expect(prompt).not.toContain("Avoid (");
     // The exact header format the prompt pins parses back into day names.
     const reply = `## Monday · Push
 Bench Press: 4x6
@@ -147,6 +148,39 @@ Front Squat: 4x6
 Romanian Deadlift: 3x8`;
     const days = parseWeekPlan(reply);
     expect(days.map((d) => d.name)).toEqual(["Monday · Push", "Thursday · Legs"]);
+  });
+
+  it("carries must-have and avoid as two separate instructions", () => {
+    const prompt = buildSchedulePrompt(
+      null,
+      [{ day: "Monday", focus: "Push" }],
+      { mustHave: "  weighted pull-ups ", avoid: "bad left shoulder, no cables" },
+    );
+    expect(prompt).toContain("Must include: weighted pull-ups\n");
+    expect(prompt).toContain("Avoid (injuries, missing equipment, movements to skip): bad left shoulder, no cables");
+    // The must-have line comes first so the model reads the positive ask
+    // before the exclusions.
+    expect(prompt.indexOf("Must include")).toBeLessThan(prompt.indexOf("Avoid ("));
+  });
+
+  it("adds no note lines when both fields are blank", () => {
+    const prompt = buildSchedulePrompt(null, [{ day: "Monday", focus: "Push" }], {
+      mustHave: "   ",
+      avoid: "",
+    });
+    expect(prompt).not.toContain("Must include");
+    expect(prompt).not.toContain("Avoid (");
+    expect(prompt).toContain("- Monday: Push\n\nReply with NOTHING");
+  });
+
+  it("clips a runaway note so the prompt stays bounded", () => {
+    const prompt = buildSchedulePrompt(null, [{ day: "Monday", focus: "Push" }], {
+      mustHave: "x".repeat(1000),
+      avoid: "",
+    });
+    const line = prompt.split("\n").find((l) => l.startsWith("Must include"));
+    expect(line).toBeDefined();
+    expect(line!.length).toBeLessThanOrEqual("Must include: ".length + 300);
   });
 });
 

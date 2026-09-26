@@ -1,5 +1,4 @@
 import ActiveWorkoutLogger from "@/components/ActiveWorkoutLogger";
-import { ForceDarkScope } from "@/context/ThemeContext";
 import { CTAButton } from "@/components/GoldButton";
 import type { WorkoutExercise } from "@/data/liftosMock";
 
@@ -50,13 +49,11 @@ const ActiveWorkout = () => {
     );
   }
 
-  // Split Shift: training always happens on the black scoreboard, whatever
-  // the rest of the app is wearing.
-  return (
-    <ForceDarkScope>
-      <ActiveWorkoutLogger session={session} />
-    </ForceDarkScope>
-  );
+  // The session wears the theme the lifter chose — the logger, its sheets
+  // and the voice receipt all resolve the same tokens, so light stays light
+  // edge to edge (the old forced-dark scope left porcelain showing below a
+  // charcoal logger and flipped every portal back to light).
+  return <ActiveWorkoutLogger session={session} />;
 };
 
 export default ActiveWorkout;

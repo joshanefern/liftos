@@ -28,7 +28,7 @@ const SHOTS = [
   { name: "onboarding", path: "/onboarding", authed: false },
   { name: "home-first-run", path: "/dashboard", full: true },
   { name: "home-split-intake", path: "/dashboard", actions: async (p) => {
-      await p.getByRole("button", { name: /build my split/i }).click();
+      await p.getByRole("button", { name: /use my existing routine/i }).click();
       for (const d of ["Monday", "Wednesday", "Friday"]) await p.getByRole("button", { name: d, exact: true }).click();
     } },
   { name: "workouts-library", path: "/workouts", full: true },
@@ -40,7 +40,7 @@ const SHOTS = [
     seeds: { liftos_active_workout_session: SESSION, "liftos-voice-dev": "1" } },
   { name: "active-session-vest", path: "/workouts/active",
     seeds: { liftos_active_workout_session: SESSION },
-    actions: async (p) => { await p.getByRole("button", { name: /^vest$/i }).click(); } },
+    actions: async (p) => { await p.getByRole("button", { name: /vest or pack weight/i }).click(); } },
   { name: "active-session-vitals", path: "/workouts/active",
     seeds: { liftos_active_workout_session: SESSION },
     actions: async (p) => { await p.locator('button[aria-label^="Live vitals"]').click(); } },

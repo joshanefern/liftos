@@ -5,13 +5,14 @@ import {
   DrawerDescription,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { Sparkles } from "lucide-react";
-import type { ScheduleDay } from "@/lib/coachSetup";
+import { ChevronDown, Sparkles } from "lucide-react";
+import type { IntakeNotes, ScheduleDay } from "@/lib/coachSetup";
 
 /* ── The experienced lifter's 30-second intake. They already know how they
    train — we only ask WHEN (day chips) and WHAT each day hits (focus,
    pre-filled from the standard split for that many days so most people
-   never touch it). One optional line for must-haves/injuries. ── */
+   never touch it), plus two short optional lines: lifts the week must
+   include, and anything to avoid. ── */
 
 const WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -53,15 +54,22 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   building: boolean;
-  onBuild: (schedule: ScheduleDay[], notes: string) => void;
+  onBuild: (schedule: ScheduleDay[], notes: IntakeNotes) => void;
 };
+
+const FIELD_CLASS =
+  "h-11 w-full rounded-[10px] border border-border bg-background px-3 text-sm text-fg outline-none transition placeholder:text-fg-muted focus:border-primary/60";
 
 export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Props) => {
   const [selected, setSelected] = useState<string[]>([]);
   // Focus per day: only days the user explicitly changed; the rest follow
   // the default pattern for however many days are selected.
   const [manual, setManual] = useState<Record<string, string>>({});
-  const [notes, setNotes] = useState("");
+  // The one day whose focus list is open — a select that expands in place,
+  // so every option is on screen and nothing scrolls sideways.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [mustHave, setMustHave] = useState("");
+  const [avoid, setAvoid] = useState("");
 
   const schedule = useMemo((): ScheduleDay[] => {
     const ordered = WEEK.filter((d) => selected.includes(d));
@@ -79,9 +87,15 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
       // a possibly different day count) starts from the pattern again.
       if (removing) {
         setManual(({ [day]: _dropped, ...rest }) => rest);
+        setEditing((e) => (e === day ? null : e));
       }
       return removing ? current.filter((d) => d !== day) : [...current, day];
     });
+  };
+
+  const chooseFocus = (day: string, option: string): void => {
+    setManual((m) => ({ ...m, [day]: option }));
+    setEditing(null);
   };
 
   return (
@@ -90,13 +104,13 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
           height cap on a short phone, only the list gives way (and scrolls),
           so the Build button is never pushed off-screen. */}
       <DrawerContent className="px-6 pb-[calc(1.5rem+var(--safe-bottom))]">
-        <p className="eyebrow mt-3 shrink-0 pr-12 !text-primary">Your split</p>
+        <p className="eyebrow mt-3 shrink-0 pr-12 !text-primary">Your routine</p>
         <DrawerTitle className="heading-md mt-2 shrink-0 text-fg">
           Pick your days — the coach fills in the work.
         </DrawerTitle>
         <DrawerDescription className="mt-1 shrink-0 text-[13px] leading-5 text-fg-muted">
-          Each day is prefilled with the standard split for that many days —
-          change any of them.
+          Each day starts with the usual split for that many days. Tap a focus to
+          change it.
         </DrawerDescription>
 
         {/* Which days */}
@@ -122,70 +136,108 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
           })}
         </div>
 
-        {/* What each day hits — prefilled from the standard split. The
-            focus chips scroll sideways inside a list that scrolls down;
-            data-vaul-no-drag keeps either scroll from turning into a
-            half-dismissed sheet — the header and grabber still drag. */}
+        {/* What each day hits. One row per day: the day name and a pill
+            showing its focus. Tapping the pill opens the full list as a
+            wrapping grid under that row — one day open at a time, so the
+            list never grows past a screen. data-vaul-no-drag keeps the
+            list's own scroll from turning into a half-dismissed sheet. */}
         {schedule.length > 0 && (
           <div
             data-vaul-no-drag
-            className="mt-4 min-h-[5.5rem] flex-auto space-y-2 overflow-y-auto overscroll-contain"
+            className="mt-4 min-h-[5.5rem] flex-auto space-y-1.5 overflow-y-auto overscroll-contain"
           >
-            {schedule.map(({ day, focus }) => (
-              <div key={day} className="flex items-center gap-3">
-                <p className="w-20 shrink-0 text-[13px] font-semibold text-fg">{day}</p>
-                <div className="scrollbar-none flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
-                  {FOCUSES.map((option) => (
+            {schedule.map(({ day, focus }) => {
+              const isOpen = editing === day;
+              return (
+                <div key={day} className="rounded-[12px] border border-border">
+                  <div className="flex min-h-11 items-center justify-between gap-3 px-3">
+                    <p className="text-[13px] font-semibold text-fg">{day}</p>
                     <button
-                      key={option}
                       type="button"
-                      aria-pressed={focus === option}
-                      aria-label={`${day}: ${option}`}
-                      onClick={() =>
-                        setManual((m) => {
-                          // Tapping the pinned chip un-pins it — the day
-                          // follows the pattern again.
-                          if (m[day] === option) {
-                            const { [day]: _dropped, ...rest } = m;
-                            return rest;
-                          }
-                          return { ...m, [day]: option };
-                        })
-                      }
-                      className={`min-h-9 shrink-0 whitespace-nowrap rounded-full px-3 text-[12.5px] font-semibold transition ${
-                        focus === option
-                          ? "bg-foreground text-background"
-                          : "border border-border text-fg-muted"
+                      aria-expanded={isOpen}
+                      aria-label={`${day} focus: ${focus}. Change`}
+                      onClick={() => setEditing(isOpen ? null : day)}
+                      className={`relative inline-flex min-h-9 items-center gap-1 rounded-full border px-3 text-[12.5px] font-semibold transition after:absolute after:-inset-1 after:content-[''] ${
+                        isOpen
+                          ? "border-primary/60 text-fg"
+                          : "border-border text-fg"
                       }`}
                     >
-                      {option}
+                      {focus}
+                      <ChevronDown
+                        size={14}
+                        className={`text-fg-muted transition-transform ${isOpen ? "rotate-180" : ""}`}
+                      />
                     </button>
-                  ))}
+                  </div>
+                  {isOpen && (
+                    <div
+                      role="group"
+                      aria-label={`Focus for ${day}`}
+                      className="flex flex-wrap gap-1.5 border-t border-border px-3 py-3"
+                    >
+                      {FOCUSES.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          aria-pressed={focus === option}
+                          onClick={() => chooseFocus(day, option)}
+                          className={`relative min-h-9 rounded-full px-3 text-[12.5px] font-semibold transition after:absolute after:-inset-1 after:content-[''] ${
+                            focus === option
+                              ? "bg-primary text-primary-foreground"
+                              : "border border-border text-fg-muted"
+                          }`}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
-        <input
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          aria-label="Anything the coach should know (optional)"
-          placeholder="Anything else? Must-have lifts, injuries… (optional)"
-          className="mt-4 h-11 w-full shrink-0 rounded-lg border border-border bg-background px-3 text-sm text-fg outline-none transition placeholder:text-fg-muted focus:border-primary/60"
-        />
+        {/* Two short lines the coach reads as separate instructions. */}
+        <div className="mt-4 grid shrink-0 gap-3">
+          <label className="block">
+            <span className="mb-1.5 block text-[12px] font-semibold text-fg">
+              Must-have lifts
+              <span className="ml-1.5 font-medium text-fg-muted">optional</span>
+            </span>
+            <input
+              value={mustHave}
+              onChange={(e) => setMustHave(e.target.value)}
+              placeholder="Front squat, weighted pull-ups…"
+              className={FIELD_CLASS}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[12px] font-semibold text-fg">
+              Avoid (injuries, equipment)
+              <span className="ml-1.5 font-medium text-fg-muted">optional</span>
+            </span>
+            <input
+              value={avoid}
+              onChange={(e) => setAvoid(e.target.value)}
+              placeholder="Bad shoulder, no cables…"
+              className={FIELD_CLASS}
+            />
+          </label>
+        </div>
 
         <button
           type="button"
           disabled={schedule.length === 0 || building}
-          onClick={() => onBuild(schedule, notes)}
+          onClick={() => onBuild(schedule, { mustHave, avoid })}
           className="mt-4 inline-flex min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-[14px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
         >
           <Sparkles size={15} />
           {building
-            ? "Building your split…"
+            ? "Building your week…"
             : schedule.length > 0
-              ? `Build my ${schedule.length}-day split`
+              ? `Build my ${schedule.length}-day week`
               : "Pick at least one day"}
         </button>
       </DrawerContent>

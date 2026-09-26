@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { WorkoutExercise } from "@/data/liftosMock";
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
-import { getTopLifts, getWeeklyVolumeTarget, getWeekStats } from "./workoutStats";
+import {
+  countPRsThisMonth,
+  getTopLifts,
+  getWeekObservation,
+  getWeeklyVolumeTarget,
+  getWeekStats,
+  plannedSessionsPerWeek,
+} from "./workoutStats";
 
 const log = (exercises: WorkoutExercise[]): WorkoutLog => ({
   id: "log-1",
@@ -83,6 +90,123 @@ describe("getWeeklyVolumeTarget", () => {
 
   it("ignores logs older than 28 days", () => {
     expect(getWeeklyVolumeTarget([volLog(40, 400_000)])).toBe(5000);
+  });
+});
+
+describe("plannedSessionsPerWeek", () => {
+  it("reads the low end of an onboarding range", () => {
+    expect(plannedSessionsPerWeek("1–2 days")).toBe(1);
+    expect(plannedSessionsPerWeek("3–4 days")).toBe(3);
+    expect(plannedSessionsPerWeek("5–6 days")).toBe(5);
+    expect(plannedSessionsPerWeek("7 days")).toBe(7);
+  });
+
+  it("accepts a bare number and caps at seven", () => {
+    expect(plannedSessionsPerWeek("4")).toBe(4);
+    expect(plannedSessionsPerWeek("10 days")).toBe(7);
+  });
+
+  it("is null when the answer is missing or has no number", () => {
+    expect(plannedSessionsPerWeek(null)).toBeNull();
+    expect(plannedSessionsPerWeek(undefined)).toBeNull();
+    expect(plannedSessionsPerWeek("")).toBeNull();
+    expect(plannedSessionsPerWeek("whenever")).toBeNull();
+    expect(plannedSessionsPerWeek("0 days")).toBeNull();
+  });
+});
+
+// A one-lift session at `iso` — the PR-count fixtures only need a weight.
+const liftLog = (id: string, iso: string, name: string, weight: number, reps = 5): WorkoutLog => ({
+  ...log([
+    {
+      id: `${id}-ex`,
+      name,
+      category: "c",
+      target: "t",
+      sets: [{ id: `${id}-set`, reps, weight, completed: true }],
+    },
+  ]),
+  id,
+  finished_at: iso,
+  created_at: iso,
+});
+
+describe("countPRsThisMonth", () => {
+  const now = new Date(2026, 8, 20, 12); // Sept 20 2026, local
+
+  it("counts lifts that beat an earlier best this month, once per session", () => {
+    const logs = [
+      liftLog("a", "2026-09-01T10:00:00", "Bench Press", 100),
+      liftLog("b", "2026-09-10T10:00:00", "Bench Press", 110),
+    ];
+    // Session a is the first-ever bench — not a record. Session b beats it
+    // (weight AND e1rm events) but that's one lift, so one PR.
+    expect(countPRsThisMonth(logs, now)).toBe(1);
+  });
+
+  it("never counts a first-ever performance", () => {
+    const logs = [liftLog("a", "2026-09-05T10:00:00", "Back Squat", 200)];
+    expect(countPRsThisMonth(logs, now)).toBe(0);
+  });
+
+  it("ignores sessions outside the calendar month", () => {
+    const logs = [
+      liftLog("a", "2026-08-01T10:00:00", "Bench Press", 100),
+      liftLog("b", "2026-08-15T10:00:00", "Bench Press", 110),
+    ];
+    expect(countPRsThisMonth(logs, now)).toBe(0);
+  });
+
+  it("only history before a session can be beaten by it", () => {
+    // Sept 5 beat Sept 1; Sept 10 beat Sept 5 — two records, and the later
+    // bigger number must not erase the earlier one.
+    const logs = [
+      liftLog("c", "2026-09-10T10:00:00", "Bench Press", 110),
+      liftLog("a", "2026-09-01T10:00:00", "Bench Press", 100),
+      liftLog("b", "2026-09-05T10:00:00", "Bench Press", 105),
+    ];
+    expect(countPRsThisMonth(logs, now)).toBe(2);
+  });
+
+  it("counts a prior month's best as beatable history", () => {
+    const logs = [
+      liftLog("a", "2026-08-20T10:00:00", "Bench Press", 100),
+      liftLog("b", "2026-09-02T10:00:00", "Bench Press", 105),
+    ];
+    expect(countPRsThisMonth(logs, now)).toBe(1);
+  });
+});
+
+describe("getWeekObservation", () => {
+  const base = { sessions: 1, planned: 3, weeklyStreak: 0, prsThisMonth: 0, prevWeekSessions: 0 };
+
+  it("says nothing when there is nothing to say", () => {
+    expect(getWeekObservation(base)).toBeNull();
+    expect(getWeekObservation({ ...base, sessions: 0 })).toBeNull();
+  });
+
+  it("leads with a finished plan", () => {
+    expect(
+      getWeekObservation({ ...base, sessions: 3, prsThisMonth: 2, weeklyStreak: 5 }),
+    ).toBe("This week's plan is done");
+  });
+
+  it("a plan can't be done with zero sessions, even when the plan is unknown", () => {
+    expect(getWeekObservation({ ...base, sessions: 0, planned: null })).toBeNull();
+  });
+
+  it("then records this month, then the streak, then last week", () => {
+    expect(getWeekObservation({ ...base, prsThisMonth: 1, weeklyStreak: 4 })).toBe(
+      "1 personal record this month",
+    );
+    expect(getWeekObservation({ ...base, prsThisMonth: 3 })).toBe("3 personal records this month");
+    expect(getWeekObservation({ ...base, weeklyStreak: 4, prevWeekSessions: 2 })).toBe(
+      "4 weeks in a row",
+    );
+    expect(getWeekObservation({ ...base, weeklyStreak: 1, prevWeekSessions: 1 })).toBe(
+      "Last week: 1 workout",
+    );
+    expect(getWeekObservation({ ...base, prevWeekSessions: 3 })).toBe("Last week: 3 workouts");
   });
 });
 

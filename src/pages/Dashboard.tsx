@@ -8,6 +8,7 @@ import {
   MAX_TEMPLATES,
   TEMPLATE_LIMIT_ERROR,
   useWorkoutTemplates,
+  type SupabaseTemplate,
 } from "@/hooks/useWorkoutTemplates";
 import { usePendingReviews } from "@/hooks/usePendingReviews";
 import {
@@ -22,6 +23,7 @@ import {
   buildSchedulePrompt,
   buildSplitPrompt,
   parseWeekPlan,
+  type IntakeNotes,
   type ScheduleDay,
 } from "@/lib/coachSetup";
 import { SplitIntakeSheet } from "@/components/home/SplitIntakeSheet";
@@ -32,7 +34,7 @@ import {
   buildSessionFromTemplate,
   persistActiveSession,
 } from "@/lib/startSession";
-import { suggestNextWorkout } from "@/lib/suggestion";
+import { suggestNextWorkout, type Suggestion } from "@/lib/suggestion";
 import {
   applyReminderPrefs,
   loadReminderPrefs,
@@ -40,14 +42,23 @@ import {
   type ReminderPrefs,
 } from "@/lib/reminders";
 import { isPlaceholderName } from "@/lib/exerciseNames";
-import { getMonthStats, getWeeklyStreak, getWeekStats } from "@/lib/workoutStats";
+import {
+  countPRsThisMonth,
+  getMonthStats,
+  getPrevWeekSessions,
+  getWeekObservation,
+  getWeeklyStreak,
+  getWeekStats,
+  plannedSessionsPerWeek,
+  todayDayIndex,
+} from "@/lib/workoutStats";
 import { useDayKey } from "@/hooks/useDayKey";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { Switch } from "@/components/ui/switch";
 import type { ActiveSession } from "@/pages/ActiveWorkout";
 import { CalendarDays, ChevronsRight, RefreshCw, Sparkles } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 /** Compact "when": Today / 1d / 6d / 3w / 2mo / —. Calendar days at local
     midnight, not 24h buckets — yesterday evening must read "1d" this
@@ -69,12 +80,32 @@ const fmtAgo = (iso: string | null): string => {
 /* ── Depth cards: white cards with a cool ink shadow in light that
    deepens to black over slate in dark. ── */
 
+const CARD_CLASS =
+  "rounded-[13px] bg-card shadow-[0_4px_12px_rgba(16,22,35,0.08)] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]";
+
+const CARD_LABEL =
+  "text-[10px] font-semibold uppercase tracking-[0.14em] text-[hsl(35,25%,45%)] dark:text-[hsl(38,32%,72%)]";
+
 const ROW_CLASS =
   "group flex min-h-[52px] w-full items-center justify-between gap-4 rounded-[13px] " +
   "bg-card px-4 py-3.5 text-left shadow-[0_4px_12px_rgba(16,22,35,0.08)] " +
   "transition-[transform,box-shadow] duration-150 active:scale-[0.99] " +
   "dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)] " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
+
+/* ── Hero buttons. Primary is the app's raspberry-with-white everywhere,
+   including on the ink panel (it reads fine on both the light panel's ink
+   and the dark panel's porcelain — one button, both themes). Secondary is
+   the outlined style. ── */
+const HERO_PRIMARY =
+  "inline-flex min-h-[44px] items-center gap-2 rounded-full bg-primary px-5 py-3 text-[14px] font-semibold text-primary-foreground transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60";
+const HERO_SECONDARY =
+  "inline-flex min-h-[44px] items-center gap-2 rounded-full border border-background/25 px-5 py-3 text-[14px] font-semibold text-background transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
+const HERO_EYEBROW =
+  "text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--primary-on-inverse))]";
+const HERO_TITLE =
+  "mt-1.5 text-[26px] font-semibold leading-8 tracking-[-0.01em] text-background";
+const HERO_BODY = "mt-2 max-w-md text-[13px] leading-5 text-background/65";
 
 const RowLabel = ({ children }: { children: ReactNode }) => (
   <span className="text-sm font-semibold text-fg">{children}</span>
@@ -104,13 +135,62 @@ const RowEnd = ({
   </span>
 );
 
-/* Loading stand-in for a "This month" tile: the same box, two breathing
-   bars where the numeral and its label will land — the card never changes
-   height when the numbers arrive. */
+/* Loading stand-in for a stat tile: the same box, two breathing bars where
+   the numeral and its label will land — the card never changes height
+   when the numbers arrive. */
 const StatTileSkeleton = () => (
   <div aria-hidden className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
     <span className="skeleton mt-1 block h-6 w-10" />
     <span className="skeleton mb-0.5 mt-2 block h-3 w-14" />
+  </div>
+);
+
+/* The ink hero's shape row while the pick loads: three breathing bars in
+   the slots the numbers will take, so the panel never jumps. */
+const ShapeSkeleton = () => (
+  <div aria-hidden className="mt-3 border-t border-background/10 pt-3">
+    <div className="flex items-baseline gap-5">
+      {[0, 1, 2].map((i) => (
+        <div key={i}>
+          <span className="skeleton skeleton-inverse block h-8 w-9" />
+          <span className="skeleton skeleton-inverse mt-1 block h-3 w-8" />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+type SessionShape = { sets: number; reps: number; minutes: number };
+
+/* The session's shape — only the tiles that mean something for THIS
+   session: a plank day has sets but no reps, a run has only minutes. MIN
+   always shows and includes planned cardio. */
+const ShapeTiles = ({ shape }: { shape: SessionShape }) => (
+  <div className="mt-3 border-t border-background/10 pt-3">
+    <div className="flex items-baseline gap-5">
+      {shape.sets > 0 && (
+        <div>
+          <p className="stat-scoreboard text-[28px] leading-8 text-background">{shape.sets}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
+            sets
+          </p>
+        </div>
+      )}
+      {shape.reps > 0 && (
+        <div>
+          <p className="stat-scoreboard text-[28px] leading-8 text-background">{shape.reps}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
+            reps
+          </p>
+        </div>
+      )}
+      <div>
+        <p className="stat-scoreboard text-[28px] leading-8 text-background">{shape.minutes}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
+          min
+        </p>
+      </div>
+    </div>
   </div>
 );
 
@@ -120,6 +200,7 @@ const StatTileSkeleton = () => (
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { profile, refreshProfile } = useUser();
   const { logs, loading: logsLoading, loadFailed: logsLoadFailed } = useWorkoutLogs();
   const {
@@ -150,17 +231,38 @@ const Dashboard = () => {
 
   // dayKey in the deps below: these all read the clock internally, and a
   // long-lived iOS mount crosses midnight without logs ever changing —
-  // without it the week card shows LAST week's checkmarks on the new dates.
+  // without it the week card shows LAST week's dots on the new dates.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const weekStats = useMemo(() => getWeekStats(logs), [logs, dayKey]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const weeklyStreak = useMemo(() => getWeeklyStreak(logs), [logs, dayKey]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const monthStats = useMemo(() => getMonthStats(logs), [logs, dayKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const prevWeekSessions = useMemo(() => getPrevWeekSessions(logs), [logs, dayKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const prsThisMonth = useMemo(() => countPRsThisMonth(logs), [logs, dayKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const todayIdx = useMemo(() => todayDayIndex(), [dayKey]);
   // The scoreboard strip: bench / squat / deadlift, backfilled with the
   // heaviest other lifts. Raw best weights, never an index.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const records = useMemo(() => prStrip(logs), [logs, dayKey]);
+
+  // "2 of 3 planned workouts" — the plan is the onboarding frequency answer
+  // ("3–4 days" → 3). Unknown → the card shows a plain count instead.
+  const plannedPerWeek = plannedSessionsPerWeek(profile?.frequency);
+  const weekObservation = useMemo(
+    () =>
+      getWeekObservation({
+        sessions: weekStats.sessions,
+        planned: plannedPerWeek,
+        weeklyStreak,
+        prsThisMonth,
+        prevWeekSessions,
+      }),
+    [weekStats.sessions, plannedPerWeek, weeklyStreak, prsThisMonth, prevWeekSessions],
+  );
 
   // A live session dwarfs everything else on a reopen — the banner above the
   // hero is the way back in. dayKey retriggers the read on refocus/midnight.
@@ -186,26 +288,48 @@ const Dashboard = () => {
     [logs, templates, profile, dayKey],
   );
 
+  // ── The first plan just landed (this mount, no history yet): the hero
+  // names the coach's day one and says "Start" — the moment the onboarding
+  // steps were for. Day one, not the engine's pick, because with zero
+  // history every template scores the same and the tie-break is
+  // alphabetical ("Leg Day" before "Push Day"). Resets on remount, when the
+  // engine takes over as usual.
+  const [firstPlanDay, setFirstPlanDay] = useState<string | null>(null);
+  const firstPlanPick = useMemo<Suggestion | null>(() => {
+    if (!firstPlanDay) return null;
+    const template = templates.find((t) => t.name === firstPlanDay);
+    if (!template) return null;
+    return {
+      kind: "template",
+      id: template.id,
+      title: template.name,
+      ctaLabel: "Start",
+      reason: "",
+      muscles: [],
+    };
+  }, [firstPlanDay, templates]);
+  const showFirstWorkout = firstPlanPick !== null && logs.length === 0;
+  const pick: Suggestion = showFirstWorkout && firstPlanPick ? firstPlanPick : suggestion;
+
   // Split-position framing. Saved templates carry no split metadata (the
   // builder is name + exercises only), so the split day usually IS the title
   // ("Legs"); starters carry a program-level split worth naming when short
   // and not already in the title.
   const splitLabel = useMemo(() => {
-    if (suggestion.kind !== "starter") return null;
-    const split = starterPrograms.find((p) => p.id === suggestion.id)?.split?.trim();
+    if (pick.kind !== "starter") return null;
+    const split = starterPrograms.find((p) => p.id === pick.id)?.split?.trim();
     if (!split || split.length > 14) return null;
-    return suggestion.title.toLowerCase().includes(split.toLowerCase()) ? null : split;
-  }, [suggestion]);
+    return pick.title.toLowerCase().includes(split.toLowerCase()) ? null : split;
+  }, [pick]);
 
   // The pick's shape — what you're walking into: how many lifts and sets,
   // roughly how long, when you last ran this exact session and how it went.
-  // Replaces the per-exercise number rows (owner: "put something meaningful").
   const sessionShape = useMemo(() => {
     const picked =
-      suggestion.kind === "template"
-        ? templates.find((t) => t.id === suggestion.id)?.exercises
-        : suggestion.kind === "starter"
-          ? starterPrograms.find((p) => p.id === suggestion.id)?.exercises
+      pick.kind === "template"
+        ? templates.find((t) => t.id === pick.id)?.exercises
+        : pick.kind === "starter"
+          ? starterPrograms.find((p) => p.id === pick.id)?.exercises
           : undefined;
     if (!picked) return null;
     // The shape trio adapts to what the session actually contains: SETS
@@ -230,10 +354,10 @@ const Dashboard = () => {
 
     // Last time THIS session ran — matched by template id first, then by
     // name so starters and renamed templates still resolve.
-    const key = suggestion.title.trim().toLowerCase();
+    const key = pick.title.trim().toLowerCase();
     const last = logs.find(
       (l) =>
-        (suggestion.kind === "template" && l.template_id === suggestion.id) ||
+        (pick.kind === "template" && l.template_id === pick.id) ||
         l.name.trim().toLowerCase() === key,
     );
     return {
@@ -249,11 +373,7 @@ const Dashboard = () => {
           }
         : null,
     };
-  }, [suggestion, templates, logs]);
-
-  // One tap starts the named session pre-seeded; rest-day picks, still-loading
-  // data, and any stale id fall back to the library, so the CTA never
-  // dead-ends.
+  }, [pick, templates, logs]);
 
   // ── First run: zero logs, zero templates — and both queries genuinely
   // SUCCEEDED (a failed cold-start load returns the same empty arrays, and a
@@ -273,9 +393,14 @@ const Dashboard = () => {
       logs.length === 0 &&
       templates.length === 0);
 
-  // Beginners never see this — the coach decides everything from onboarding.
-  // Experienced lifters route through the intake sheet, which hands us their
-  // actual schedule.
+  // No completed workouts yet, and we KNOW it (the logs query succeeded).
+  // Drives the stat block: a plan preview once templates exist, one benefit
+  // line before that — never a row of zeros.
+  const noHistory = dataReady && !logsLoadFailed && logs.length === 0;
+
+  // Beginners never see the intake — the coach decides everything from
+  // onboarding. Experienced lifters route through the intake sheet, which
+  // hands us their actual schedule.
   const [intakeOpen, setIntakeOpen] = useState(false);
   const isBeginner =
     !profile?.experience || profile.experience.toLowerCase().includes("beginner");
@@ -284,6 +409,8 @@ const Dashboard = () => {
     if (buildingWeek) return;
     setBuildingWeek(true);
     let saved = 0;
+    let firstSaved: string | null = null;
+    const newAccount = logs.length === 0;
     try {
       const reply = await streamCoach(
         [{ role: "user", content: prompt }],
@@ -295,6 +422,7 @@ const Dashboard = () => {
       for (const day of days) {
         await saveTemplate({ id: null, name: day.name, exercises: day.exercises });
         saved += 1;
+        if (firstSaved === null) firstSaved = day.name;
       }
       toast({
         title: `Your week is ready — ${saved} workout${saved === 1 ? "" : "s"} saved`,
@@ -317,17 +445,52 @@ const Dashboard = () => {
       });
       if (saved === 0) navigate("/workouts");
     } finally {
+      // Even a partial build gives a new account its first workout to start.
+      if (newAccount && firstSaved) setFirstPlanDay(firstSaved);
       setBuildingWeek(false);
       setIntakeOpen(false);
     }
   };
 
-  const handleIntakeBuild = (schedule: ScheduleDay[], notes: string): void => {
+  // ── Straight from onboarding (Onboarding navigates with
+  // state.firstTime): a beginner's first week builds itself, no tap — the
+  // six answers ARE the intake. Experienced lifters keep the choice. The
+  // flag is dropped from history first, so a refresh or a later return to
+  // Home never builds a second week; the ref guards StrictMode's
+  // double-effect in dev.
+  const arrivedFromOnboarding =
+    (location.state as { firstTime?: boolean } | null)?.firstTime === true;
+  const autoBuildFired = useRef(false);
+  useEffect(() => {
+    if (!arrivedFromOnboarding || autoBuildFired.current) return;
+    if (!dataReady || profile === null) return;
+    autoBuildFired.current = true;
+    navigate(location.pathname, { replace: true, state: null });
+    if (firstRun && isBeginner && !buildingWeek) {
+      void runWeekBuild(buildSplitPrompt(profile));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivedFromOnboarding, dataReady, profile, firstRun, isBeginner]);
+
+  const handleIntakeBuild = (schedule: ScheduleDay[], notes: IntakeNotes): void => {
     void runWeekBuild(buildSchedulePrompt(profile, schedule, notes));
   };
 
+  // One tap starts a saved workout pre-seeded. A live session outranks it —
+  // never silently overwrite its seed.
+  const startTemplate = (template: SupabaseTemplate): void => {
+    if (activeSeed) {
+      navigate("/workouts/active");
+      return;
+    }
+    persistActiveSession(buildSessionFromTemplate(template));
+    navigate("/workouts/active");
+  };
+
+  // One tap starts the named session pre-seeded; rest-day picks, still-loading
+  // data, and any stale id fall back to the library, so the CTA never
+  // dead-ends.
   const handleSuggestionStart = (): void => {
-    // A live session outranks the pick — never silently overwrite its seed.
     if (activeSeed) {
       navigate("/workouts/active");
       return;
@@ -336,15 +499,14 @@ const Dashboard = () => {
       navigate("/workouts");
       return;
     }
-    if (suggestion.kind === "template") {
-      const template = templates.find((t) => t.id === suggestion.id);
+    if (pick.kind === "template") {
+      const template = templates.find((t) => t.id === pick.id);
       if (template) {
-        persistActiveSession(buildSessionFromTemplate(template));
-        navigate("/workouts/active");
+        startTemplate(template);
         return;
       }
-    } else if (suggestion.kind === "starter") {
-      const program = starterPrograms.find((p) => p.id === suggestion.id);
+    } else if (pick.kind === "starter") {
+      const program = starterPrograms.find((p) => p.id === pick.id);
       if (program) {
         persistActiveSession(buildSessionFromStarter(program));
         navigate("/workouts/active");
@@ -359,7 +521,22 @@ const Dashboard = () => {
   // The banner owns "Resume"; the hero CTA always reads as the pick. (It
   // still routes into the live session when one exists — see
   // handleSuggestionStart — so a seed is never silently overwritten.)
-  const ctaLabel = dataReady ? suggestion.ctaLabel : "Start a workout";
+  const ctaLabel = dataReady ? pick.ctaLabel : "Start a workout";
+
+  // The week's plan, in the order the coach wrote it (oldest save first),
+  // for the no-history preview. "Start" sits on the hero's pick so the two
+  // never disagree; the first row when the pick isn't in the list.
+  const planRows = useMemo(
+    () =>
+      noHistory && templates.length > 0
+        ? [...templates].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
+        : [],
+    [noHistory, templates],
+  );
+  const planStartId =
+    pick.kind === "template" && planRows.some((t) => t.id === pick.id)
+      ? pick.id
+      : (planRows[0]?.id ?? null);
 
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   // Training reminders — prefs persist locally; every change reschedules.
@@ -429,6 +606,8 @@ const Dashboard = () => {
 
   const newestPending = pendingSessions[0] ?? null;
 
+  const welcomeEyebrow = `Welcome${firstName ? ` · ${firstName}` : ""}`;
+
   return (
     <div className="relative mx-auto min-h-screen w-full max-w-2xl overflow-x-clip p-6 pb-9 md:p-10 lg:p-12">
 
@@ -463,174 +642,147 @@ const Dashboard = () => {
       </header>
 
       {/* ── Hero ink panel: the next workout. Split position, the pick,
-          its last-time numbers, one recovery line, one CTA. ── */}
+          its shape, one CTA. Four states: building the first week, the
+          welcome (beginner / experienced), the first workout just landed,
+          and the everyday pick. ── */}
       <section className="mt-6 md:mt-8 animate-reveal-up">
         <div className="relative overflow-hidden rounded-[18px] bg-foreground p-5 text-background shadow-[0_8px_24px_rgba(16,22,35,0.16)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
-          <div className="relative z-10" aria-busy={!dataReady}>
-            {firstRun ? (
+          <div className="relative z-10" aria-busy={!dataReady || buildingWeek}>
+            {firstRun && buildingWeek ? (
               <>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--primary-on-inverse))]">
-                  Welcome{firstName ? ` · ${firstName}` : ""}
-                </p>
-                <h2 className="mt-1.5 text-[26px] font-semibold leading-8 tracking-[-0.01em] text-background">
-                  {isBeginner ? "New to the gym? Start here." : "Set up your split."}
+                <p className={HERO_EYEBROW}>{welcomeEyebrow}</p>
+                <h2 className={HERO_TITLE} aria-live="polite">
+                  {isBeginner ? "Building your first week…" : "Building your week…"}
                 </h2>
-                <p className="mt-2 max-w-md text-[13px] leading-5 text-background/65">
-                  {isBeginner
-                    ? "One tap and the coach builds your first week around your goal — then walks you through every session."
-                    : "Thirty seconds: your days, your focus — the coach writes the week."}
+                <p className={HERO_BODY}>
+                  The coach is writing your workouts around your goal — about 15 seconds.
+                </p>
+                <ShapeSkeleton />
+              </>
+            ) : firstRun && isBeginner ? (
+              <>
+                <p className={HERO_EYEBROW}>{welcomeEyebrow}</p>
+                <h2 className={HERO_TITLE}>New to the gym? Start here.</h2>
+                <p className={HERO_BODY}>
+                  One tap and the coach builds your first week around your goal — then walks
+                  you through every session.
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() =>
-                      isBeginner
-                        ? void runWeekBuild(buildSplitPrompt(profile))
-                        : setIntakeOpen(true)
-                    }
-                    disabled={buildingWeek}
-                    className="inline-flex min-h-[44px] items-center gap-2 rounded-full bg-[hsl(var(--primary-on-inverse))] px-5 py-3 text-[14px] font-semibold text-foreground transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
+                    onClick={() => void runWeekBuild(buildSplitPrompt(profile))}
+                    className={HERO_PRIMARY}
                   >
                     <Sparkles size={15} />
-                    {buildingWeek
-                      ? "Building your week…"
-                      : isBeginner
-                        ? "Build my plan for me"
-                        : "Build my split"}
+                    Build my first week
                   </button>
-                  {isBeginner ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigate("/coach", {
-                          state: {
-                            draft:
-                              "I'm brand new to the gym. Build me a simple first week and tell me exactly how to start.",
-                          },
-                        })
-                      }
-                      className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-background/25 px-5 py-3 text-[14px] font-semibold text-background transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    >
-                      Talk to the coach
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => navigate("/workouts")}
-                      className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-background/25 px-5 py-3 text-[14px] font-semibold text-background transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    >
-                      Start a workout
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate("/coach", {
+                        state: {
+                          draft:
+                            "I'm brand new to the gym. Build me a simple first week and tell me exactly how to start.",
+                        },
+                      })
+                    }
+                    className={HERO_SECONDARY}
+                  >
+                    Talk to the coach
+                  </button>
                 </div>
-                {isBeginner && !buildingWeek && (
+                <button
+                  type="button"
+                  onClick={() => navigate("/workouts")}
+                  className="mt-3 min-h-[44px] text-left text-[12.5px] font-semibold text-background/55 transition hover:text-background/80"
+                >
+                  I’ll start on my own →
+                </button>
+              </>
+            ) : firstRun ? (
+              <>
+                <p className={HERO_EYEBROW}>{welcomeEyebrow}</p>
+                <h2 className={HERO_TITLE}>Bring your routine, or just start.</h2>
+                <p className={HERO_BODY}>
+                  Tell the coach your days and what each one hits — it writes the week. Or
+                  start a workout right now.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIntakeOpen(true)}
+                    className={HERO_PRIMARY}
+                  >
+                    <Sparkles size={15} />
+                    Use my existing routine
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSuggestionStart}
+                    className={HERO_SECONDARY}
+                  >
+                    Start a workout
+                    <ChevronsRight size={16} />
+                  </button>
+                </div>
+              </>
+            ) : showFirstWorkout ? (
+              <>
+                <p className={HERO_EYEBROW}>Here’s your first workout</p>
+                <h2 className={HERO_TITLE}>{pick.title}</h2>
+                {sessionShape && <ShapeTiles shape={sessionShape} />}
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={handleSuggestionStart} className={HERO_PRIMARY}>
+                    Start
+                    <ChevronsRight size={16} />
+                  </button>
                   <button
                     type="button"
                     onClick={() => navigate("/workouts")}
-                    className="mt-3 text-left text-[12.5px] font-semibold text-background/55 transition hover:text-background/80"
+                    className={HERO_SECONDARY}
                   >
-                    I’ll start on my own →
+                    Adjust
                   </button>
-                )}
-                {buildingWeek && (
-                  <p className="mt-3 text-[12px] leading-4 text-background/55">
-                    Writing your week — about 15 seconds.
-                  </p>
-                )}
+                </div>
               </>
             ) : (
-            <>
-            {/* Split-position line — "what day of my split is it" as a
-                label, never a calendar to interpret. */}
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--primary-on-inverse))]">
-              {!dataReady
-                ? "Next up"
-                : suggestion.kind === "rest"
-                  ? "Rest day"
-                  : splitLabel
-                    ? `Next up · ${splitLabel}`
-                    : "Next up"}
-            </p>
+              <>
+                {/* Split-position line — "what day of my split is it" as a
+                    label, never a calendar to interpret. */}
+                <p className={HERO_EYEBROW}>
+                  {!dataReady
+                    ? "Next up"
+                    : pick.kind === "rest"
+                      ? "Rest day"
+                      : splitLabel
+                        ? `Next up · ${splitLabel}`
+                        : "Next up"}
+                </p>
 
-            {/* The pick itself — the reason this screen exists. */}
-            <h2 className="mt-1.5 text-[26px] font-semibold leading-8 tracking-[-0.01em] text-background">
-              {dataReady ? (
-                suggestion.title
-              ) : (
-                <>
-                  <span className="sr-only">Loading your next workout</span>
-                  <span aria-hidden className="skeleton skeleton-inverse my-1 block h-6 w-[62%]" />
-                </>
-              )}
-            </h2>
-
-            {/* While the pick loads, the shape row keeps its slot with three
-                breathing bars — the panel never jumps when the numbers land. */}
-            {!dataReady && (
-              <div aria-hidden className="mt-3 border-t border-background/10 pt-3">
-                <div className="flex items-baseline gap-5">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i}>
-                      <span className="skeleton skeleton-inverse block h-8 w-9" />
-                      <span className="skeleton skeleton-inverse mt-1 block h-3 w-8" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* The session's shape — only the tiles that mean something for
-                THIS session: a plank day has sets but no reps, a run has
-                only minutes. MIN always shows and includes planned cardio. */}
-            {dataReady && sessionShape && (
-              <div className="mt-3 border-t border-background/10 pt-3">
-                <div className="flex items-baseline gap-5">
-                  {sessionShape.sets > 0 && (
-                    <div>
-                      <p className="stat-scoreboard text-[28px] leading-8 text-background">
-                        {sessionShape.sets}
-                      </p>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
-                        sets
-                      </p>
-                    </div>
+                {/* The pick itself — the reason this screen exists. */}
+                <h2 className={HERO_TITLE}>
+                  {dataReady ? (
+                    pick.title
+                  ) : (
+                    <>
+                      <span className="sr-only">Loading your next workout</span>
+                      <span aria-hidden className="skeleton skeleton-inverse my-1 block h-6 w-[62%]" />
+                    </>
                   )}
-                  {sessionShape.reps > 0 && (
-                    <div>
-                      <p className="stat-scoreboard text-[28px] leading-8 text-background">
-                        {sessionShape.reps}
-                      </p>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
-                        reps
-                      </p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="stat-scoreboard text-[28px] leading-8 text-background">
-                      {sessionShape.minutes}
-                    </p>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-background/55">
-                      min
-                    </p>
-                  </div>
+                </h2>
+
+                {!dataReady && <ShapeSkeleton />}
+                {dataReady && sessionShape && <ShapeTiles shape={sessionShape} />}
+
+                {/* The one CTA on this screen — starts the exact pick
+                    pre-seeded. */}
+                <div className="mt-4 flex items-center gap-2">
+                  <button type="button" onClick={handleSuggestionStart} className={HERO_PRIMARY}>
+                    {ctaLabel}
+                    <ChevronsRight size={16} />
+                  </button>
                 </div>
-              </div>
-            )}
-
-            {/* The one CTA on this screen — starts the exact pick
-                pre-seeded. The quiet chevron is the swap valve. */}
-            <div className="mt-4 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSuggestionStart}
-                className="inline-flex min-h-[44px] items-center gap-2 rounded-full bg-[hsl(var(--primary-on-inverse))] px-5 py-3 text-[14px] font-semibold text-foreground transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              >
-                {ctaLabel}
-                <ChevronsRight size={16} />
-              </button>
-
-            </div>
-            </>
+              </>
             )}
           </div>
         </div>
@@ -643,12 +795,10 @@ const Dashboard = () => {
         {records.length > 0 && (
           <Link
             to="/progress"
-            className="group block rounded-[13px] bg-card px-4 pb-4 pt-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] transition-[transform,box-shadow] duration-150 active:scale-[0.99] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            className={`${CARD_CLASS} group block px-4 pb-4 pt-3.5 transition-[transform,box-shadow] duration-150 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40`}
           >
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[hsl(35,25%,45%)] dark:text-[hsl(38,32%,72%)]">
-                Personal records
-              </p>
+              <p className={CARD_LABEL}>Personal records</p>
               <OpenPill label="All" />
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
@@ -672,62 +822,175 @@ const Dashboard = () => {
           </Link>
         )}
 
-        {/* Training this month — sessions, weekly streak, weight moved —
-            plus the one obvious way into the calendar. */}
-        <div className="rounded-[13px] bg-card px-4 pb-3 pt-3.5 shadow-[0_4px_12px_rgba(16,22,35,0.08)] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[hsl(35,25%,45%)] dark:text-[hsl(38,32%,72%)]">
-              This month
+        {/* No history yet: the week's plan once it exists (names in the
+            coach's order, Start on the pick), one line before that. Zeros
+            tell a new user nothing. */}
+        {planRows.length > 0 ? (
+          <div className={`${CARD_CLASS} px-4 pb-2 pt-3.5`}>
+            <div className="flex items-center justify-between gap-3">
+              <p className={CARD_LABEL}>Your week</p>
+              <span className="caption whitespace-nowrap">
+                {planRows.length} workout{planRows.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <ol className="mt-1.5 divide-y divide-border">
+              {planRows.map((template, i) => {
+                const exerciseCount = template.exercises.filter(
+                  (e) => !isPlaceholderName(e.name),
+                ).length;
+                return (
+                  <li
+                    key={template.id}
+                    className="flex min-h-[46px] items-center justify-between gap-3 py-1.5"
+                  >
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <span className="mono w-4 shrink-0 text-[11px] text-fg-muted">{i + 1}</span>
+                      <span className="truncate text-sm font-semibold text-fg">{template.name}</span>
+                      {exerciseCount > 0 && (
+                        <span className="caption shrink-0 whitespace-nowrap">
+                          {exerciseCount} exercise{exerciseCount === 1 ? "" : "s"}
+                        </span>
+                      )}
+                    </span>
+                    {template.id === planStartId && !buildingWeek && (
+                      <button
+                        type="button"
+                        onClick={() => startTemplate(template)}
+                        aria-label={`Start ${template.name}`}
+                        className="relative inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-primary px-3 text-[12px] font-semibold text-primary-foreground transition-transform duration-150 after:absolute after:-inset-1.5 after:content-[''] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      >
+                        Start
+                        <ChevronsRight size={13} />
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+            <Link
+              to="/workouts"
+              className="mt-1 flex min-h-11 items-center justify-between rounded-md text-sm font-semibold text-fg transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <span>All workouts</span>
+              <OpenPill />
+            </Link>
+          </div>
+        ) : noHistory && !templatesLoadFailed ? (
+          <div className={`${CARD_CLASS} px-4 py-3.5`}>
+            <p className="text-sm font-semibold text-fg">
+              Finish one workout and your numbers start here.
             </p>
-            {weeklyStreak > 1 && (
-              <span className="caption whitespace-nowrap">{weeklyStreak}-week streak</span>
-            )}
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-2" aria-busy={!dataReady}>
-            {!dataReady ? (
-              <>
-                <StatTileSkeleton />
-                <StatTileSkeleton />
-                <StatTileSkeleton />
-              </>
-            ) : (
-              <>
-                <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
-                  <p className="stat-scoreboard text-[26px] leading-8 tabular-nums text-fg">
-                    {monthStats.count}
-                  </p>
-                  <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">
-                    {monthStats.count === 1 ? "session" : "sessions"}
-                  </p>
+        ) : (
+          <>
+            {/* This week — sessions against the plan you set in onboarding,
+                the days you trained, and one line history can back up. */}
+            <div className={`${CARD_CLASS} px-4 pb-3.5 pt-3.5`}>
+              <div className="flex items-center justify-between gap-3">
+                <p className={CARD_LABEL}>This week</p>
+                {dataReady && (
+                  <div
+                    role="img"
+                    aria-label={`Trained ${weekStats.workedDayIndices.length} of 7 days this week, Monday first`}
+                    className="flex items-center gap-1"
+                  >
+                    {Array.from({ length: 7 }, (_, i) => {
+                      const worked = weekStats.workedDayIndices.includes(i);
+                      const isToday = i === todayIdx;
+                      return (
+                        <span
+                          key={i}
+                          aria-hidden
+                          className={`h-2 w-2 rounded-full ${
+                            worked
+                              ? "bg-primary"
+                              : isToday
+                                ? "border border-primary/70"
+                                : "bg-foreground/[0.14]"
+                          }`}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {!dataReady ? (
+                <div aria-hidden className="mt-2">
+                  <span className="skeleton block h-7 w-24" />
+                  <span className="skeleton mt-2 block h-3 w-32" />
                 </div>
-                <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
-                  <p className="stat-scoreboard text-[26px] leading-8 tabular-nums text-fg">
-                    {weekStats.sessions}
+              ) : (
+                <>
+                  <p className="mt-1.5 flex items-baseline gap-1.5">
+                    <span className="stat-scoreboard text-[28px] leading-8 tabular-nums text-fg">
+                      {weekStats.sessions}
+                    </span>
+                    {plannedPerWeek !== null && (
+                      <span className="text-[15px] font-medium tabular-nums text-fg-muted">
+                        of {plannedPerWeek}
+                      </span>
+                    )}
+                    <span className="text-[12px] font-medium text-fg-soft">
+                      {plannedPerWeek !== null
+                        ? "planned workouts"
+                        : weekStats.sessions === 1
+                          ? "workout"
+                          : "workouts"}
+                    </span>
                   </p>
-                  <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">this week</p>
-                </div>
-                <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
-                  <p className="stat-scoreboard whitespace-nowrap text-[26px] leading-8 tabular-nums text-fg">
-                    {monthStats.volume >= 1000
-                      ? `${(monthStats.volume / 1000).toFixed(monthStats.volume >= 10_000 ? 0 : 1)}k`
-                      : monthStats.volume}
-                  </p>
-                  <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">{units} lifted</p>
-                </div>
-              </>
-            )}
-          </div>
-          <Link
-            to="/calendar"
-            className="mt-2 flex min-h-11 items-center justify-between rounded-md text-sm font-semibold text-fg transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <span className="flex items-center gap-2">
-              <CalendarDays size={15} className="text-primary" />
-              Calendar
-            </span>
-            <OpenPill />
-          </Link>
-        </div>
+                  {weekObservation && (
+                    <p className="mt-1 text-[12px] leading-4 text-fg-muted">{weekObservation}</p>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* This month — sessions, weight moved — plus the one obvious
+                way into the calendar. */}
+            <div className={`${CARD_CLASS} px-4 pb-3 pt-3.5`}>
+              <p className={CARD_LABEL}>This month</p>
+              <div className="mt-3 grid grid-cols-2 gap-2" aria-busy={!dataReady}>
+                {!dataReady ? (
+                  <>
+                    <StatTileSkeleton />
+                    <StatTileSkeleton />
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
+                      <p className="stat-scoreboard text-[26px] leading-8 tabular-nums text-fg">
+                        {monthStats.count}
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">
+                        {monthStats.count === 1 ? "session" : "sessions"}
+                      </p>
+                    </div>
+                    <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
+                      <p className="stat-scoreboard whitespace-nowrap text-[26px] leading-8 tabular-nums text-fg">
+                        {monthStats.volume >= 1000
+                          ? `${(monthStats.volume / 1000).toFixed(monthStats.volume >= 10_000 ? 0 : 1)}k`
+                          : monthStats.volume}
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">
+                        {units} lifted
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+              <Link
+                to="/calendar"
+                className="mt-2 flex min-h-11 items-center justify-between rounded-md text-sm font-semibold text-fg transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <span className="flex items-center gap-2">
+                  <CalendarDays size={15} className="text-primary" />
+                  Calendar
+                </span>
+                <OpenPill />
+              </Link>
+            </div>
+          </>
+        )}
 
         {pendingCount > 0 && newestPending && (
           <Link to={`/workouts/review/${newestPending.id}`} className={ROW_CLASS}>

@@ -21,8 +21,21 @@ import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PendingReviewsCard } from "@/components/review/PendingReviewsCard";
 import type { WorkoutExercise } from "@/data/liftosMock";
-import { starterPrograms, type StarterProgram } from "@/data/starterPrograms";
+import {
+  STARTER_DURATION_BUCKETS,
+  STARTER_EQUIPMENT_OPTIONS,
+  recommendedStarter,
+  starterDurationBucket,
+  starterPrograms,
+  starterRunsOn,
+  starterSetsLabel,
+  type StarterDurationBucket,
+  type StarterEquipment,
+  type StarterProgram,
+} from "@/data/starterPrograms";
+import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
 import { TEMPLATE_LIMIT_ERROR, MAX_TEMPLATES, useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { suggestNextWorkout } from "@/lib/suggestion";
 import {
   ACTIVE_WORKOUT_STORAGE_KEY,
   buildBlankSession,
@@ -42,7 +55,7 @@ import { buildCoachContext, streamCoach } from "@/lib/coach";
 import { parseWeekPlan } from "@/lib/coachSetup";
 import { inferKind } from "@/lib/exerciseTracking";
 import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X, Mic, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 type ExerciseDraft = {
@@ -121,53 +134,135 @@ const createExerciseDraftFromTemplate = (exercise: WorkoutExercise): ExerciseDra
   });
 };
 
+/* Toggle chip — the library filters and the AI panel's quick choices. 36px
+   tall with the ±4px hit-area trick, so the thumb gets 44pt. */
+const Chip = ({ pressed, onClick, children }: { pressed: boolean; onClick: () => void; children: ReactNode }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-pressed={pressed}
+    className={cn(
+      "relative inline-flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-full border px-3 text-[12.5px] font-semibold transition after:absolute after:-inset-1 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+      pressed ? "border-foreground bg-foreground text-background" : "border-border bg-card text-fg-muted hover:text-fg",
+    )}
+  >
+    {children}
+  </button>
+);
+
+// AI panel quick choices. Each tap adds the phrase to the ask, tapping it
+// again removes it, and picking another phrase from the same group swaps it
+// (one time, one set of gear). The ask is split on commas so the phrases
+// stay recognisable next to whatever was typed or spoken.
+const ASK_TIMES = ["30 min", "45 min", "60 min"] as const;
+const ASK_EQUIPMENT = ["Full gym", "Dumbbells only", "Bodyweight"] as const;
+const askParts = (text: string): string[] => text.split(",").map((part) => part.trim()).filter(Boolean);
+const hasAskPhrase = (text: string, phrase: string): boolean =>
+  askParts(text).some((part) => part.toLowerCase() === phrase.toLowerCase());
+const toggleAskPhrase = (text: string, phrase: string, group: readonly string[]): string => {
+  const others = new Set(group.filter((g) => g !== phrase).map((g) => g.toLowerCase()));
+  const kept = askParts(text).filter((part) => !others.has(part.toLowerCase()));
+  const present = kept.some((part) => part.toLowerCase() === phrase.toLowerCase());
+  const next = present ? kept.filter((part) => part.toLowerCase() !== phrase.toLowerCase()) : [...kept, phrase];
+  return next.join(", ");
+};
+
 type StarterProgramRowProps = {
   program: StarterProgram;
+  recommended: boolean;
+  expanded: boolean;
   saved: boolean;
   saving: boolean;
   saveDisabled: boolean;
+  onToggle: () => void;
   onSave: () => void;
   onStart: () => void;
 };
 
-/* One hairline index row per starter program — label left, quiet actions right. */
-const StarterProgramRow = ({ program, saved, saving, saveDisabled, onSave, onStart }: StarterProgramRowProps) => (
-  <div className="flex items-center justify-between gap-3 border-b border-border py-3">
-    <div className="w-0 flex-1">
-      <p className="truncate text-sm font-semibold text-fg">{program.name}</p>
-      <p className="caption truncate">
-        {program.split} · {program.duration} min · {program.difficulty}
-      </p>
-    </div>
-    <div className="flex shrink-0 items-center gap-1">
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={saveDisabled}
-        className="inline-flex min-h-11 items-center gap-1 rounded-full px-2.5 text-xs font-medium text-fg-muted transition hover:bg-secondary hover:text-fg focus:outline-none focus:ring-2 focus:ring-ring/40 disabled:cursor-default disabled:opacity-60"
-      >
-        {saved ? (
-          <>
-            <Check size={12} />
-            Saved
-          </>
-        ) : saving ? (
-          "Saving…"
-        ) : (
-          <>
-            <Plus size={12} />
-            Save
-          </>
-        )}
-      </button>
-      <button
-        type="button"
-        onClick={onStart}
-        className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/40"
-      >
-        Start
-      </button>
-    </div>
+/* One hairline index row per starter program. Collapsed it is the label and
+   a chevron; tapping opens the preview — every exercise with its sets ×
+   reps — and only there do Save and Start appear, so nobody starts a
+   program they haven't looked at. */
+const StarterProgramRow = ({
+  program,
+  recommended,
+  expanded,
+  saved,
+  saving,
+  saveDisabled,
+  onToggle,
+  onSave,
+  onStart,
+}: StarterProgramRowProps) => (
+  <div className="border-b border-border">
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      className="flex min-h-[60px] w-full items-center justify-between gap-3 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+    >
+      <div className="w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-semibold text-fg">{program.name}</p>
+          {recommended && (
+            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
+              Recommended
+            </span>
+          )}
+        </div>
+        <p className="caption truncate">
+          Program · {program.split} · {program.duration} min · {program.difficulty}
+        </p>
+      </div>
+      <ChevronDown
+        size={16}
+        className={cn("shrink-0 text-fg-muted transition-transform", expanded && "rotate-180")}
+      />
+    </button>
+    {expanded && (
+      <div className="pb-4">
+        <p className="body-sm">{program.description}</p>
+        <ul className="mt-3 divide-y divide-border rounded-[14px] border border-border bg-card">
+          {program.exercises.map((exercise) => (
+            <li key={exercise.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+              <span className="truncate text-sm text-fg">{exercise.name}</span>
+              <span className="mono shrink-0 text-xs tabular-nums text-fg-muted">
+                {starterSetsLabel(exercise)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3 flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saveDisabled}
+            className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-medium text-fg-muted transition hover:bg-secondary hover:text-fg focus:outline-none focus:ring-2 focus:ring-ring/40 disabled:cursor-default disabled:opacity-60"
+          >
+            {saved ? (
+              <>
+                <Check size={12} />
+                Saved
+              </>
+            ) : saving ? (
+              "Saving…"
+            ) : (
+              <>
+                <Plus size={12} />
+                Save to library
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={onStart}
+            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            Start
+          </button>
+        </div>
+      </div>
+    )}
   </div>
 );
 
@@ -185,6 +280,33 @@ const Workouts = () => {
   const [starterOpen, setStarterOpen] = useState(false);
   const [savingProgramId, setSavingProgramId] = useState<string | null>(null);
   const [savedProgramIds, setSavedProgramIds] = useState<Set<string>>(new Set());
+  // Starter library: which preview is open, and the two filter chips.
+  const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
+  const [equipmentFilter, setEquipmentFilter] = useState<StarterEquipment | null>(null);
+  const [durationFilter, setDurationFilter] = useState<StarterDurationBucket | null>(null);
+
+  const { profile } = useUser();
+  const units = profile?.units ?? "lb";
+
+  // The Dashboard's engine with the same inputs, so the library's
+  // "Recommended" and the home hero never disagree. Both hooks are app-wide
+  // caches — nothing is fetched twice.
+  const { logs } = useWorkoutLogs();
+  const recommendedId = useMemo(() => {
+    const pick = suggestNextWorkout({ logs, templates, starters: starterPrograms, profile });
+    return recommendedStarter(starterPrograms, pick.kind === "starter" ? pick.id : null, profile)?.id ?? null;
+  }, [logs, templates, profile]);
+
+  const visibleStarters = useMemo(() => {
+    const list = starterPrograms.filter(
+      (program) =>
+        (equipmentFilter === null || starterRunsOn(program, equipmentFilter)) &&
+        (durationFilter === null || starterDurationBucket(program.duration) === durationFilter),
+    );
+    // The recommended program leads — "start here" should need no scrolling.
+    if (!recommendedId) return list;
+    return [...list.filter((p) => p.id === recommendedId), ...list.filter((p) => p.id !== recommendedId)];
+  }, [equipmentFilter, durationFilter, recommendedId]);
 
   const completedExercises = useMemo(
     () => exercises.filter((exercise) => exercise.name.trim()),
@@ -292,9 +414,6 @@ const Workouts = () => {
   const addExercise = () => {
     setExercises((current) => [...current, createExerciseDraft()]);
   };
-
-  const { profile } = useUser();
-  const units = profile?.units ?? "lb";
 
   // ── Dictate a plan: "push day — bench four by eight at one thirty five,
   // incline dumbbell three by ten, twenty minutes on the bike". Each pause
@@ -581,15 +700,22 @@ Reply with NOTHING but this exact format:
   const builderBody = (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="px-5 pb-1 md:px-6">
-        <div className="mt-1 flex items-center gap-2">
+        {/* A label that stays once the placeholder is gone. */}
+        <label
+          htmlFor="builder-workout-name"
+          className="mt-1 mb-1 block text-[10px] uppercase tracking-widest text-fg-muted"
+        >
+          Workout name
+        </label>
+        <div className="flex items-center gap-2">
           <input
+            id="builder-workout-name"
             // No autofocus on phones: the keyboard popping on open makes iOS
             // pan the sheet up under the status bar. Tap to name it instead.
             autoFocus={!isMobile}
             value={workoutName}
             onChange={(event) => setWorkoutName(event.target.value)}
-            placeholder="Workout name — Push Day, Legs…"
-            aria-label="Workout name"
+            placeholder="Push Day, Legs…"
             className="h-12 w-full min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-[15px] font-medium text-fg outline-none transition placeholder:font-normal focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
           />
           {/* VOICE — dictate the plan; rows appear as you talk. */}
@@ -653,8 +779,9 @@ Reply with NOTHING but this exact format:
         {aiOpen && (
           <div className="mt-2 rounded-[14px] border border-primary/25 bg-primary/[0.05] p-3">
             <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-primary">
-              Ask the coach
+              Describe your workout
             </p>
+            <p className="caption mt-0.5">Try “45-minute push day, dumbbells only, feeling fresh”.</p>
             <div className="mt-2 flex items-start gap-2">
               <textarea
                 value={aiText}
@@ -666,7 +793,7 @@ Reply with NOTHING but this exact format:
                   }
                 }}
                 rows={2}
-                placeholder="What do you want? “45-minute push day, dumbbells only, hypertrophy”"
+                placeholder="What do you want to train?"
                 aria-label="Describe the workout you want the coach to design"
                 className="min-h-[60px] w-full min-w-0 flex-1 resize-none rounded-lg border border-border bg-card px-3 py-2 text-[14px] leading-5 text-fg outline-none transition placeholder:text-fg-muted focus:border-primary/60"
               />
@@ -687,13 +814,38 @@ Reply with NOTHING but this exact format:
                 </button>
               )}
             </div>
+            {/* Quick choices — a tap drops the phrase into the ask. */}
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
+              <div role="group" aria-label="How long" className="flex gap-1.5">
+                {ASK_TIMES.map((phrase) => (
+                  <Chip
+                    key={phrase}
+                    pressed={hasAskPhrase(aiText, phrase)}
+                    onClick={() => setAiText((text) => toggleAskPhrase(text, phrase, ASK_TIMES))}
+                  >
+                    {phrase}
+                  </Chip>
+                ))}
+              </div>
+              <div role="group" aria-label="What you have" className="flex gap-1.5">
+                {ASK_EQUIPMENT.map((phrase) => (
+                  <Chip
+                    key={phrase}
+                    pressed={hasAskPhrase(aiText, phrase)}
+                    onClick={() => setAiText((text) => toggleAskPhrase(text, phrase, ASK_EQUIPMENT))}
+                  >
+                    {phrase}
+                  </Chip>
+                ))}
+              </div>
+            </div>
             <div className="mt-2 flex items-center justify-between gap-3">
-              <p className="min-h-[18px] min-w-0 flex-1 truncate text-[12px] leading-[18px] text-fg-muted">
+              <p className="min-h-[18px] min-w-0 flex-1 text-[12px] leading-[18px] text-fg-muted">
                 {aiBusy
                   ? "The coach is designing it…"
                   : listeningTo === "ai"
                     ? "Listening — say what you want, then tap Design."
-                    : "The coach picks the exercises, sets and reps. Edit anything after."}
+                    : "The coach fills in the rows — edit any of them before you save."}
               </p>
               <button
                 type="button"
@@ -715,20 +867,20 @@ Reply with NOTHING but this exact format:
         <div className="space-y-4">
           {exercises.map((exercise, index) => (
             <div key={exercise.id} className="rule-hairline pt-3 first:border-t-0 first:pt-0">
+              <label
+                htmlFor={`exercise-name-${exercise.id}`}
+                className="mb-1 block text-[10px] uppercase tracking-widest text-fg-muted"
+              >
+                Exercise {index + 1}
+              </label>
               <div className="flex items-center gap-2">
                 <input
+                  id={`exercise-name-${exercise.id}`}
                   value={exercise.name}
                   onChange={(event) => updateExercise(exercise.id, "name", event.target.value)}
                   onFocus={() => setNameFocusId(exercise.id)}
                   onBlur={() => setNameFocusId((current) => (current === exercise.id ? null : current))}
-                  placeholder={
-                    exercise.mode === "cardio"
-                      ? "Stairmaster, bike, treadmill…"
-                      : index === 0
-                        ? "Exercise — Bench Press, Squat…"
-                        : "Exercise"
-                  }
-                  aria-label={`Exercise ${index + 1} name`}
+                  placeholder={exercise.mode === "cardio" ? "Stairmaster, bike, treadmill…" : "Bench Press, Squat…"}
                   className="h-11 w-full min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-sm font-medium text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
                 />
                 {/* Lift ⇄ Cardio — cardio swaps the target grid for minutes. */}
@@ -788,23 +940,37 @@ Reply with NOTHING but this exact format:
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   {(
                     [
-                      ["sets", "Sets", "3", "numeric", integerInput],
-                      ["reps", "Reps", "—", "numeric", integerInput],
-                      ["weight", "Weight", "—", "decimal", decimalInput],
+                      ["sets", "Sets", "3", "numeric", integerInput, null],
+                      ["reps", "Reps", "—", "numeric", integerInput, null],
+                      // The unit sits inside the field, the logger's weight
+                      // cell style — so "135" never reads as the wrong unit.
+                      ["weight", "Weight", "—", "decimal", decimalInput, units],
                     ] as const
-                  ).map(([key, label, hint, mode, sanitize]) => (
+                  ).map(([key, label, hint, mode, sanitize, suffix]) => (
                     <label key={key} className="block min-w-0">
                       <span className="mb-1 block text-[10px] uppercase tracking-widest text-fg-muted">
                         {label}
                       </span>
-                      <input
-                        type="text"
-                        inputMode={mode}
-                        value={exercise[key]}
-                        placeholder={hint}
-                        onChange={(event) => updateExercise(exercise.id, key, sanitize(event.target.value))}
-                        className="h-11 w-full rounded-lg border border-border bg-card px-3 text-center text-sm tabular-nums text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
-                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          inputMode={mode}
+                          value={exercise[key]}
+                          placeholder={hint}
+                          onChange={(event) => updateExercise(exercise.id, key, sanitize(event.target.value))}
+                          className={cn(
+                            "h-11 w-full rounded-lg border border-border bg-card text-center text-sm tabular-nums text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20",
+                            // Symmetric padding keeps the centred value centred
+                            // beside the suffix.
+                            suffix ? "px-6" : "px-3",
+                          )}
+                        />
+                        {suffix && (
+                          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] font-medium uppercase leading-none tracking-wider text-fg-muted">
+                            {suffix}
+                          </span>
+                        )}
+                      </div>
                     </label>
                   ))}
                 </div>
@@ -834,6 +1000,70 @@ Reply with NOTHING but this exact format:
         </CTAButton>
       </div>
     </div>
+  );
+
+  // The starter library — filters, then the rows — shared by the empty-
+  // library screen and the collapsible rail under "Your workouts". The
+  // filters mean "what I have": dumbbells run every bodyweight program too.
+  const filtersActive = equipmentFilter !== null || durationFilter !== null;
+  const starterLibrary = (
+    <>
+      <div className="flex flex-wrap gap-x-4 gap-y-2 pb-3">
+        <div role="group" aria-label="Equipment you have" className="flex gap-1.5">
+          {STARTER_EQUIPMENT_OPTIONS.map((option) => (
+            <Chip
+              key={option.id}
+              pressed={equipmentFilter === option.id}
+              onClick={() => setEquipmentFilter((current) => (current === option.id ? null : option.id))}
+            >
+              {option.label}
+            </Chip>
+          ))}
+        </div>
+        <div role="group" aria-label="Time you have" className="flex gap-1.5">
+          {STARTER_DURATION_BUCKETS.map((bucket) => (
+            <Chip
+              key={bucket.id}
+              pressed={durationFilter === bucket.id}
+              onClick={() => setDurationFilter((current) => (current === bucket.id ? null : bucket.id))}
+            >
+              {bucket.label}
+            </Chip>
+          ))}
+        </div>
+      </div>
+      <div className="border-t border-border md:grid md:grid-cols-2 md:gap-x-10">
+        {visibleStarters.map((program) => (
+          <StarterProgramRow
+            key={program.id}
+            program={program}
+            recommended={program.id === recommendedId}
+            expanded={expandedProgramId === program.id}
+            saved={savedProgramIds.has(program.id)}
+            saving={savingProgramId === program.id}
+            saveDisabled={savingProgramId !== null || savedProgramIds.has(program.id) || templates.length >= MAX_TEMPLATES}
+            onToggle={() => setExpandedProgramId((current) => (current === program.id ? null : program.id))}
+            onSave={() => saveProgramAsTemplate(program)}
+            onStart={() => startProgram(program)}
+          />
+        ))}
+      </div>
+      {visibleStarters.length === 0 && filtersActive && (
+        <div className="flex items-center justify-between gap-3 border-b border-border py-3">
+          <p className="caption">Nothing fits both filters.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setEquipmentFilter(null);
+              setDurationFilter(null);
+            }}
+            className="relative min-h-9 shrink-0 rounded-full px-3 text-[12.5px] font-semibold text-primary transition after:absolute after:-inset-1 after:content-[''] hover:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
+    </>
   );
 
   return (
@@ -923,8 +1153,8 @@ Reply with NOTHING but this exact format:
                   >
                     <p className="truncate text-sm font-semibold text-fg">{template.name}</p>
                     <p className="caption truncate">
-                      {template.exercises.length} exercise{template.exercises.length === 1 ? "" : "s"} · {totalSets}{" "}
-                      sets
+                      Workout · {template.exercises.length} exercise{template.exercises.length === 1 ? "" : "s"} ·{" "}
+                      {totalSets} sets
                     </p>
                   </button>
                   <div className="flex shrink-0 items-center gap-1">
@@ -969,7 +1199,7 @@ Reply with NOTHING but this exact format:
             >
               <div>
                 <p className="eyebrow !text-primary">Starter programs</p>
-                <p className="caption mt-1">Curated sessions you can run today.</p>
+                <p className="caption mt-1">Filter by gear and time, tap one to preview.</p>
               </div>
               <ChevronDown
                 size={16}
@@ -977,21 +1207,7 @@ Reply with NOTHING but this exact format:
               />
             </button>
           </div>
-          {starterOpen && (
-            <div className="border-t border-border md:grid md:grid-cols-2 md:gap-x-10">
-              {starterPrograms.map((program) => (
-                <StarterProgramRow
-                  key={program.id}
-                  program={program}
-                  saved={savedProgramIds.has(program.id)}
-                  saving={savingProgramId === program.id}
-                  saveDisabled={savingProgramId !== null || savedProgramIds.has(program.id) || templates.length >= MAX_TEMPLATES}
-                  onSave={() => saveProgramAsTemplate(program)}
-                  onStart={() => startProgram(program)}
-                />
-              ))}
-            </div>
-          )}
+          {starterOpen && starterLibrary}
         </section>
         </>
       ) : (
@@ -999,21 +1215,9 @@ Reply with NOTHING but this exact format:
         <section className="animate-reveal-up">
           <div className="rule-heavy pb-3 pt-4">
             <p className="eyebrow !text-primary">Starter programs</p>
-            <p className="caption mt-1">Curated sessions you can run today.</p>
+            <p className="caption mt-1">Filter by gear and time, tap one to preview.</p>
           </div>
-          <div className="border-t border-border md:grid md:grid-cols-2 md:gap-x-10">
-            {starterPrograms.map((program) => (
-              <StarterProgramRow
-                key={program.id}
-                program={program}
-                saved={savedProgramIds.has(program.id)}
-                saving={savingProgramId === program.id}
-                saveDisabled={savingProgramId !== null || savedProgramIds.has(program.id) || templates.length >= MAX_TEMPLATES}
-                onSave={() => saveProgramAsTemplate(program)}
-                onStart={() => startProgram(program)}
-              />
-            ))}
-          </div>
+          {starterLibrary}
         </section>
       )}
 

@@ -84,7 +84,7 @@ const Spark = ({ className = "" }: { className?: string }) => (
   </svg>
 );
 
-/* Slim terracotta radial donut for the Hit Rate stat — md+ only, mobile stays clean. */
+/* Slim radial donut beside the planned-workouts stat — md+ only, mobile stays clean. */
 const HitRateDonut = ({ pct, muted }: { pct: number; muted: boolean }) => {
   const r = 20;
   const c = 2 * Math.PI * r;
@@ -218,7 +218,6 @@ const Calendar = () => {
     ? Math.round((monthLogs.length / Math.max(expectedSessions, 1)) * 100)
     : null;
 
-  const greenDays = Object.keys(dayVolumes).length;
   const monthVolume = monthLogs.reduce((s, l) => s + l.total_volume, 0);
 
   /* ── Month insight — computed, never fake ── */
@@ -248,27 +247,34 @@ const Calendar = () => {
   const daySets = selectedLogs.reduce((s, l) => s + l.completed_sets, 0);
   const dayMin = selectedLogs.reduce((s, l) => s + (l.duration_minutes ?? 0), 0);
 
-  /* Hairline stat strip — hit rate carries the "x of ~y planned" context in
-     its accessible label; visually the number stands alone. */
+  /* Stat rows under the grid. Each label says what its number counts in
+     plain words — the "x of about y planned" context is visible, not hidden
+     in a title attribute iOS never shows. ("Green days" — distinct days
+     with a session — duplicated the workout count above and is gone.) */
+  const plannedSoFar = Math.max(1, Math.round(expectedSessions));
   const stripStats = [
     {
-      label: "Hit rate",
+      label: "Planned workouts completed",
       value: hitRate !== null ? `${hitRate}%` : "–",
-      title:
+      detail:
         hitRate !== null
-          ? `${monthLogs.length} of ~${Math.max(1, Math.round(expectedSessions))} planned sessions`
-          : "No sessions yet",
+          ? `${monthLogs.length} of about ${plannedSoFar} planned${isCurrentMonth ? " so far" : ""}`
+          : `Based on ${weeklyTarget} a week`,
       donut: true,
     },
-    { label: "Green days", value: hasAnyData ? String(greenDays) : "–", title: `Days trained in ${monthNameLong}`, donut: false },
-    { label: "Streak", value: hasAnyData ? String(streak) : "–", title: "Consecutive training days", donut: false },
+    {
+      label: "Streak",
+      value: hasAnyData ? String(streak) : "–",
+      detail: streak === 1 ? "day in a row" : "days in a row",
+      donut: false,
+    },
   ];
 
   return (
     <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
       {/* ── Eyebrow header — context left, quiet volume right ── */}
-      <header className="mb-8 flex items-baseline justify-between gap-4 animate-reveal-up">
-        <h1 className="eyebrow">Performance Ledger</h1>
+      <header className="mb-6 flex items-baseline justify-between gap-4 animate-reveal-up">
+        <h1 className="eyebrow">Workout history</h1>
         {monthVolume > 0 && (
           <p key={`vol-${monthKey}`} className="mono text-xs tabular-nums text-fg-muted animate-fade-in">
             {fmtVol(monthVolume, units)} logged
@@ -276,70 +282,11 @@ const Calendar = () => {
         )}
       </header>
 
-      {/* ── The Number — sessions in the viewed month ── */}
-      <section className="mb-8 animate-reveal-up">
-        <p key={`count-${monthKey}`} className="stat-hero !text-6xl md:!text-7xl animate-fade-in">
-          {monthLogs.length}
-        </p>
-        <p className="eyebrow mt-3">Sessions in {monthNameLong}</p>
-        <p key={`insight-${monthKey}`} className="body-sm mt-2 max-w-md animate-fade-in">
-          {insight ? (
-            <>
-              Best week: <span className="mono font-medium text-fg">{insight.bestWeek}</span> session
-              {insight.bestWeek === 1 ? "" : "s"}
-              {insight.deltaPct !== null &&
-                (insight.deltaPct === 0 ? (
-                  <> · volume even vs {insight.prevMonthName}</>
-                ) : (
-                  <>
-                    {" "}
-                    · volume {insight.deltaPct > 0 ? "up" : "down"}{" "}
-                    <span className="mono font-medium text-fg">{Math.abs(insight.deltaPct)}%</span> vs{" "}
-                    {insight.prevMonthName}
-                  </>
-                ))}
-            </>
-          ) : (
-            `No sessions logged in ${monthNameLong}${isCurrentMonth ? " yet — the grid fills in as you train" : ""}.`
-          )}
-        </p>
-        <div className="mt-6">
-          <CTAButton to="/workouts">
-            <Dumbbell size={16} />
-            Log workout
-          </CTAButton>
-        </div>
-      </section>
-
-      {/* ── Hairline stat strip — hit rate · green days · streak ── */}
+      {/* ── Month grid — first on the page, opened by a heavy rule. The
+          numbers it summarizes sit below it. ── */}
       <section
-        className="mb-8 border-y border-border animate-reveal-up"
-        style={{ animationDelay: "120ms" }}
-      >
-        <div
-          key={`strip-${monthKey}`}
-          className="flex items-center justify-between gap-4 py-3 animate-fade-in md:justify-start md:gap-12"
-        >
-          {stripStats.map((stat) => (
-            <div key={stat.label} title={stat.title} className="flex items-center gap-3">
-              {stat.donut && <HitRateDonut pct={hitRate ?? 0} muted={hitRate === null} />}
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted">
-                  {stat.label}
-                </p>
-                <p className={`stat-md mt-0.5 ${stat.value !== "–" ? "" : "text-fg-disabled"}`}>
-                  {stat.value}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Month grid — editorial block, opened by a heavy rule ── */}
-      <section
-        className="relative mb-6 rule-heavy pt-4 animate-reveal-up"
-        style={{ animationDelay: "260ms" }}
+        className="relative mb-8 rule-heavy pt-4 animate-reveal-up"
+        style={{ animationDelay: "60ms" }}
       >
         {/* Month navigation */}
         <div className="mb-4 flex items-center justify-between gap-3">
@@ -459,6 +406,70 @@ const Calendar = () => {
             <span className="h-2 w-2 rounded-full ring-1 ring-foreground" />
             Today
           </span>
+        </div>
+      </section>
+
+      {/* ── The month in numbers — workouts logged, the read on them, then
+          the two rates, then the door to the next one ── */}
+      <section
+        className="mb-6 rule-hairline pt-5 animate-reveal-up"
+        style={{ animationDelay: "160ms" }}
+      >
+        <div key={`count-${monthKey}`} className="animate-fade-in">
+          <p className="stat-xl">
+            {monthLogs.length}
+            <span className="ml-2 text-[13px] font-medium tracking-normal text-fg-muted">
+              workout{monthLogs.length === 1 ? "" : "s"} in {monthNameLong}
+            </span>
+          </p>
+          <p className="body-sm mt-2 max-w-md">
+            {insight ? (
+              <>
+                Best week: <span className="mono font-medium text-fg">{insight.bestWeek}</span> workout
+                {insight.bestWeek === 1 ? "" : "s"}
+                {insight.deltaPct !== null &&
+                  (insight.deltaPct === 0 ? (
+                    <> · volume even with {insight.prevMonthName}</>
+                  ) : (
+                    <>
+                      {" "}
+                      · volume {insight.deltaPct > 0 ? "up" : "down"}{" "}
+                      <span className="mono font-medium text-fg">{Math.abs(insight.deltaPct)}%</span> on{" "}
+                      {insight.prevMonthName}
+                    </>
+                  ))}
+              </>
+            ) : (
+              `Nothing logged in ${monthNameLong}${isCurrentMonth ? " yet — the grid fills in as you train" : ""}.`
+            )}
+          </p>
+        </div>
+
+        <div
+          key={`strip-${monthKey}`}
+          className="mt-5 divide-y divide-border border-y border-border animate-fade-in"
+        >
+          {stripStats.map((stat) => (
+            <div key={stat.label} className="flex items-center justify-between gap-4 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                {stat.donut && <HitRateDonut pct={hitRate ?? 0} muted={hitRate === null} />}
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-fg">{stat.label}</p>
+                  <p className="caption">{stat.detail}</p>
+                </div>
+              </div>
+              <p className={`stat-md shrink-0 ${stat.value !== "–" ? "" : "text-fg-disabled"}`}>
+                {stat.value}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6">
+          <CTAButton to="/workouts">
+            <Dumbbell size={16} />
+            Log workout
+          </CTAButton>
         </div>
       </section>
 
