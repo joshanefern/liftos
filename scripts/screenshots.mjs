@@ -34,7 +34,7 @@ const SHOTS = [
   { name: "workouts-library", path: "/workouts", full: true },
   { name: "workout-builder", path: "/workouts?new=1" },
   { name: "workout-builder-ai", path: "/workouts?new=1", actions: async (p) => {
-      await p.getByRole("button", { name: "Build with AI" }).click();
+      await p.getByRole("button", { name: "Design with AI" }).click();
     } },
   { name: "active-session", path: "/workouts/active", full: true,
     seeds: { liftos_active_workout_session: SESSION, "liftos-voice-dev": "1" } },

@@ -38,6 +38,9 @@ import { interpretPlan } from "@/lib/voice";
 import { voiceDiag } from "@/lib/speech";
 import { dictationVocabulary } from "@/lib/voiceVocabulary";
 import { reuseRowIds } from "@/lib/voicePlanRows";
+import { buildCoachContext, streamCoach } from "@/lib/coach";
+import { parseWeekPlan } from "@/lib/coachSetup";
+import { inferKind } from "@/lib/exerciseTracking";
 import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X, Mic, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -312,11 +315,18 @@ const Workouts = () => {
   // Live: the transcript is re-interpreted every ~second while you talk.
   // One call in flight at a time; the newest transcript waits its turn, so
   // a burst of partials never queues a dozen requests.
-  // "Build with AI" (Pro): type a description or talk — both feed the same
-  // interpreter and the same row-supersede path.
+  // Two different things, kept apart on purpose:
+  //   VOICE  — the mic: dictate YOUR plan, rows appear as you talk.
+  //   AI     — (Pro) describe what you WANT ("45-min push day, dumbbells
+  //            only") and the coach designs it. You can type that ask or
+  //            speak it; the words go into the ask box, never straight to
+  //            rows.
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
-  const typedSession = useRef(1000); // typed builds get their own session ids
+  const [aiBusy, setAiBusy] = useState(false);
+  const aiRowIds = useRef<Set<string>>(new Set());
+  const nameFromAi = useRef(false);
+  const dictationTarget = useRef<"rows" | "ai">("rows");
   const liveInFlight = useRef(false);
   const liveQueued = useRef<{ transcript: string; session: number } | null>(null);
   const interpretLatest = (transcript: string, session: number): void => {
@@ -390,15 +400,77 @@ const Workouts = () => {
         }
       });
   };
-  const buildFromText = (): void => {
-    const text = aiText.trim();
-    if (!text || liveInFlight.current) return;
-    typedSession.current += 1;
-    voiceDiag(`builder: typed build (${text.length} chars)`);
-    interpretLatest(text, typedSession.current);
+  const designPrompt = (ask: string): string =>
+    `Design ONE workout for me: ${ask}.
+Reply with NOTHING but this exact format:
+
+## <Workout name>
+<Exercise name>: <sets>x<reps>
+
+5-8 exercises matched to the ask. Cardio blocks as "<Machine>: 1x<minutes>". No intro, no outro, no weights.`;
+
+  const designWorkout = async (): Promise<void> => {
+    const ask = aiText.trim();
+    if (!ask || aiBusy) return;
+    setAiBusy(true);
+    voiceDiag(`builder: ai design (${ask.length} chars)`);
+    try {
+      const reply = await streamCoach(
+        [{ role: "user", content: designPrompt(ask) }],
+        buildCoachContext([], profile),
+        () => {},
+      );
+      const [day] = parseWeekPlan(reply, 1);
+      if (!day || day.exercises.length === 0) {
+        toast({ title: "The coach couldn’t design that — add a bit more detail", variant: "destructive" });
+        return;
+      }
+      voiceDiag(`builder: ai design → "${day.name}" ${day.exercises.length} exercises`);
+      if (!workoutName.trim() || nameFromAi.current) {
+        setWorkoutName(day.name);
+        nameFromAi.current = true;
+      }
+      // Designing again replaces the AI's rows; typed and dictated rows stay.
+      const previous = aiRowIds.current;
+      setExercises((current) => {
+        const prevAi = current.filter((row) => previous.has(row.id));
+        const ids = reuseRowIds(prevAi, day.exercises.map((e) => e.name));
+        const rows = day.exercises.map((e, i) => {
+          const cardio = inferKind(e.name) === "cardio";
+          const first = e.sets[0];
+          return createExerciseDraft({
+            ...(ids[i] ? { id: ids[i] as string } : {}),
+            name: e.name,
+            mode: cardio ? "cardio" : "lift",
+            sets: String(cardio ? 1 : Math.max(1, e.sets.length)),
+            reps: !cardio && first?.reps ? String(first.reps) : "",
+            weight: "",
+            minutes: cardio && first?.reps ? String(first.reps) : "",
+            dirty: true,
+          });
+        });
+        aiRowIds.current = new Set(rows.map((r) => r.id));
+        const kept = current.filter(
+          (row) => !previous.has(row.id) && (row.name.trim() !== "" || row.dirty),
+        );
+        return [...kept, ...rows].slice(0, 20);
+      });
+      toast({ title: `Designed “${day.name}”`, description: `${day.exercises.length} exercises — edit anything before saving.` });
+    } catch (err) {
+      voiceDiag(`builder: ai design FAILED ${err instanceof Error ? err.message : String(err)}`);
+      toast({ title: "Couldn’t reach the coach — try again", variant: "destructive" });
+    } finally {
+      setAiBusy(false);
+    }
   };
+
   const dictation = useDictation(
     (transcript, session) => {
+      // Speaking into the AI box: the words are the ask, not the plan.
+      if (dictationTarget.current === "ai") {
+        setAiText(transcript);
+        return;
+      }
       if (liveInFlight.current) {
         liveQueued.current = { transcript, session };
         return;
@@ -407,6 +479,11 @@ const Workouts = () => {
     },
     { vocabulary, live: true },
   );
+  const startDictation = (target: "rows" | "ai"): void => {
+    dictationTarget.current = target;
+    void dictation.start();
+  };
+  const listeningTo = dictation.state.at === "idle" ? null : dictationTarget.current;
 
   const updateExercise = <K extends keyof ExerciseDraft>(id: string, key: K, value: ExerciseDraft[K]) => {
     setExercises((current) =>
@@ -515,12 +592,29 @@ const Workouts = () => {
             aria-label="Workout name"
             className="h-12 w-full min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-[15px] font-medium text-fg outline-none transition placeholder:font-normal focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
           />
-          {/* Build with AI — Pro. Type it or say it; rows appear as you go. */}
+          {/* VOICE — dictate the plan; rows appear as you talk. */}
+          {dictation.supported && (
+            <button
+              type="button"
+              onClick={() => startDictation("rows")}
+              disabled={listeningTo === "ai"}
+              aria-label={listeningTo === "rows" ? "Stop dictating" : "Dictate this workout"}
+              className={cn(
+                "relative inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition after:absolute after:-inset-1 after:content-[''] disabled:opacity-40",
+                listeningTo === "rows"
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card text-primary",
+              )}
+            >
+              <Mic size={18} className={listeningTo === "rows" ? "animate-pulse" : ""} />
+            </button>
+          )}
+          {/* AI — Pro. The coach designs a workout from what you ask for. */}
           <button
             type="button"
             onClick={() => setAiOpen((open) => !open)}
             aria-pressed={aiOpen}
-            aria-label="Build with AI"
+            aria-label="Design with AI"
             className={cn(
               "relative inline-flex h-12 shrink-0 items-center gap-1.5 rounded-lg border pl-3 pr-2 text-[13px] font-semibold transition after:absolute after:-inset-1 after:content-['']",
               aiOpen
@@ -541,59 +635,74 @@ const Workouts = () => {
           </button>
         </div>
 
+        {/* Voice status — only while the mic is feeding rows. */}
+        {(listeningTo === "rows" || (dictating && !aiOpen)) && (
+          <p className="mt-2 min-h-[18px] truncate text-[12.5px] leading-[18px] text-fg-muted">
+            {dictating && dictation.state.at === "idle"
+              ? "Building your rows…"
+              : dictation.state.at === "starting"
+                ? "Opening the mic…"
+                : dictation.state.at === "blocked"
+                  ? dictation.state.reason
+                  : dictation.state.at === "listening"
+                    ? dictation.state.partial || "Just talk — rows appear as you go. “Take the bench out” removes it."
+                    : ""}
+          </p>
+        )}
+
         {aiOpen && (
           <div className="mt-2 rounded-[14px] border border-primary/25 bg-primary/[0.05] p-3">
-            <div className="flex items-start gap-2">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-primary">
+              Ask the coach
+            </p>
+            <div className="mt-2 flex items-start gap-2">
               <textarea
                 value={aiText}
                 onChange={(event) => setAiText(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
-                    buildFromText();
+                    void designWorkout();
                   }
                 }}
                 rows={2}
-                placeholder="Describe it — “push day: bench 4×8 at 135, incline dumbbell 3×10, 20 min bike”"
-                aria-label="Describe the workout for the AI to build"
+                placeholder="What do you want? “45-minute push day, dumbbells only, hypertrophy”"
+                aria-label="Describe the workout you want the coach to design"
                 className="min-h-[60px] w-full min-w-0 flex-1 resize-none rounded-lg border border-border bg-card px-3 py-2 text-[14px] leading-5 text-fg outline-none transition placeholder:text-fg-muted focus:border-primary/60"
               />
               {dictation.supported && (
                 <button
                   type="button"
-                  onClick={() => void dictation.start()}
-                  aria-label={dictation.state.at === "listening" ? "Stop dictating" : "Dictate the workout"}
+                  onClick={() => startDictation("ai")}
+                  disabled={listeningTo === "rows"}
+                  aria-label={listeningTo === "ai" ? "Stop speaking" : "Speak your request"}
                   className={cn(
-                    "relative inline-flex h-[60px] w-12 shrink-0 items-center justify-center rounded-lg border transition after:absolute after:-inset-1 after:content-['']",
-                    dictation.state.at === "listening"
+                    "relative inline-flex h-[60px] w-12 shrink-0 items-center justify-center rounded-lg border transition after:absolute after:-inset-1 after:content-[''] disabled:opacity-40",
+                    listeningTo === "ai"
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-card text-primary",
                   )}
                 >
-                  <Mic size={18} className={dictation.state.at === "listening" ? "animate-pulse" : ""} />
+                  <Mic size={18} className={listeningTo === "ai" ? "animate-pulse" : ""} />
                 </button>
               )}
             </div>
             <div className="mt-2 flex items-center justify-between gap-3">
               <p className="min-h-[18px] min-w-0 flex-1 truncate text-[12px] leading-[18px] text-fg-muted">
-                {dictating && dictation.state.at === "idle"
-                  ? "Building your rows…"
-                  : dictation.state.at === "starting"
-                    ? "Opening the mic…"
-                    : dictation.state.at === "blocked"
-                      ? dictation.state.reason
-                      : dictation.state.at === "listening"
-                        ? dictation.state.partial || "Listening — rows appear as you talk."
-                        : "Type it, or tap the mic and just talk. “Take the bench out” removes it."}
+                {aiBusy
+                  ? "The coach is designing it…"
+                  : listeningTo === "ai"
+                    ? "Listening — say what you want, then tap Design."
+                    : "The coach picks the exercises, sets and reps. Edit anything after."}
               </p>
               <button
                 type="button"
-                onClick={buildFromText}
-                disabled={!aiText.trim() || dictating}
+                onClick={() => void designWorkout()}
+                disabled={!aiText.trim() || aiBusy}
                 className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.97] disabled:opacity-40"
               >
                 <Sparkles size={13} />
-                Build
+                {aiBusy ? "Designing…" : "Design it"}
               </button>
             </div>
           </div>
