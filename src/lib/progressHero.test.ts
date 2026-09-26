@@ -79,7 +79,7 @@ describe("buildProgressHero", () => {
     ];
     const hero = buildProgressHero(logs, "Fat Loss", "lb", NOW);
     expect(hero).not.toBeNull();
-    expect(hero!.label).toBe("sessions this month");
+    expect(hero!.label).toBe("workouts this month");
     expect(hero!.value).toBe("2");
     expect(hero!.eyebrow).toBe("Putting in the work");
   });
@@ -101,7 +101,7 @@ describe("buildProgressHero", () => {
     const hero = buildProgressHero(logs, "Strength", "lb", NOW);
     expect(hero).not.toBeNull();
     expect(hero!.value).toBe("2");
-    expect(hero!.label).toBe("sessions this month");
+    expect(hero!.label).toBe("workouts this month");
     expect(hero!.detail).not.toMatch(/down|worse|less/i);
   });
 
@@ -139,6 +139,6 @@ describe("buildProgressHero — Fat Loss weight trend", () => {
     const samples = [sample(1, 91.0), sample(30, 90.0)];
     const hero = buildProgressHero(logs, "Fat Loss", "lb", NOW, samples);
     expect(hero).not.toBeNull();
-    expect(hero!.label).toBe("sessions this month");
+    expect(hero!.label).toBe("workouts this month");
   });
 });

@@ -95,7 +95,7 @@ const showingUp = (
     const hours = Math.round((minutes / 60) * 10) / 10;
     return {
       value: String(recent.length),
-      label: recent.length === 1 ? "session this month" : "sessions this month",
+      label: recent.length === 1 ? "workout this month" : "workouts this month",
       detail:
         minutes > 0
           ? `${hours} ${hours === 1 ? "hour" : "hours"} of training banked in the last 4 weeks — that work compounds.`
