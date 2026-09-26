@@ -18,9 +18,12 @@ import { chooseTranscript, longerOf } from "@/lib/voiceTranscript";
    (the workout builder, notes, the coach) can take a transcript without
    owning the voice UI. The caller decides what the words mean. ── */
 
-// Jarvis-style: a short pause hands the caller what was said SO FAR (rows
-// land immediately), the mic stays open, and more speech becomes the next
-// chunk. The session closes on its own once a longer silence passes.
+// Jarvis-style: a short pause hands the caller EVERYTHING said so far (the
+// cumulative transcript), the mic stays open, and the next pause hands over
+// the longer version — the caller supersedes what it built from the last
+// one. Cumulative, not chunked: recognizers revise earlier words, so
+// diffing "what's new" produced duplicate rows on a real iPhone. The
+// session closes on its own once a longer silence passes.
 const SILENCE_FIRE_MS = 2000; // pause → emit the new chunk, keep listening
 const LATE_GRACE_MS = 8000; // no more speech for this long → close the mic
 const EMPTY_CANCEL_MS = 8000;
@@ -32,7 +35,9 @@ export type DictationState =
   | { at: "listening"; partial: string }
   | { at: "blocked"; reason: string };
 
-export const useDictation = (onTranscript: (transcript: string) => void) => {
+export const useDictation = (
+  onTranscript: (transcript: string, sessionId: number) => void,
+) => {
   const [state, setState] = useState<DictationState>({ at: "idle" });
   const active = useRef(false);
   const partialRef = useRef<PluginListenerHandle | null>(null);
@@ -42,10 +47,11 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
   const longest = useRef("");
   const lastChangeAt = useRef(0);
   const startedAt = useRef(0);
-  // Everything already handed to the caller — the next chunk is what
-  // follows it. Recognizers revise earlier words, so prefer prefix-strip
-  // and fall back to a length cut.
+  // The transcript last handed to the caller; only a changed one re-emits.
   const emitted = useRef("");
+  // Bumped per tap-to-start so the caller can tell a new dictation from a
+  // revision of the current one.
+  const sessionId = useRef(0);
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
 
@@ -67,22 +73,13 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
     errorRef.current = null;
   };
 
-  /** Hand the caller the words since the last emit. */
-  const emitChunk = (transcript: string): void => {
-    const prev = emitted.current;
-    // Three shapes: it grew (emit the tail); it's a shorter revision of what
-    // we already emitted (nothing new); or the recognizer restarted and
-    // these are all new words (emit the whole thing).
-    const chunk = (
-      prev && transcript.startsWith(prev)
-        ? transcript.slice(prev.length)
-        : prev && prev.includes(transcript)
-          ? ""
-          : transcript
-    ).trim();
-    emitted.current = transcript;
-    voiceDiag(`dictation: chunk (${chunk.length} chars, total ${transcript.length})`);
-    if (chunk.length >= 3) onTranscriptRef.current(chunk);
+  /** Hand the caller the whole transcript so far. */
+  const emit = (transcript: string): void => {
+    const text = transcript.trim();
+    if (text === emitted.current) return;
+    emitted.current = text;
+    voiceDiag(`dictation: emit #${sessionId.current} (${text.length} chars)`);
+    if (text.length >= 3) onTranscriptRef.current(text, sessionId.current);
   };
 
   const finish = async (): Promise<void> => {
@@ -97,7 +94,7 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
     teardownListeners();
     transcript = chooseTranscript(transcript, longerOf(last.current, longest.current));
     setState({ at: "idle" });
-    if (transcript !== emitted.current) emitChunk(transcript);
+    emit(transcript);
   };
 
   const cancel = (): void => {
@@ -127,6 +124,7 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
     last.current = "";
     longest.current = "";
     emitted.current = "";
+    sessionId.current += 1;
     startedAt.current = Date.now();
     lastChangeAt.current = Date.now();
     setState({ at: "listening", partial: "" });
@@ -151,7 +149,7 @@ export const useDictation = (onTranscript: (transcript: string) => void) => {
       const heard = current.length >= 3;
       const unemitted = current !== emitted.current;
       if (total >= HARD_CAP_MS) void finish();
-      else if (heard && unemitted && idle >= SILENCE_FIRE_MS) emitChunk(current);
+      else if (heard && unemitted && idle >= SILENCE_FIRE_MS) emit(current);
       else if (heard && !unemitted && idle >= SILENCE_FIRE_MS + LATE_GRACE_MS) void finish();
       else if (!heard && total >= EMPTY_CANCEL_MS) cancel();
     }, 250);

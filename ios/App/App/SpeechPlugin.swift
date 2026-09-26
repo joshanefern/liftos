@@ -208,16 +208,44 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         self.recognizer = recognizer
         self.contextual = contextual
 
+        activateAudioSession { [weak self] error in
+            guard let self else { return }
+            if let error {
+                let ns = error as NSError
+                SpeechPlugin.diag("beginSession: REJECT audio_session_failed \(ns.domain)/\(ns.code) \(error.localizedDescription)")
+                call.reject("audio_session_failed: \(error.localizedDescription)")
+                return
+            }
+            self.startRecognition(call: call, recognizer: recognizer)
+        }
+    }
+
+    /// '!pri' (561017449, AVAudioSessionErrorCodeIsBusy) on activation means
+    /// the previous session's deactivation is still settling — or another
+    /// app briefly holds the mic. Three rapid taps failed with exactly that
+    /// on a real iPhone; a short settle-and-retry clears it.
+    private func activateAudioSession(attempt: Int = 1, completion: @escaping (Error?) -> Void) {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .measurement,
                                     options: [.duckOthers, .allowBluetoothA2DP])
             try session.setActive(true, options: .notifyOthersOnDeactivation)
+            completion(nil)
         } catch {
-            SpeechPlugin.diag("beginSession: REJECT audio_session_failed \((error as NSError).domain)/\((error as NSError).code) \(error.localizedDescription)")
-            call.reject("audio_session_failed: \(error.localizedDescription)")
-            return
+            if attempt < 4 {
+                SpeechPlugin.diag("audio session busy (attempt \(attempt)) → retry in 300ms")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    self?.activateAudioSession(attempt: attempt + 1, completion: completion)
+                }
+            } else {
+                completion(error)
+            }
         }
+    }
+
+    /// Everything after the audio session is live: recognizer flags, a
+    /// fresh transcript, the input tap, the engine.
+    private func startRecognition(call: CAPPluginCall, recognizer: SFSpeechRecognizer) {
 
         #if targetEnvironment(simulator)
         onDeviceRequested = false

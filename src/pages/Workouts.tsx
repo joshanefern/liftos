@@ -35,8 +35,9 @@ import { useDictation } from "@/components/logging/useDictation";
 import { useUser } from "@/context/UserContext";
 import { cn } from "@/lib/utils";
 import { interpretPlan } from "@/lib/voice";
+import { voiceDiag } from "@/lib/speech";
 import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X, Mic } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 type ExerciseDraft = {
@@ -291,37 +292,66 @@ const Workouts = () => {
   const units = profile?.units ?? "lb";
 
   // ── Dictate a plan: "push day — bench four by eight at one thirty five,
-  // incline dumbbell three by ten, twenty minutes on the bike". Rows land
-  // in the builder exactly like typed ones; nothing saves until Save.
-  const [dictating, setDictating] = useState(false);
-  const dictation = useDictation((transcript) => {
-    setDictating(true);
+  // incline dumbbell three by ten, twenty minutes on the bike". Each pause
+  // hands over the WHOLE transcript so far; the rows built from the
+  // previous version are replaced, never stacked. Rows typed by hand are
+  // untouched. Nothing saves until Save.
+  const [pendingPlans, setPendingPlans] = useState(0);
+  const dictating = pendingPlans > 0;
+  const planSeq = useRef(0);
+  const voiceSession = useRef(0);
+  const voiceRowIds = useRef<Set<string>>(new Set());
+  const nameFromVoice = useRef(false);
+  const dictation = useDictation((transcript, session) => {
+    const seq = ++planSeq.current;
+    setPendingPlans((n) => n + 1);
+    voiceDiag(`builder: interpret #${seq} session ${session} (${transcript.length} chars)`);
     void interpretPlan(transcript, units)
       .then((plan) => {
+        if (seq !== planSeq.current) {
+          voiceDiag(`builder: plan #${seq} superseded → dropped`);
+          return;
+        }
+        voiceDiag(
+          `builder: plan #${seq} → ${plan.exercises.length} exercises, name=${plan.name ?? "—"}, conf=${plan.confidence}`,
+        );
         if (plan.exercises.length === 0) {
           toast({ title: "Didn’t catch a workout in that", description: `“${transcript}”`, variant: "destructive" });
           return;
         }
-        if (plan.name && !workoutName.trim()) setWorkoutName(plan.name);
+        // A new tap-to-dictate makes the previous dictation's rows permanent.
+        if (session !== voiceSession.current) {
+          voiceSession.current = session;
+          voiceRowIds.current = new Set();
+          nameFromVoice.current = false;
+        }
+        if (plan.name && (!workoutName.trim() || nameFromVoice.current)) {
+          setWorkoutName(plan.name);
+          nameFromVoice.current = true;
+        }
+        const rows = plan.exercises.map((e) =>
+          createExerciseDraft({
+            name: e.name,
+            mode: e.kind === "cardio" ? "cardio" : "lift",
+            sets: String(e.sets),
+            reps: e.reps !== null ? String(e.reps) : "",
+            weight: e.weight !== null ? String(e.weight) : "",
+            minutes: e.minutes !== null ? String(e.minutes) : "",
+            dirty: true,
+          }),
+        );
+        const previous = voiceRowIds.current;
+        voiceRowIds.current = new Set(rows.map((r) => r.id));
         setExercises((current) => {
-          // Replace the untouched starter row instead of stacking under it.
-          const base = current.filter((row) => row.name.trim() !== "" || row.dirty);
-          const rows = plan.exercises.map((e) =>
-            createExerciseDraft({
-              name: e.name,
-              mode: e.kind === "cardio" ? "cardio" : "lift",
-              sets: String(e.sets),
-              reps: e.reps !== null ? String(e.reps) : "",
-              weight: e.weight !== null ? String(e.weight) : "",
-              minutes: e.minutes !== null ? String(e.minutes) : "",
-              dirty: true,
-            }),
+          const kept = current.filter(
+            (row) => !previous.has(row.id) && (row.name.trim() !== "" || row.dirty),
           );
-          return [...base, ...rows].slice(0, 20);
+          return [...kept, ...rows].slice(0, 20);
         });
-        toast({ title: `Added ${plan.exercises.length} exercise${plan.exercises.length === 1 ? "" : "s"} from voice` });
       })
-      .catch((err) =>
+      .catch((err) => {
+        voiceDiag(`builder: plan #${seq} FAILED ${err instanceof Error ? err.message : String(err)}`);
+        if (seq !== planSeq.current) return;
         toast(
           err instanceof Error && err.message === "plan-mode-not-deployed"
             ? {
@@ -330,9 +360,9 @@ const Workouts = () => {
                 variant: "destructive",
               }
             : { title: "Couldn’t interpret that — try again", variant: "destructive" },
-        ),
-      )
-      .finally(() => setDictating(false));
+        );
+      })
+      .finally(() => setPendingPlans((n) => n - 1));
   });
 
   const updateExercise = <K extends keyof ExerciseDraft>(id: string, key: K, value: ExerciseDraft[K]) => {
