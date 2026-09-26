@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildSchedulePrompt, buildSplitPrompt, parseWeekPlan } from "./coachSetup";
+import {
+  WEEK_BUILD_KEY,
+  WEEK_BUILD_STALE_MS,
+  buildSchedulePrompt,
+  buildSplitPrompt,
+  clearWeekBuildMarker,
+  markWeekBuildStarted,
+  parseWeekPlan,
+  weekBuildInProgress,
+} from "./coachSetup";
 
 const REPLY = `Here's your week!
 
@@ -181,6 +190,72 @@ Romanian Deadlift: 3x8`;
     const line = prompt.split("\n").find((l) => l.startsWith("Must include"));
     expect(line).toBeDefined();
     expect(line!.length).toBeLessThanOrEqual("Must include: ".length + 300);
+  });
+});
+
+describe("week-build marker", () => {
+  const T0 = Date.parse("2026-09-26T10:00:00Z");
+  const memoryStore = () => {
+    const map = new Map<string, string>();
+    return {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    };
+  };
+
+  it("is not in progress until a build starts, and clears in finally", () => {
+    const store = memoryStore();
+    expect(weekBuildInProgress(T0, store)).toBe(false);
+    markWeekBuildStarted(T0, store);
+    expect(store.getItem(WEEK_BUILD_KEY)).toBe(new Date(T0).toISOString());
+    expect(weekBuildInProgress(T0 + 1000, store)).toBe(true);
+    clearWeekBuildMarker(store);
+    expect(weekBuildInProgress(T0 + 1000, store)).toBe(false);
+  });
+
+  it("a remount inside 90s still sees the build; a hung run goes stale", () => {
+    const store = memoryStore();
+    markWeekBuildStarted(T0, store);
+    expect(weekBuildInProgress(T0 + WEEK_BUILD_STALE_MS - 1, store)).toBe(true);
+    expect(weekBuildInProgress(T0 + WEEK_BUILD_STALE_MS, store)).toBe(false);
+    expect(weekBuildInProgress(T0 + 10 * 60_000, store)).toBe(false);
+  });
+
+  it("ignores garbage and a marker from the future", () => {
+    const store = memoryStore();
+    store.setItem(WEEK_BUILD_KEY, "not a date");
+    expect(weekBuildInProgress(T0, store)).toBe(false);
+    markWeekBuildStarted(T0 + 30_000, store);
+    expect(weekBuildInProgress(T0, store)).toBe(false);
+  });
+
+  it("answers false and never throws when storage is unavailable", () => {
+    const throwing = {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: () => {
+        throw new Error("SecurityError");
+      },
+      removeItem: () => {
+        throw new Error("SecurityError");
+      },
+    };
+    expect(() => markWeekBuildStarted(T0, throwing)).not.toThrow();
+    expect(weekBuildInProgress(T0, throwing)).toBe(false);
+    expect(() => clearWeekBuildMarker(throwing)).not.toThrow();
+    expect(weekBuildInProgress(T0, null)).toBe(false);
+  });
+
+  it("defaults to sessionStorage, never localStorage", () => {
+    window.sessionStorage.removeItem(WEEK_BUILD_KEY);
+    markWeekBuildStarted(T0);
+    expect(window.sessionStorage.getItem(WEEK_BUILD_KEY)).toBe(new Date(T0).toISOString());
+    expect(window.localStorage.getItem(WEEK_BUILD_KEY)).toBeNull();
+    expect(weekBuildInProgress(T0 + 5_000)).toBe(true);
+    clearWeekBuildMarker();
+    expect(window.sessionStorage.getItem(WEEK_BUILD_KEY)).toBeNull();
   });
 });
 

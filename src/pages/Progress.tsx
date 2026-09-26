@@ -71,11 +71,13 @@ const Progress = () => {
     () => buildProgressHero(logs, profile?.goal ?? null, units, Date.now(), weightSamples),
     [logs, profile?.goal, units, weightSamples],
   );
-  // The Improvement card is ONE number: this session vs the previous time
-  // the same lifts were trained, averaged into a single signed %.
+  // The Improvement card is ONE number: the latest lifting workout vs the
+  // previous time the same lifts were trained, averaged into a single
+  // signed %. A newer cardio-only log doesn't blank it.
   const improvement = useMemo(() => sessionImprovement(logs), [logs]);
-  // Consistency sits beside it: weeks with at least one session, out of
+  // Consistency sits beside it: weeks with at least one workout, out of
   // the last eight — the number that stays honest through a plateau.
+  // Sunday-start weeks, the same rows the Calendar grid draws.
   const consistency = useMemo(() => weeksTrained(logs, CONSISTENCY_WEEKS), [logs]);
   // Aggregate volume is deliberately the last card: more weight moved is
   // not the same as stronger lifts, so it reads below the per-lift records.
@@ -104,7 +106,7 @@ const Progress = () => {
 
   // ── Coach's read: the AI returns 2-3 label+value readings and one next
   // move as strict JSON, rendered like every other stat row on this page —
-  // never prose. Daily-cached; a newly logged session invalidates. ──
+  // never prose. Daily-cached; a newly logged workout invalidates. ──
   const [insight, setInsight] = useState<ProgressInsightData | null>(null);
   const [insightLoading, setInsightLoading] = useState(false);
   useEffect(() => {
@@ -191,7 +193,7 @@ const Progress = () => {
             <p className="eyebrow mt-4">{heroStat.eyebrow}</p>
           </>
         ) : bestNamedLift || bestNamedHold || bestNamedReps ? (
-          /* History exists but nothing has 2 recent sessions — welcome back
+          /* History exists but nothing has 2 recent workouts — welcome back
              with a preserved best. Bests never decay or reset for absence. */
           <>
             <p className="stat-hero !text-6xl md:!text-7xl whitespace-nowrap">
@@ -245,7 +247,7 @@ const Progress = () => {
             </p>
             <div className="mt-6 max-w-sm divide-y divide-border rounded-[14px] border border-dashed border-border">
               {[
-                { label: "vs last session", value: "Available after two comparable sessions." },
+                { label: "vs last workout", value: "Available after two comparable workouts." },
                 { label: "Records", value: "Starts with your first logged lift." },
                 {
                   label: "Consistency",
@@ -271,10 +273,10 @@ const Progress = () => {
       </section>
 
       {/* ── Card 1 · IMPROVEMENT + CONSISTENCY — two tiles, one number
-          each. Improvement is this session vs the previous time the same
-          lifts were trained, signed and honest; until two comparable
-          sessions exist it says so instead of vanishing. Consistency is
-          weeks trained out of the last eight. ── */}
+          each. Improvement is the latest lifting workout vs the previous
+          time the same lifts were trained, signed and honest; until two
+          comparable workouts exist it says so instead of vanishing.
+          Consistency is weeks trained out of the last eight. ── */}
       {logs.length > 0 && (
         <section
           className="mt-10 grid grid-cols-2 gap-3 animate-reveal-up"
@@ -292,11 +294,11 @@ const Progress = () => {
                   {improvement.pct > 0 ? "+" : ""}
                   {improvement.pct}%
                 </p>
-                <p className="caption mt-0.5">vs last session</p>
+                <p className="caption mt-0.5">vs last workout</p>
               </>
             ) : (
               <p className="mt-2 text-[13px] leading-5 text-fg-muted">
-                Available after two comparable sessions.
+                Available after two comparable workouts.
               </p>
             )}
           </div>
@@ -444,7 +446,7 @@ const Progress = () => {
 
       {/* ── Card 4 · COACH INSIGHT — the AI reads your training (and your
           recent coach chats) and says what's working and what to push next.
-          Cached for the day; refreshes when a new session lands. ── */}
+          Cached for the day; refreshes when a new workout lands. ── */}
       {logs.length > 0 && (
         <section className={`${CARD_CLASS} mt-4 animate-reveal-up`} style={{ animationDelay: "240ms" }}>
           <p className="eyebrow">Coach insight</p>

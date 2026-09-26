@@ -81,6 +81,66 @@ Reply with NOTHING but one section per day above, in EXACTLY this format:
 5-8 exercises per day matched to that day's focus. No weights. No intro, no outro, no extra days.`;
 };
 
+/* ── In-progress marker. A week build outlives the Home screen: leave
+   mid-build and come back and the hero must still say "Building…" — and
+   must not let a second build start on top of the first (duplicate
+   templates). The marker is the build's ISO start time in sessionStorage:
+   session-scoped so a fresh launch never inherits it, and stale after 90s
+   (a hung run's ceiling — the coach copy promises ~15s). Reading it is also
+   the synchronous re-entrancy guard a double-tap needs, since React state
+   hasn't flushed between two taps. ── */
+
+export const WEEK_BUILD_KEY = "liftos-week-build";
+export const WEEK_BUILD_STALE_MS = 90_000;
+
+type MarkerStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+/** sessionStorage, or null where touching it throws (private mode, a
+    blocked origin) — every helper then answers "no build in progress". */
+const sessionStore = (): MarkerStore | null => {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage;
+  } catch {
+    return null;
+  }
+};
+
+/** True while a build started under 90s ago owns the marker. A marker
+    from the future (clock set back mid-build) reads as stale rather than
+    pinning the hero on "Building…" until the clock catches up. */
+export const weekBuildInProgress = (
+  now: number = Date.now(),
+  store: MarkerStore | null = sessionStore(),
+): boolean => {
+  try {
+    const raw = store?.getItem(WEEK_BUILD_KEY);
+    if (!raw) return false;
+    const elapsed = now - Date.parse(raw);
+    return Number.isFinite(elapsed) && elapsed >= 0 && elapsed < WEEK_BUILD_STALE_MS;
+  } catch {
+    return false;
+  }
+};
+
+export const markWeekBuildStarted = (
+  now: number = Date.now(),
+  store: MarkerStore | null = sessionStore(),
+): void => {
+  try {
+    store?.setItem(WEEK_BUILD_KEY, new Date(now).toISOString());
+  } catch {
+    // Storage refused the write — the in-memory guard still covers this mount.
+  }
+};
+
+export const clearWeekBuildMarker = (store: MarkerStore | null = sessionStore()): void => {
+  try {
+    store?.removeItem(WEEK_BUILD_KEY);
+  } catch {
+    // Nothing to clear where nothing could be written.
+  }
+};
+
 /** Marked day headers — the shapes the prompt pins plus what models emit
     anyway: "## Push Day", "**Pull Day**", "Day 1: Upper" (any dash). */
 const MARKED_HEADERS = [

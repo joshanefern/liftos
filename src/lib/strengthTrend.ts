@@ -243,6 +243,32 @@ const bestOfLog = (
   };
 };
 
+/** A log with at least one comparable lift — a non-cardio, non-placeholder
+    exercise holding a completed working set. A cardio-only HealthKit
+    review is a workout, not a lifting session, so it never becomes the
+    "latest" side of a strength comparison. */
+const isLiftingLog = (log: WorkoutLog): boolean =>
+  log.exercises.some(
+    (exercise) =>
+      exercise.kind !== "cardio" &&
+      !isPlaceholderName(exercise.name) &&
+      bestOfLog(log, normalizeExerciseName(exercise.name)) !== null,
+  );
+
+/** Newest→oldest split at the most recent lifting session: that log, then
+    everything logged before it. Newer cardio-only logs are skipped rather
+    than treated as a session with nothing to compare. */
+const latestLiftingSplit = (
+  logs: WorkoutLog[],
+): { latest: WorkoutLog; earlier: WorkoutLog[] } | null => {
+  const ordered = [...logs].sort(
+    (a, b) => Date.parse(b.finished_at) - Date.parse(a.finished_at),
+  );
+  const index = ordered.findIndex(isLiftingLog);
+  if (index < 0) return null;
+  return { latest: ordered[index], earlier: ordered.slice(index + 1) };
+};
+
 /** Per-session detail series for one lift — the per-lift page's data. Each
     point is that session's best completed working set, with the est-best-
     single computed only from ≤10-rep sets (the same rule Records uses). */
@@ -305,12 +331,15 @@ export const liftSessionSeries = (
   return points.sort((a, b) => a.t - b.t);
 };
 
-/** One number for the Improvement card: the latest session vs the previous
-    time each of its lifts was trained, averaged into a single signed %.
-    Weight lifts compare on Epley e1RM so both load and rep gains count
-    (80×5 → 80×8 is real improvement); holds compare duration; bodyweight
-    rep work compares reps. A lift whose two sessions aren't shaped alike
-    (weights then bodyweight, reps then holds) is skipped — no honest %. */
+/** One number for the Improvement card: the latest LIFTING session vs the
+    previous time each of its lifts was trained, averaged into a single
+    signed %. Weight lifts compare on Epley e1RM so both load and rep gains
+    count (80×5 → 80×8 is real improvement); holds compare duration;
+    bodyweight rep work compares reps. A lift whose two sessions aren't
+    shaped alike (weights then bodyweight, reps then holds) is skipped — no
+    honest %. A newer cardio-only log (a run pulled from HealthKit) is not
+    the latest session — it would blank the card for a lifter with months
+    of history. */
 export type SessionImprovement = {
   /** Rounded mean % change; negative when the session was genuinely down. */
   pct: number;
@@ -320,10 +349,9 @@ export type SessionImprovement = {
 
 export const sessionImprovement = (logs: WorkoutLog[]): SessionImprovement | null => {
   if (logs.length < 2) return null;
-  const ordered = [...logs].sort(
-    (a, b) => Date.parse(b.finished_at) - Date.parse(a.finished_at),
-  );
-  const [latest, ...earlier] = ordered;
+  const split = latestLiftingSplit(logs);
+  if (!split) return null;
+  const { latest, earlier } = split;
   const changes: number[] = [];
   const seen = new Set<string>();
 
@@ -373,10 +401,9 @@ export const sessionImprovement = (logs: WorkoutLog[]): SessionImprovement | nul
 
 export const lastSessionDeltas = (logs: WorkoutLog[], limit = 3): LastDelta[] => {
   if (logs.length < 2) return [];
-  const ordered = [...logs].sort(
-    (a, b) => Date.parse(b.finished_at) - Date.parse(a.finished_at),
-  );
-  const [latest, ...earlier] = ordered;
+  const split = latestLiftingSplit(logs);
+  if (!split) return [];
+  const { latest, earlier } = split;
   const deltas: LastDelta[] = [];
   const seen = new Set<string>();
 

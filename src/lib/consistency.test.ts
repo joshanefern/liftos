@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
 import { compactVolume, volumeComparison, weeksTrained } from "./consistency";
 
-/* Local-time anchor: Wednesday 23 Sep 2026, midday. The week it sits in
-   starts Monday 21 Sep; an 8-week window reaches back to Monday 3 Aug. */
+/* Local-time anchor: Wednesday 23 Sep 2026, midday. Sunday-start (the
+   Calendar grid's rows): the week it sits in starts Sunday 20 Sep and an
+   8-week window reaches back to Sunday 2 Aug. */
 const NOW = new Date(2026, 8, 23, 12, 0, 0).getTime();
 const DAY_MS = 86_400_000;
 
@@ -47,16 +48,27 @@ describe("weeksTrained", () => {
     expect(weeksTrained(logs, 8, NOW).trained).toBe(4);
   });
 
-  it("weeks start on Monday — a Sunday session belongs to the week before", () => {
+  it("weeks start on Sunday — a Sunday session opens the same week as Monday's", () => {
+    const saturday = logAt(new Date(2026, 8, 19, 18, 0, 0));
     const sunday = logAt(new Date(2026, 8, 20, 18, 0, 0));
     const monday = logAt(new Date(2026, 8, 21, 7, 0, 0));
-    expect(weeksTrained([sunday, monday], 8, NOW).trained).toBe(2);
+    expect(weeksTrained([sunday, monday], 8, NOW).trained).toBe(1);
+    expect(weeksTrained([saturday, sunday], 8, NOW).trained).toBe(2);
+  });
+
+  it("weekStartsOn = 1 counts Monday-start weeks instead", () => {
+    const sunday = logAt(new Date(2026, 8, 20, 18, 0, 0));
+    const monday = logAt(new Date(2026, 8, 21, 7, 0, 0));
+    expect(weeksTrained([sunday, monday], 8, NOW, 1).trained).toBe(2);
+    // With Monday starts the window reaches back to Mon 3 Aug, not Sun 2 Aug.
+    expect(weeksTrained([logAt(new Date(2026, 7, 2, 9, 0, 0))], 8, NOW, 1).trained).toBe(0);
+    expect(weeksTrained([logAt(new Date(2026, 7, 3, 9, 0, 0))], 8, NOW, 1).trained).toBe(1);
   });
 
   it("includes the earliest week of the window and drops the one before it", () => {
-    const earliestMonday = logAt(new Date(2026, 7, 3, 9, 0, 0)); // Mon 3 Aug
-    const dayBefore = logAt(new Date(2026, 7, 2, 9, 0, 0)); // Sun 2 Aug
-    expect(weeksTrained([earliestMonday], 8, NOW).trained).toBe(1);
+    const earliestSunday = logAt(new Date(2026, 7, 2, 9, 0, 0)); // Sun 2 Aug
+    const dayBefore = logAt(new Date(2026, 7, 1, 9, 0, 0)); // Sat 1 Aug
+    expect(weeksTrained([earliestSunday], 8, NOW).trained).toBe(1);
     expect(weeksTrained([dayBefore], 8, NOW).trained).toBe(0);
   });
 

@@ -22,7 +22,10 @@ import { buildCoachContext, streamCoach } from "@/lib/coach";
 import {
   buildSchedulePrompt,
   buildSplitPrompt,
+  clearWeekBuildMarker,
+  markWeekBuildStarted,
   parseWeekPlan,
+  weekBuildInProgress,
   type IntakeNotes,
   type ScheduleDay,
 } from "@/lib/coachSetup";
@@ -194,6 +197,12 @@ const ShapeTiles = ({ shape }: { shape: SessionShape }) => (
   </div>
 );
 
+/* How a week build was asked for. "split": the beginner's one-shot from the
+   onboarding answers — its day names carry no weekday ("Push Day"), so the
+   hero pins day one. "schedule": the intake's own days ("Monday · Push"),
+   which the suggestion engine's weekday rule reads. */
+type WeekBuildSource = "split" | "schedule";
+
 /* ── Hero ink panel + card index — the panel inverts with the theme
    (ink-on-porcelain in light, porcelain-on-slate in dark); that
    flip is the signature, so every color inside it is a token. ── */
@@ -289,15 +298,21 @@ const Dashboard = () => {
   );
 
   // ── The first plan just landed (this mount, no history yet): the hero
-  // names the coach's day one and says "Start" — the moment the onboarding
-  // steps were for. Day one, not the engine's pick, because with zero
-  // history every template scores the same and the tie-break is
-  // alphabetical ("Leg Day" before "Push Day"). Resets on remount, when the
-  // engine takes over as usual.
-  const [firstPlanDay, setFirstPlanDay] = useState<string | null>(null);
+  // says "Here's your first workout" and "Start" — the moment the
+  // onboarding steps were for. WHICH workout depends on how the week was
+  // built. The beginner split names days by their work ("Push Day", "Pull
+  // Day", "Leg Day"), and with zero history every template scores the same
+  // and the engine's tie-break is alphabetical ("Leg Day" first) — so that
+  // path pins the coach's day one (`day`). The intake's days carry their
+  // weekday ("Monday · Push") and the engine's weekday rule already puts
+  // today's first, so `day: null` leaves the choice to the engine — and the
+  // "Your week" Start pill follows the same pick either way (planStartId).
+  // Resets on remount, when the engine takes over as usual.
+  const [firstPlan, setFirstPlan] = useState<{ day: string | null } | null>(null);
   const firstPlanPick = useMemo<Suggestion | null>(() => {
-    if (!firstPlanDay) return null;
-    const template = templates.find((t) => t.name === firstPlanDay);
+    if (!firstPlan) return null;
+    if (firstPlan.day === null) return suggestion.kind === "template" ? suggestion : null;
+    const template = templates.find((t) => t.name === firstPlan.day);
     if (!template) return null;
     return {
       kind: "template",
@@ -307,7 +322,7 @@ const Dashboard = () => {
       reason: "",
       muscles: [],
     };
-  }, [firstPlanDay, templates]);
+  }, [firstPlan, templates, suggestion]);
   const showFirstWorkout = firstPlanPick !== null && logs.length === 0;
   const pick: Suggestion = showFirstWorkout && firstPlanPick ? firstPlanPick : suggestion;
 
@@ -379,8 +394,23 @@ const Dashboard = () => {
   // SUCCEEDED (a failed cold-start load returns the same empty arrays, and a
   // veteran must never see the welcome hero). buildingWeek pins the branch
   // open while templates stream in mid-build, so the panel doesn't flip to
-  // a pick after the first save.
-  const [buildingWeek, setBuildingWeek] = useState(false);
+  // a pick after the first save. It starts true when the session marker
+  // says a build from an EARLIER mount is still running (the user left Home
+  // mid-build and came back): the hero keeps saying "Building…" with no
+  // buttons, so a second build can't be started on top of the first.
+  const [buildingWeek, setBuildingWeek] = useState(() => weekBuildInProgress());
+  // Whether this mount's own runWeekBuild holds the marker (it clears it in
+  // finally). When another mount's run holds it, watch until that run
+  // clears it — or it goes stale — and the engine takes over: the saves
+  // landed in the shared templates context, so nothing needs refetching.
+  const ownsBuild = useRef(false);
+  useEffect(() => {
+    if (!buildingWeek || ownsBuild.current) return;
+    const id = window.setInterval(() => {
+      if (!weekBuildInProgress()) setBuildingWeek(false);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [buildingWeek]);
   // profile !== null = the profile fetch completed (fetchProfile always sets
   // an object, even for an empty row) — without it the beginner variant
   // flashes, and its one-tap build can fire, on a null in-flight profile.
@@ -405,8 +435,13 @@ const Dashboard = () => {
   const isBeginner =
     !profile?.experience || profile.experience.toLowerCase().includes("beginner");
 
-  const runWeekBuild = async (prompt: string): Promise<void> => {
-    if (buildingWeek) return;
+  const runWeekBuild = async (prompt: string, source: WeekBuildSource): Promise<void> => {
+    // Two guards: this mount's run (state), and any run holding the session
+    // marker — an earlier mount's, or this one's before the state flushed
+    // between two taps.
+    if (buildingWeek || weekBuildInProgress()) return;
+    ownsBuild.current = true;
+    markWeekBuildStarted();
     setBuildingWeek(true);
     let saved = 0;
     let firstSaved: string | null = null;
@@ -445,8 +480,14 @@ const Dashboard = () => {
       });
       if (saved === 0) navigate("/workouts");
     } finally {
-      // Even a partial build gives a new account its first workout to start.
-      if (newAccount && firstSaved) setFirstPlanDay(firstSaved);
+      // Even a partial build gives a new account its first workout to start
+      // — day one pinned for the split, the engine's weekday pick for the
+      // schedule (see firstPlan).
+      if (newAccount && firstSaved) {
+        setFirstPlan({ day: source === "split" ? firstSaved : null });
+      }
+      clearWeekBuildMarker();
+      ownsBuild.current = false;
       setBuildingWeek(false);
       setIntakeOpen(false);
     }
@@ -457,23 +498,46 @@ const Dashboard = () => {
   // six answers ARE the intake. Experienced lifters keep the choice. The
   // flag is dropped from history first, so a refresh or a later return to
   // Home never builds a second week; the ref guards StrictMode's
-  // double-effect in dev.
+  // double-effect in dev. The flag is only consumed once BOTH cold-start
+  // loads succeeded: a failed load leaves the same empty arrays a new
+  // account has, and consuming it then would lose the first-run experience
+  // for the session — so it stays in history, the effect re-runs when the
+  // failure clears, and one quiet toast says what happened.
   const arrivedFromOnboarding =
     (location.state as { firstTime?: boolean } | null)?.firstTime === true;
   const autoBuildFired = useRef(false);
+  const loadFailedToasted = useRef(false);
   useEffect(() => {
     if (!arrivedFromOnboarding || autoBuildFired.current) return;
     if (!dataReady || profile === null) return;
+    if (logsLoadFailed || templatesLoadFailed) {
+      if (!loadFailedToasted.current) {
+        loadFailedToasted.current = true;
+        toast({
+          title: "Couldn't load your account yet",
+          description: "Reopen the app to retry.",
+        });
+      }
+      return;
+    }
     autoBuildFired.current = true;
     navigate(location.pathname, { replace: true, state: null });
     if (firstRun && isBeginner && !buildingWeek) {
-      void runWeekBuild(buildSplitPrompt(profile));
+      void runWeekBuild(buildSplitPrompt(profile), "split");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arrivedFromOnboarding, dataReady, profile, firstRun, isBeginner]);
+  }, [
+    arrivedFromOnboarding,
+    dataReady,
+    profile,
+    firstRun,
+    isBeginner,
+    logsLoadFailed,
+    templatesLoadFailed,
+  ]);
 
   const handleIntakeBuild = (schedule: ScheduleDay[], notes: IntakeNotes): void => {
-    void runWeekBuild(buildSchedulePrompt(profile, schedule, notes));
+    void runWeekBuild(buildSchedulePrompt(profile, schedule, notes), "schedule");
   };
 
   // One tap starts a saved workout pre-seeded. A live session outranks it —
@@ -670,7 +734,7 @@ const Dashboard = () => {
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => void runWeekBuild(buildSplitPrompt(profile))}
+                    onClick={() => void runWeekBuild(buildSplitPrompt(profile), "split")}
                     className={HERO_PRIMARY}
                   >
                     <Sparkles size={15} />

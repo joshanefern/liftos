@@ -80,6 +80,12 @@ export type VoiceTouchedSet = { exerciseId: string; setId: string };
 export type VoiceApplyOptions = {
   /** Weight unit for receipt lines ("lb" | "kg"); defaults to "lb". */
   units?: string;
+  /** Ids of the rows the lifter completed most recently, MOST RECENT FIRST.
+      The logger keeps no timestamps, so without this "that was 12" /
+      "scratch that" fall back to list order — wrong for supersets and any
+      out-of-order logging. Ids that no longer resolve to a completed
+      working row (stale, scratched, warm-up) are skipped. */
+  recentSetIds?: string[];
 };
 
 export type VoiceApplyResult = {
@@ -88,7 +94,8 @@ export type VoiceApplyResult = {
       Each line is "<Exercise> · <detail>"; the UI splits on the first
       " · ". A note line has no separator. */
   summary: string[];
-  /** Every set row written or completed, in the order it happened. */
+  /** Every set row written, completed, corrected or scratched, in the
+      order it happened. */
   touched: VoiceTouchedSet[];
   setsLogged: number;
   addedExercises: string[];
@@ -242,8 +249,8 @@ const describeSets = (details: string[]): string => {
 const workingIndexes = (rows: VoiceLoggedSet[]): number[] =>
   rows.map((r, i) => (r.isWarmup ? -1 : i)).filter((i) => i >= 0);
 
-/** The most recently completed working row: the logger keeps no
-    timestamps, so "most recent" is the last completed row in DOM order. */
+/** Last completed working row in list order — the fallback when no
+    recency information resolves (the logger keeps no timestamps). */
 const lastCompletedIndex = (rows: VoiceLoggedSet[]): number => {
   for (let i = rows.length - 1; i >= 0; i -= 1) {
     if (rows[i].completed && !rows[i].isWarmup) return i;
@@ -251,14 +258,35 @@ const lastCompletedIndex = (rows: VoiceLoggedSet[]): number => {
   return -1;
 };
 
-/** Which row a correction means. A named exercise → its last completed
-    set (or the spoken ordinal's row when that row exists). No name, or a
-    name that matches nothing → the last completed set anywhere in the
-    session. Null when nothing has been logged to fix. */
+type SetRef = { exercise: VoiceLoggedExercise; index: number };
+
+/** The most recently completed working row per a most-recent-first id
+    list, searched within `scope`. An id is skipped when it isn't in scope
+    (a named correction ignores other lifts' rows), no longer exists, was
+    since scratched, or is a warm-up. Null when nothing resolves. */
+const recentCompleted = (scope: VoiceLoggedExercise[], recentIds: string[]): SetRef | null => {
+  for (const id of recentIds) {
+    for (const exercise of scope) {
+      const index = exercise.sets.findIndex((r) => r.id === id);
+      if (index < 0) continue;
+      const row = exercise.sets[index];
+      if (row.completed && !row.isWarmup) return { exercise, index };
+    }
+  }
+  return null;
+};
+
+/** Which row a correction means. A named exercise → the spoken ordinal's
+    row when there is one, else that exercise's most recently completed
+    set. No name, or a name that matches nothing → the most recently
+    completed set anywhere in the session. "Most recent" follows
+    `recentIds` (most recent first) and falls back to list order only when
+    none of them resolve. Null when nothing has been logged to fix. */
 const correctionTarget = (
   exercises: VoiceLoggedExercise[],
   action: VoiceAction,
-): { exercise: VoiceLoggedExercise; index: number } | null => {
+  recentIds: string[],
+): SetRef | null => {
   const named = findExercise(exercises, action.exercise);
   if (named) {
     const ordinal = sane(action.sets?.find((s) => sane(s.ordinal, 200) !== null)?.ordinal, 200);
@@ -266,9 +294,13 @@ const correctionTarget = (
       const idx = workingIndexes(named.sets)[ordinal - 1];
       return idx === undefined ? null : { exercise: named, index: idx };
     }
+    const recent = recentCompleted([named], recentIds);
+    if (recent) return recent;
     const idx = lastCompletedIndex(named.sets);
     return idx < 0 ? null : { exercise: named, index: idx };
   }
+  const recent = recentCompleted(exercises, recentIds);
+  if (recent) return recent;
   for (let i = exercises.length - 1; i >= 0; i -= 1) {
     const idx = lastCompletedIndex(exercises[i].sets);
     if (idx >= 0) return { exercise: exercises[i], index: idx };
@@ -282,6 +314,7 @@ export const applyVoiceIntent = (
   options?: VoiceApplyOptions,
 ): VoiceApplyResult => {
   const units = options?.units?.trim() || "lb";
+  const recentSetIds = options?.recentSetIds ?? [];
   const note = intent.note?.trim() ? intent.note.trim() : null;
   const summary: string[] = [];
   const touched: VoiceTouchedSet[] = [];
@@ -308,7 +341,11 @@ export const applyVoiceIntent = (
     // just logged. Rewrites one existing row; never adds a set or an
     // exercise, whatever the interpreter put in `isNew`.
     if (action.correct === true || action.undo === true) {
-      const target = correctionTarget(next, action);
+      // Rows this utterance already touched are newer than anything the UI
+      // remembers ("bench 185 for 8… actually 6" fixes the row just
+      // written), so they lead the recency list.
+      const recentIds = [...touched.map((t) => t.setId).reverse(), ...recentSetIds];
+      const target = correctionTarget(next, action, recentIds);
       const spokenName = action.exercise.trim();
       if (!target) {
         summary.push(line(spokenName || "Last set", "nothing logged yet to fix"));

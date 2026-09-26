@@ -42,6 +42,10 @@ type Props = {
   onEdit?: (result: VoiceApplyResult) => void;
   /** The rest bar is up in the slot above the toolbar — lift the card over it. */
   raised?: boolean;
+  /** Set ids the lifter completed most recently, MOST RECENT FIRST, by any
+      path — "that was 12" / "scratch that" rewrite the LAST logged set, and
+      the rows carry no timestamps, so this is how lib/voiceApply finds it. */
+  recentSetIds?: string[];
 };
 
 // Jarvis-style endpointing: a SHORT pause fires the log right away, but
@@ -136,7 +140,15 @@ const markFor = (
   }
 };
 
-export const VoiceLogControl = ({ exercises, units, onApply, onUndo, onEdit, raised = false }: Props) => {
+export const VoiceLogControl = ({
+  exercises,
+  units,
+  onApply,
+  onUndo,
+  onEdit,
+  raised = false,
+  recentSetIds,
+}: Props) => {
   // DEV preview: `localStorage.liftos-voice-dev-phase = "applied"` mounts
   // the receipt card in the browser so its design can be QA'd without a mic.
   const [phase, setPhase] = useState<Phase>(() => {
@@ -177,9 +189,12 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo, onEdit, rai
   const firedAt = useRef(0);
   const fireSeq = useRef(0);
   const appliedFire = useRef<number | null>(null);
-  // The freshest exercises without re-binding handlers every render.
+  // The freshest exercises (and recency list) without re-binding handlers
+  // every render — the watchdog's closure is the one that fires.
   const exercisesRef = useRef(exercises);
   exercisesRef.current = exercises;
+  const recentSetIdsRef = useRef(recentSetIds);
+  recentSetIdsRef.current = recentSetIds;
 
   // Fold the "Logged" card to one line after a beat. Keyed on the result
   // object so a superseding apply (grace-window merge) re-expands.
@@ -384,7 +399,12 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo, onEdit, rai
         return;
       }
       voiceDiag(`intent kind=${intent.kind} confidence=${intent.confidence ?? "?"} actions=${intent.actions?.length ?? 0}`);
-      const result = applyVoiceIntent(exercisesRef.current, intent);
+      // Receipt lines spell the lifter's unit ("kg" must never read "lb"),
+      // and corrections need to know which row was logged last. Passed as
+      // a variable, not a literal: an option key lib/voiceApply hasn't
+      // adopted yet is then harmless rather than a type error.
+      const applyOptions = { units, recentSetIds: recentSetIdsRef.current ?? [] };
+      const result = applyVoiceIntent(exercisesRef.current, intent, applyOptions);
       if (result.empty) {
         setPhase({ at: "missed", transcript });
         if (!activeRef.current) scheduleDismiss(6000);
@@ -423,14 +443,33 @@ export const VoiceLogControl = ({ exercises, units, onApply, onUndo, onEdit, rai
     dismissTimer.current = window.setTimeout(() => setPhase({ at: "idle" }), ms);
   };
 
-  const undoNow = (): void => {
-    onUndo();
+  /** Edit and Undo end the session outright. Inside the grace window the
+      mic is still open — left that way, the next pill tap reads as
+      "finish" (a dead tap), and speech that resumes re-fires over the
+      manual edit, undoing it. Nothing applied may be superseded after
+      the lifter has taken over. */
+  const closeReceipt = (): void => {
+    window.clearTimeout(dismissTimer.current);
+    cancel();
+    // A finish() may still be awaiting the native stop with activeRef
+    // already false: bump the generation so its late result drops, and
+    // drop the listeners it would have removed.
+    sessionGen.current += 1;
+    listenerRef.current?.remove();
+    listenerRef.current = null;
+    errorListenerRef.current?.remove();
+    errorListenerRef.current = null;
+    appliedFire.current = null;
     setPhase({ at: "idle" });
   };
 
+  const undoNow = (): void => {
+    closeReceipt();
+    onUndo();
+  };
+
   const editNow = (result: VoiceApplyResult): void => {
-    window.clearTimeout(dismissTimer.current);
-    setPhase({ at: "idle" });
+    closeReceipt();
     onEdit?.(result);
   };
 

@@ -150,21 +150,50 @@ const Chip = ({ pressed, onClick, children }: { pressed: boolean; onClick: () =>
   </button>
 );
 
-// AI panel quick choices. Each tap adds the phrase to the ask, tapping it
-// again removes it, and picking another phrase from the same group swaps it
-// (one time, one set of gear). The ask is split on commas so the phrases
-// stay recognisable next to whatever was typed or spoken.
+// AI panel quick choices. Each tap adds the phrase to the ask as a comma
+// part, tapping it again removes it, and picking another phrase from the
+// same group swaps it (one time, one set of gear). A phrase counts as
+// present wherever it sits — "push day 45 min" typed inline lights the chip
+// too, and un-tapping lifts that occurrence out of the sentence.
 const ASK_TIMES = ["30 min", "45 min", "60 min"] as const;
 const ASK_EQUIPMENT = ["Full gym", "Dumbbells only", "Bodyweight"] as const;
+const ASK_GROUPS: readonly (readonly string[])[] = [ASK_TIMES, ASK_EQUIPMENT];
 const askParts = (text: string): string[] => text.split(",").map((part) => part.trim()).filter(Boolean);
-const hasAskPhrase = (text: string, phrase: string): boolean =>
-  askParts(text).some((part) => part.toLowerCase() === phrase.toLowerCase());
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Whole phrase, any case, anywhere — but "45 min" is not inside "45 minutes".
+const findAskPhrase = (text: string, phrase: string): { start: number; end: number } | null => {
+  const match = new RegExp(`(^|[^a-z0-9])${escapeRegExp(phrase)}(?![a-z0-9])`, "i").exec(text);
+  if (!match) return null;
+  const start = match.index + match[1].length;
+  return { start, end: start + phrase.length };
+};
+const hasAskPhrase = (text: string, phrase: string): boolean => findAskPhrase(text, phrase) !== null;
+const removeAskPhrase = (text: string, phrase: string): string => {
+  const hit = findAskPhrase(text, phrase);
+  if (!hit) return text;
+  const before = text.slice(0, hit.start).trimEnd();
+  const after = text.slice(hit.end).trimStart();
+  // Re-split on commas so the gap leaves no ", ," or dangling comma behind.
+  return askParts([before, after].filter(Boolean).join(" ")).join(", ");
+};
 const toggleAskPhrase = (text: string, phrase: string, group: readonly string[]): string => {
-  const others = new Set(group.filter((g) => g !== phrase).map((g) => g.toLowerCase()));
-  const kept = askParts(text).filter((part) => !others.has(part.toLowerCase()));
-  const present = kept.some((part) => part.toLowerCase() === phrase.toLowerCase());
-  const next = present ? kept.filter((part) => part.toLowerCase() !== phrase.toLowerCase()) : [...kept, phrase];
-  return next.join(", ");
+  if (hasAskPhrase(text, phrase)) return removeAskPhrase(text, phrase);
+  const cleared = group.reduce((acc, other) => (other === phrase ? acc : removeAskPhrase(acc, other)), text);
+  return [...askParts(cleared), phrase].join(", ");
+};
+/** The chip phrases present in an ask, in chip order. */
+const askChipPhrases = (text: string): string[] =>
+  ASK_GROUPS.flatMap((group) => group.filter((phrase) => hasAskPhrase(text, phrase)));
+// Dictating into the ask replaces what was typed, not what was tapped: the
+// chips chosen before speaking ride along as comma parts. A spoken time or
+// gear ("…thirty min") wins over the chip from the same group.
+const mergeAskTranscript = (transcript: string, chips: readonly string[]): string => {
+  const spoken = transcript.trim();
+  const kept = chips.filter((phrase) => {
+    const group = ASK_GROUPS.find((g) => g.includes(phrase)) ?? [phrase];
+    return !group.some((other) => hasAskPhrase(spoken, other));
+  });
+  return [spoken, ...kept].filter(Boolean).join(", ");
 };
 
 type StarterProgramRowProps = {
@@ -290,8 +319,11 @@ const Workouts = () => {
 
   // The Dashboard's engine with the same inputs, so the library's
   // "Recommended" and the home hero never disagree. Both hooks are app-wide
-  // caches — nothing is fetched twice.
-  const { logs } = useWorkoutLogs();
+  // caches — nothing is fetched twice. The library waits for BOTH loads:
+  // rendered on templates alone, the recommendation is computed against an
+  // empty history and the "Recommended" row jumps once the logs land.
+  const { logs, loading: logsLoading } = useWorkoutLogs();
+  const libraryLoading = loading || logsLoading;
   const recommendedId = useMemo(() => {
     const pick = suggestNextWorkout({ logs, templates, starters: starterPrograms, profile });
     return recommendedStarter(starterPrograms, pick.kind === "starter" ? pick.id : null, profile)?.id ?? null;
@@ -446,6 +478,17 @@ const Workouts = () => {
   const aiRowIds = useRef<Set<string>>(new Set());
   const nameFromAi = useRef(false);
   const dictationTarget = useRef<"rows" | "ai">("rows");
+  // Chips present when the AI mic opened — every partial transcript is
+  // merged with THIS set (see mergeAskTranscript), not with whatever the
+  // last partial left in the box, so a recognizer revision can't double a
+  // chip. A chip tap refreshes the set.
+  const aiChips = useRef<string[]>([]);
+  // The builder's scrolling region. The AI panel lives at its top, so
+  // opening it while scrolled down the rows has to bring the scroller back.
+  const builderScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (aiOpen) builderScrollRef.current?.scrollTo({ top: 0 });
+  }, [aiOpen]);
   const liveInFlight = useRef(false);
   const liveQueued = useRef<{ transcript: string; session: number } | null>(null);
   const interpretLatest = (transcript: string, session: number): void => {
@@ -585,9 +628,10 @@ Reply with NOTHING but this exact format:
 
   const dictation = useDictation(
     (transcript, session) => {
-      // Speaking into the AI box: the words are the ask, not the plan.
+      // Speaking into the AI box: the words are the ask, not the plan. They
+      // replace the typed part only — chips chosen before speaking stay.
       if (dictationTarget.current === "ai") {
-        setAiText(transcript);
+        setAiText(mergeAskTranscript(transcript, aiChips.current));
         return;
       }
       if (liveInFlight.current) {
@@ -600,9 +644,15 @@ Reply with NOTHING but this exact format:
   );
   const startDictation = (target: "rows" | "ai"): void => {
     dictationTarget.current = target;
+    if (target === "ai") aiChips.current = askChipPhrases(aiText);
     void dictation.start();
   };
   const listeningTo = dictation.state.at === "idle" ? null : dictationTarget.current;
+  const toggleAskChip = (phrase: string, group: readonly string[]): void => {
+    const next = toggleAskPhrase(aiText, phrase, group);
+    setAiText(next);
+    aiChips.current = askChipPhrases(next);
+  };
 
   const updateExercise = <K extends keyof ExerciseDraft>(id: string, key: K, value: ExerciseDraft[K]) => {
     setExercises((current) =>
@@ -776,8 +826,21 @@ Reply with NOTHING but this exact format:
           </p>
         )}
 
+      </div>
+
+      {/* data-vaul-no-drag: scrolling the exercise list never turns into a
+          half-dismissed sheet — the title row and grabber still swipe. */}
+      <div
+        ref={builderScrollRef}
+        data-vaul-no-drag
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 md:px-6"
+      >
+        {/* AI panel — inside the scroller, not the fixed header: with the
+            caption and chips it is tall enough that "Design it" sat under
+            the keyboard on a 4.7" phone. Here the focused textarea and the
+            button can both be scrolled clear of it. */}
         {aiOpen && (
-          <div className="mt-2 rounded-[14px] border border-primary/25 bg-primary/[0.05] p-3">
+          <div className="mb-4 rounded-[14px] border border-primary/25 bg-primary/[0.05] p-3">
             <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-primary">
               Describe your workout
             </p>
@@ -821,7 +884,7 @@ Reply with NOTHING but this exact format:
                   <Chip
                     key={phrase}
                     pressed={hasAskPhrase(aiText, phrase)}
-                    onClick={() => setAiText((text) => toggleAskPhrase(text, phrase, ASK_TIMES))}
+                    onClick={() => toggleAskChip(phrase, ASK_TIMES)}
                   >
                     {phrase}
                   </Chip>
@@ -832,7 +895,7 @@ Reply with NOTHING but this exact format:
                   <Chip
                     key={phrase}
                     pressed={hasAskPhrase(aiText, phrase)}
-                    onClick={() => setAiText((text) => toggleAskPhrase(text, phrase, ASK_EQUIPMENT))}
+                    onClick={() => toggleAskChip(phrase, ASK_EQUIPMENT)}
                   >
                     {phrase}
                   </Chip>
@@ -847,11 +910,12 @@ Reply with NOTHING but this exact format:
                     ? "Listening — say what you want, then tap Design."
                     : "The coach fills in the rows — edit any of them before you save."}
               </p>
+              {/* 36px tall with the ±4px hit-area trick — 44pt for the thumb. */}
               <button
                 type="button"
                 onClick={() => void designWorkout()}
                 disabled={!aiText.trim() || aiBusy}
-                className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.97] disabled:opacity-40"
+                className="relative inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground transition after:absolute after:-inset-1 after:content-[''] hover:opacity-90 active:scale-[0.97] disabled:opacity-40"
               >
                 <Sparkles size={13} />
                 {aiBusy ? "Designing…" : "Design it"}
@@ -859,11 +923,6 @@ Reply with NOTHING but this exact format:
             </div>
           </div>
         )}
-      </div>
-
-      {/* data-vaul-no-drag: scrolling the exercise list never turns into a
-          half-dismissed sheet — the title row and grabber still swipe. */}
-      <div data-vaul-no-drag className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 md:px-6">
         <div className="space-y-4">
           {exercises.map((exercise, index) => (
             <div key={exercise.id} className="rule-hairline pt-3 first:border-t-0 first:pt-0">
@@ -1071,7 +1130,7 @@ Reply with NOTHING but this exact format:
       {/* ── Eyebrow header — context left, quiet count right ── */}
       <header className="mb-8 flex items-baseline justify-between gap-4 animate-reveal-up">
         <h1 className="eyebrow">Workout Library</h1>
-        {!loading && templates.length > 0 && (
+        {!libraryLoading && templates.length > 0 && (
           <p className="mono text-xs tabular-nums text-fg-muted">{templates.length} saved</p>
         )}
       </header>
@@ -1096,7 +1155,7 @@ Reply with NOTHING but this exact format:
 
       {/* ── One supporting line (empty state only) + the single CTA ── */}
       <div className="mb-10 animate-reveal-up">
-        {!loading && templates.length === 0 && (
+        {!libraryLoading && templates.length === 0 && (
           <p className="body-sm mb-4 max-w-md">
             No saved workouts yet — build your own or run a starter session below.
           </p>
@@ -1121,7 +1180,7 @@ Reply with NOTHING but this exact format:
         </div>
       </div>
 
-      {loading ? (
+      {libraryLoading ? (
         <section aria-hidden="true" className="border-t border-border animate-reveal-up">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="flex items-center justify-between gap-3 border-b border-border py-3">

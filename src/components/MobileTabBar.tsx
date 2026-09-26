@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Dumbbell,
@@ -26,6 +26,17 @@ const tabs = [
   { title: "Coach", url: "/coach", icon: Sparkles },
 ];
 
+const ACTIVE_ROUTE = "/workouts/active";
+
+/** A seeded session is waiting in storage (started, not yet finished). */
+const hasActiveSeed = (): boolean => {
+  try {
+    return window.localStorage.getItem(ACTIVE_WORKOUT_STORAGE_KEY) !== null;
+  } catch {
+    return false; // storage unavailable — treat as no session
+  }
+};
+
 /* Bottom tab bar for phones — the sidebar is desktop-only. The center +
    opens a two-way chooser: Quick start (log as you go, voice or typed) or
    New workout (plan it first in the builder). Every press ticks (native
@@ -39,16 +50,31 @@ const MobileTabBar = () => {
   // Workouts tab — start a workout and you're still "in Workouts".
   const workoutsActive = pathname.startsWith("/workouts");
 
+  // Is a session LIVE on the active route? The logger announces both edges
+  // ("liftos-session", detail.active) — mount, and finish / discard /
+  // unmount. The route + seed key prime it, so a cold load or a
+  // navigation lands right before the logger's chunk has even mounted.
+  const [sessionLive, setSessionLive] = useState(
+    () => pathname === ACTIVE_ROUTE && hasActiveSeed(),
+  );
+  useEffect(() => {
+    setSessionLive(pathname === ACTIVE_ROUTE && hasActiveSeed());
+  }, [pathname]);
+  useEffect(() => {
+    const onSession = (event: Event): void => {
+      const detail = (event as CustomEvent<{ active?: boolean }>).detail;
+      setSessionLive(detail?.active === true);
+    };
+    window.addEventListener("liftos-session", onSession);
+    return () => window.removeEventListener("liftos-session", onSession);
+  }, []);
+
   const handlePlus = (): void => {
     tapHaptic();
     // A live session outranks starting anything new.
-    try {
-      if (window.localStorage.getItem(ACTIVE_WORKOUT_STORAGE_KEY)) {
-        navigate("/workouts/active");
-        return;
-      }
-    } catch {
-      /* storage unavailable — fall through to the chooser */
+    if (hasActiveSeed()) {
+      navigate(ACTIVE_ROUTE);
+      return;
     }
     setChooserOpen(true);
   };
@@ -57,7 +83,7 @@ const MobileTabBar = () => {
     tapHaptic();
     setChooserOpen(false);
     persistActiveSession(buildBlankSession());
-    navigate("/workouts/active");
+    navigate(ACTIVE_ROUTE);
   };
 
   const planWorkout = (): void => {
@@ -69,8 +95,10 @@ const MobileTabBar = () => {
   // Mid-workout the logger mounts its own session toolbar (voice, add
   // exercise, minimize) in this slot — two bars stacked here was the "too
   // many controls at the bottom" problem. Minimize brings people back to
-  // Home, where the resume banner is the way back in.
-  if (pathname === "/workouts/active") return null;
+  // Home, where the resume banner is the way back in. Only a LIVE session
+  // hides the bar: the post-finish recap and the "no active session"
+  // screen on the same route keep their navigation.
+  if (sessionLive && pathname === ACTIVE_ROUTE) return null;
 
   const left = tabs.slice(0, 2);
   const right = tabs.slice(2);

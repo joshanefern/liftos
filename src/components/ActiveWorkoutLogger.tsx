@@ -80,6 +80,29 @@ const TIMED_TOGGLE_HINT = /plank|hold|hang|carry|wall.?sit|bridge|l.?sit|iso|sta
     inherits it. */
 const ACTIVE_WORKOUT_PROGRESS_KEY = "liftos_active_workout_progress";
 const REST_SECONDS = 120;
+/** How many recently-completed set ids voice corrections can reach back to. */
+const RECENT_SET_CAP = 20;
+/** Scroll lands first; the focus (and its keyboard) follows after this. */
+const KEYBOARD_FOCUS_DELAY_MS = 60;
+
+/** Tells MobileTabBar whether a session is LIVE on this route — it hides
+    only then, so the recap and the "no session" screen keep their bottom
+    navigation. The bar listens for the same event name. */
+const announceSession = (active: boolean): void => {
+  window.dispatchEvent(new CustomEvent("liftos-session", { detail: { active } }));
+};
+
+/** Jump to a field: scroll FIRST, instantly, then focus. The native shell
+    repairs iOS's keyboard pan by recording the scroll offset at
+    keyboardWillShow and restoring it at hide — focusing first meant it
+    recorded the pre-scroll offset and snapped the page back the moment
+    the keyboard closed. The delay lets the scroll settle before the
+    keyboard notification fires, so the post-scroll offset is what's kept. */
+const jumpToInput = (anchor: HTMLElement | null, input: HTMLInputElement | null): void => {
+  (anchor ?? input)?.scrollIntoView({ behavior: "instant", block: "center" });
+  if (!input) return;
+  window.setTimeout(() => input.focus({ preventScroll: true }), KEYBOARD_FOCUS_DELAY_MS);
+};
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -107,10 +130,6 @@ type SessionPR =
   // shared weight-first sort. Keeps the recap consistent with the live
   // PR banner, which has always celebrated these.
   | { name: string; kind: "reps"; reps: number; weight: number; isFirst: boolean };
-
-/** Shape lib/voiceApply is adding to VoiceApplyResult.touched — read
-    defensively here so the logger builds either way. */
-type VoiceTouch = { exerciseId: string; setId: string };
 
 /** The set the "Now" block is pointed at: the first open WORKING set of the
     first exercise that still has one. Warm-ups are never "now" — they sit
@@ -321,7 +340,32 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const notesRef = useRef(notes);
   notesRef.current = notes;
 
+  // Set ids in the order they were completed, MOST RECENT FIRST, by every
+  // path (row tick, exercise Done, Complete set, voice). "That was 12" /
+  // "scratch that" rewrite the LAST logged set, and rows carry no
+  // timestamps — this list is how lib/voiceApply knows which one. A ref:
+  // every writer also sets exercises, so the render that follows sees it.
+  const recentSetIdsRef = useRef<string[]>([]);
+  const noteSetsCompleted = (idsInOrder: string[]): void => {
+    if (idsInOrder.length === 0) return;
+    const fresh = [...idsInOrder].reverse();
+    const rest = recentSetIdsRef.current.filter((id) => !fresh.includes(id));
+    recentSetIdsRef.current = [...fresh, ...rest].slice(0, RECENT_SET_CAP);
+  };
+  // What voice sees: only rows still completed — an undo or an un-tick
+  // drops a row without disturbing the order of the rest.
+  const recentSetIds = useMemo(() => {
+    const completed = new Set(
+      exercises.flatMap((e) => e.sets.filter((s) => s.completed).map((s) => s.id)),
+    );
+    return recentSetIdsRef.current.filter((id) => completed.has(id));
+  }, [exercises]);
+
   const handleVoiceApply = (result: VoiceApplyResult): void => {
+    const completed = new Set(
+      result.exercises.flatMap((e) => e.sets.filter((s) => s.completed).map((s) => s.id)),
+    );
+    noteSetsCompleted(result.touched.map((t) => t.setId).filter((id) => completed.has(id)));
     setExercises((current) => {
       voiceUndoRef.current = { exercises: current, notes: notesRef.current };
       return result.exercises as LoggedExercise[];
@@ -346,11 +390,13 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const addExerciseInputRef = useRef<HTMLInputElement | null>(null);
 
   /** Receipt → Edit: scroll the first touched exercise into view and put
-      the cursor in that set's reps cell. `touched` is being added to the
-      apply result by lib/voiceApply; until it lands, the first summary
-      line's exercise name is the fallback target. */
+      the cursor in that set's reps cell. The first summary line's exercise
+      name is the fallback target when nothing was touched (a note). */
   const handleVoiceEdit = (result: VoiceApplyResult): void => {
-    const touched = (result as VoiceApplyResult & { touched?: VoiceTouch[] }).touched?.[0];
+    // Edit takes over from voice: the snapshot behind Undo is stale the
+    // moment the lifter types, so no later fire may restore it.
+    voiceUndoRef.current = null;
+    const touched = result.touched[0];
     let exerciseId = touched?.exerciseId ?? null;
     if (!exerciseId) {
       const firstLine = result.summary[0] ?? "";
@@ -361,17 +407,21 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     if (!exerciseId) return;
     const card = exerciseCardRefs.current[exerciseId] ?? null;
     const input = touched ? (repsInputRefs.current[touched.setId] ?? null) : null;
-    // Focus first (iOS opens the keyboard only inside the tap), then scroll.
-    input?.focus({ preventScroll: true });
-    (card ?? input)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    jumpToInput(card, input);
   };
 
   const focusAddExercise = (): void => {
     const el = addExerciseInputRef.current;
     if (!el) return;
-    el.focus({ preventScroll: true });
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    jumpToInput(el, el);
   };
+
+  // The tab bar hides only while this session is live: mount = live;
+  // finish, discard and unmount = over (the recap keeps its navigation).
+  useEffect(() => {
+    announceSession(true);
+    return () => announceSession(false);
+  }, []);
 
   // ── Save what was actually done as a workout (create-vs-start split).
   // Quick starts have no templateId → "Save as workout"; template sessions
@@ -779,6 +829,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         const hint = hintFor(exercise, index, "weight");
         if (hint !== null) weight = formatWeightForDisplay(hint);
       }
+      noteSetsCompleted([setId]);
     }
 
     setExercises((current) =>
@@ -868,6 +919,9 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       return { ...set, reps, weight, completed: true };
     });
 
+    // Rows flipping to done here complete in list order — the last one is
+    // the most recent.
+    noteSetsCompleted(exercise.sets.filter((set) => !set.completed).map((set) => set.id));
     setExercises((current) =>
       current.map((e) => (e.id === exerciseId ? { ...e, sets: filled } : e)),
     );
@@ -1008,6 +1062,8 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         prs,
         firstWorkout: logs.length === 0 && !logsLoadFailed,
       });
+      // The recap is not a live session — the tab bar comes back under it.
+      announceSession(false);
       // One long success haptic at the session boundary — the recap moment.
       successHaptic();
       // The celebration overlay is for BEATEN records only. First-ever logs
@@ -1030,6 +1086,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     setDiscardOpen(false);
     restTimer.skip();
     clearActiveWorkoutStorage();
+    announceSession(false);
     toast({ title: "Session discarded" });
     navigate("/dashboard");
   };
@@ -1704,9 +1761,12 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         </aside>
       </div>
 
-      {/* Mobile / tablet: compact rest bar pinned above the tab bar */}
+      {/* Mobile / tablet: compact rest bar pinned above the session
+          toolbar. On tablets the toolbar floats (bottom-6, 4rem tall,
+          centered, z-40) — the bar sits in the same slot the receipt uses
+          above it, never underneath, so ring + countdown stay visible. */}
       {(restTimer.running || restPulse) && (
-        <div className="fixed inset-x-4 z-30 bottom-[calc(4rem+var(--safe-bottom)+0.75rem)] md:inset-x-auto md:right-6 md:bottom-6 md:w-96 xl:hidden">
+        <div className="fixed inset-x-4 z-30 bottom-[calc(4rem+var(--safe-bottom)+0.75rem)] md:inset-x-auto md:right-6 md:bottom-[6.25rem] md:w-96 xl:hidden">
           <div
             className={cn(
               "flex items-center gap-4 rounded-lg border bg-card px-4 py-3 shadow-lg transition-colors",
@@ -1764,6 +1824,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
               onUndo={handleVoiceUndo}
               onEdit={handleVoiceEdit}
               raised={restTimer.running || restPulse}
+              recentSetIds={recentSetIds}
             />
           </div>
           <button

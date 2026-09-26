@@ -2,11 +2,12 @@ import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
 
 /* ── Progress-page helpers that read the whole log, not one lift.
 
-     weeksTrained — "N of the last M weeks trained". Weeks start Monday in
-     local time (the same week the Dashboard's weekly streak counts) and the
-     window always ends with the current, still-open week: a fresh Monday
-     reads one lower until the first session lands, which is the nudge the
-     tile exists to give.
+     weeksTrained — "N of the last M weeks trained". Weeks start Sunday in
+     local time by default — the same rows the Calendar grid draws, so the
+     tile and the grid agree on which week a Sunday session belongs to
+     (`weekStartsOn` lets a caller pick Monday). The window always ends
+     with the current, still-open week: a fresh week reads one lower until
+     the first session lands, which is the nudge the tile exists to give.
 
      volumeComparison — total weight moved in the last 4 weeks against the 4
      before. Deliberately a demoted, secondary number: more volume is not
@@ -18,11 +19,14 @@ export const CONSISTENCY_WEEKS = 8;
 const DAY_MS = 86_400_000;
 const VOLUME_WINDOW_DAYS = 28;
 
-/** Local midnight of the Monday that starts the week containing `date`. */
-const weekStart = (date: Date): Date => {
+/** 0 = Sunday … 6 = Saturday, as `Date#getDay` numbers them. */
+export type WeekStartDay = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+/** Local midnight of the day that starts the week containing `date`. */
+const weekStart = (date: Date, weekStartsOn: WeekStartDay): Date => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  d.setDate(d.getDate() - ((d.getDay() - weekStartsOn + 7) % 7));
   return d;
 };
 
@@ -37,11 +41,12 @@ export const weeksTrained = (
   logs: WorkoutLog[],
   weeks: number = CONSISTENCY_WEEKS,
   now: number = Date.now(),
+  weekStartsOn: WeekStartDay = 0,
 ): WeeksTrained => {
   const span = Math.max(1, Math.floor(weeks));
-  const current = weekStart(new Date(now)).getTime();
+  const current = weekStart(new Date(now), weekStartsOn).getTime();
   // Walk back by calendar days rather than milliseconds — a DST week is 167
-  // or 169 hours long, so ms arithmetic would land beside the Monday.
+  // or 169 hours long, so ms arithmetic would land beside the week start.
   const first = new Date(current);
   first.setDate(first.getDate() - (span - 1) * 7);
   const earliest = first.getTime();
@@ -50,7 +55,7 @@ export const weeksTrained = (
   for (const log of logs) {
     const t = Date.parse(log.finished_at);
     if (!Number.isFinite(t) || t > now) continue;
-    const ws = weekStart(new Date(t)).getTime();
+    const ws = weekStart(new Date(t), weekStartsOn).getTime();
     if (ws < earliest || ws > current) continue;
     seen.add(ws);
   }

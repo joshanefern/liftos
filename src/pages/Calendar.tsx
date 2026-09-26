@@ -21,6 +21,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 /* Sunday-start weeks (US convention). */
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+/* Ceiling for the planned-workouts %, so a month far over plan stays a
+   readable three digits instead of a five-digit number. */
+const HIT_RATE_CAP = 999;
+
 const localMidnight = (date: Date) => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -46,7 +50,7 @@ const fmtVol = (v: number, units: string) =>
 type PrLift = { name: string; weight: number };
 
 /* A PR day is one where an exercise's top completed weight beats every prior
-   session's best for that exercise. First-ever exposure to a lift sets the
+   workout's best for that exercise. First-ever exposure to a lift sets the
    baseline — it is not counted as a PR. */
 const computePrs = (logs: WorkoutLog[]) => {
   const sorted = [...logs].sort(
@@ -116,13 +120,13 @@ const Calendar = () => {
   const { save: saveTemplate } = useWorkoutTemplates();
   const [savedLogIds, setSavedLogIds] = useState<Set<string>>(new Set());
 
-  // "Save it later, into workouts" — any calendar session can become a
+  // "Save it later, into workouts" — any logged workout can become a
   // saved workout with its achieved numbers as the targets.
   const saveLogAsTemplate = async (log: WorkoutLog): Promise<void> => {
     if (savedLogIds.has(log.id)) return;
     const exercises = sessionToTemplateExercises(log.exercises ?? []);
     if (exercises.length === 0) {
-      toast({ title: "Nothing completed in this session to save" });
+      toast({ title: "Nothing completed in this workout to save" });
       return;
     }
     try {
@@ -144,7 +148,7 @@ const Calendar = () => {
   const todayKey = localMidnight(now).getTime();
 
   // Deep link: /calendar?day=YYYY-MM-DD opens straight onto that day's
-  // sessions — the recap and the home "Last workout" card land here.
+  // workouts — the recap and the home "Last workout" card land here.
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const linkedDay = useMemo(() => {
@@ -208,14 +212,20 @@ const Calendar = () => {
   }, [monthLogs]);
   const maxDayVol = Math.max(0, ...Object.values(dayVolumes));
 
-  /* ── Real hit rate: sessions logged vs frequency target × weeks elapsed ── */
+  /* ── Real hit rate: workouts logged vs frequency target × weeks elapsed.
+     One denominator feeds both the % and its "N of about M" caption — the
+     caption shows a whole number of planned workouts, so the % divides by
+     that same whole number or the two contradict each other ("3 of about
+     3" reading 86%). Capped so a wildly-over-plan month can't print a
+     five-digit percentage. ── */
   const weeklyTarget = parseInt(profile?.frequency?.match(/\d+/)?.[0] ?? "") || 3;
   const daysInViewMonth = new Date(view.year, view.month + 1, 0).getDate();
   const daysConsidered = isCurrentMonth ? now.getDate() : daysInViewMonth;
-  const expectedSessions = (weeklyTarget * daysConsidered) / 7;
+  const expectedWorkouts = (weeklyTarget * daysConsidered) / 7;
+  const plannedSoFar = Math.max(1, Math.round(expectedWorkouts));
   const hasAnyData = logs.length > 0;
   const hitRate = hasAnyData
-    ? Math.round((monthLogs.length / Math.max(expectedSessions, 1)) * 100)
+    ? Math.min(HIT_RATE_CAP, Math.round((monthLogs.length / plannedSoFar) * 100))
     : null;
 
   const monthVolume = monthLogs.reduce((s, l) => s + l.total_volume, 0);
@@ -250,8 +260,7 @@ const Calendar = () => {
   /* Stat rows under the grid. Each label says what its number counts in
      plain words — the "x of about y planned" context is visible, not hidden
      in a title attribute iOS never shows. ("Green days" — distinct days
-     with a session — duplicated the workout count above and is gone.) */
-  const plannedSoFar = Math.max(1, Math.round(expectedSessions));
+     with a workout — duplicated the workout count above and is gone.) */
   const stripStats = [
     {
       label: "Planned workouts completed",
@@ -327,28 +336,28 @@ const Calendar = () => {
           ))}
         </div>
 
-        {/* Day cells — 6 stable rows, flat: dot marks a session, ink ring marks today */}
+        {/* Day cells — 6 stable rows, flat: dot marks a workout, ink ring marks today */}
         <div key={`grid-${monthKey}`} className="grid grid-cols-7 gap-1.5 md:gap-2 animate-fade-in">
           {cells.map((cell) => {
             const key = cell.date.getTime();
             const dayLogs = cell.inMonth ? (logsByDay[key] ?? []) : [];
-            const hasSessions = dayLogs.length > 0;
+            const hasWorkouts = dayLogs.length > 0;
             const isToday = cell.inMonth && key === todayKey;
             const isFuture = key > todayKey;
-            const isPrDay = hasSessions && prDays.has(key);
+            const isPrDay = hasWorkouts && prDays.has(key);
             const vol = dayVolumes[key] ?? 0;
             const ratio = maxDayVol > 0 ? vol / maxDayVol : 0;
             const dotSize = 7 + Math.round(ratio * 5); // 7–12px, subtle
 
             const stateCls = !cell.inMonth
               ? "border-transparent"
-              : hasSessions
+              : hasWorkouts
                 ? "cursor-pointer border-transparent hover:bg-secondary active:scale-[0.96]"
                 : "border-transparent";
 
             const numCls = !cell.inMonth
               ? "text-fg-disabled"
-              : hasSessions
+              : hasWorkouts
                 ? "font-semibold text-fg"
                 : isFuture
                   ? "text-fg-faint"
@@ -358,11 +367,11 @@ const Calendar = () => {
               <button
                 key={key}
                 type="button"
-                disabled={!hasSessions}
+                disabled={!hasWorkouts}
                 onClick={() => setSelected(cell.date)}
                 aria-label={
-                  hasSessions
-                    ? `${cell.date.toLocaleDateString("en-US", { month: "long", day: "numeric" })} — ${dayLogs.length} session${dayLogs.length === 1 ? "" : "s"}, ${fmtVol(vol, units)}`
+                  hasWorkouts
+                    ? `${cell.date.toLocaleDateString("en-US", { month: "long", day: "numeric" })} — ${dayLogs.length} workout${dayLogs.length === 1 ? "" : "s"}, ${fmtVol(vol, units)}`
                     : undefined
                 }
                 className={`relative flex h-12 flex-col items-center justify-center gap-1 rounded-[0.75rem] border transition-all duration-200 sm:h-16 md:h-20 md:rounded-[0.875rem] ${stateCls} ${
@@ -373,7 +382,7 @@ const Calendar = () => {
                   {cell.date.getDate()}
                 </span>
                 <span className="flex h-3.5 items-center justify-center">
-                  {hasSessions ? (
+                  {hasWorkouts ? (
                     <span
                       className="rounded-full bg-primary"
                       style={{ width: dotSize, height: dotSize }}
@@ -392,7 +401,7 @@ const Calendar = () => {
         <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
           <span className="caption inline-flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-primary" />
-            Session · sized by volume
+            Workout · sized by volume
           </span>
           <span className="caption inline-flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-border" />
@@ -489,7 +498,7 @@ const Calendar = () => {
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-1 md:px-6 md:pt-6">
             <SheetHeader className="pr-10 text-left sm:text-left">
               <SheetTitle className="heading-md">
-                {selectedLogs.length} session{selectedLogs.length === 1 ? "" : "s"} logged
+                {selectedLogs.length} workout{selectedLogs.length === 1 ? "" : "s"} logged
               </SheetTitle>
               {/* The day identity lives on each card now; kept here for
                   screen readers only. */}
@@ -517,7 +526,7 @@ const Calendar = () => {
               ))}
             </div>
 
-            {/* Sessions */}
+            {/* Workouts */}
             <div className="mt-5 space-y-3">
               {selectedLogs.map((log) => {
                 const logPrs = prsByLog[log.id] ?? [];
@@ -558,7 +567,7 @@ const Calendar = () => {
                         <p className="truncate text-xs font-medium text-primary">
                           {logPrs.length === 1
                             ? `PR — ${logPrs[0].name}`
-                            : `${logPrs.length} PRs this session`}
+                            : `${logPrs.length} PRs this workout`}
                         </p>
                       </div>
                     )}

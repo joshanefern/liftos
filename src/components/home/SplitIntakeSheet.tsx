@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Drawer,
   DrawerContent,
@@ -71,6 +71,20 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
   const [mustHave, setMustHave] = useState("");
   const [avoid, setAvoid] = useState("");
 
+  // The open day's block (row + focus grid). On a 375×667 phone the day
+  // list is the only thing that gives way, so a picker opened on a lower
+  // row mounts below its fold and the tap looks like it did nothing — once
+  // it has layout, bring it into view. "nearest" shows the whole block when
+  // it fits and the row plus the first options when it doesn't.
+  const openDayRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (editing === null) return;
+    const frame = window.requestAnimationFrame(() => {
+      openDayRef.current?.scrollIntoView({ block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [editing]);
+
   const schedule = useMemo((): ScheduleDay[] => {
     const ordered = WEEK.filter((d) => selected.includes(d));
     const pattern = defaultPattern(ordered.length);
@@ -102,19 +116,20 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
     <Drawer open={open} onOpenChange={onOpenChange}>
       {/* Everything but the day list is shrink-0: when the sheet hits its
           height cap on a short phone, only the list gives way (and scrolls),
-          so the Build button is never pushed off-screen. */}
+          so the Build button is never pushed off-screen. The header is kept
+          to a one-line description and tight margins for the same reason —
+          on a 375×667 phone every line here is a line the list loses. */}
       <DrawerContent className="px-6 pb-[calc(1.5rem+var(--safe-bottom))]">
-        <p className="eyebrow mt-3 shrink-0 pr-12 !text-primary">Your routine</p>
-        <DrawerTitle className="heading-md mt-2 shrink-0 text-fg">
+        <p className="eyebrow mt-2 shrink-0 pr-12 !text-primary">Your routine</p>
+        <DrawerTitle className="heading-md mt-1.5 shrink-0 text-fg">
           Pick your days — the coach fills in the work.
         </DrawerTitle>
         <DrawerDescription className="mt-1 shrink-0 text-[13px] leading-5 text-fg-muted">
-          Each day starts with the usual split for that many days. Tap a focus to
-          change it.
+          Usual split prefilled — tap a focus to change it.
         </DrawerDescription>
 
         {/* Which days */}
-        <div className="mt-4 flex shrink-0 justify-between gap-1.5">
+        <div className="mt-3 flex shrink-0 justify-between gap-1.5">
           {WEEK.map((day) => {
             const active = selected.includes(day);
             return (
@@ -144,12 +159,16 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
         {schedule.length > 0 && (
           <div
             data-vaul-no-drag
-            className="mt-4 min-h-[5.5rem] flex-auto space-y-1.5 overflow-y-auto overscroll-contain"
+            className="mt-3 min-h-[5.5rem] flex-auto space-y-1.5 overflow-y-auto overscroll-contain"
           >
             {schedule.map(({ day, focus }) => {
               const isOpen = editing === day;
               return (
-                <div key={day} className="rounded-[12px] border border-border">
+                <div
+                  key={day}
+                  ref={isOpen ? openDayRef : null}
+                  className="rounded-[12px] border border-border"
+                >
                   <div className="flex min-h-11 items-center justify-between gap-3 px-3">
                     <p className="text-[13px] font-semibold text-fg">{day}</p>
                     <button
@@ -200,7 +219,7 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
         )}
 
         {/* Two short lines the coach reads as separate instructions. */}
-        <div className="mt-4 grid shrink-0 gap-3">
+        <div className="mt-3 grid shrink-0 gap-2.5">
           <label className="block">
             <span className="mb-1.5 block text-[12px] font-semibold text-fg">
               Must-have lifts
@@ -231,7 +250,7 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
           type="button"
           disabled={schedule.length === 0 || building}
           onClick={() => onBuild(schedule, { mustHave, avoid })}
-          className="mt-4 inline-flex min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-[14px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+          className="mt-3 inline-flex min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-[14px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
         >
           <Sparkles size={15} />
           {building

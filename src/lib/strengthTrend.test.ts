@@ -34,6 +34,16 @@ const ex = (
   ],
 });
 
+/* A HealthKit-style run: cardio kind, distance + time, no reps or weight. */
+const run = (meters = 5000, seconds = 1800): WorkoutExercise => ({
+  id: "run",
+  name: "Outdoor Run",
+  kind: "cardio",
+  category: "Cardio",
+  target: "t",
+  sets: [{ id: `run-${seconds}`, distance_m: meters, duration_seconds: seconds, completed: true }],
+});
+
 const log = (finished_at: string, exercises: WorkoutExercise[]): WorkoutLog => ({
   id: `log-${finished_at}`,
   template_id: null,
@@ -183,6 +193,17 @@ describe("lastSessionDeltas", () => {
     ];
     expect(lastSessionDeltas(logs)).toEqual([]);
   });
+
+  it("a cardio-only newest log is skipped — the latest lifting session is compared", () => {
+    const logs = [
+      log(daysAgo(0), [run()]),
+      log(daysAgo(1), [ex("Bench Press", 82.5)]),
+      log(daysAgo(8), [ex("Bench Press", 80)]),
+    ];
+    const [d] = lastSessionDeltas(logs);
+    expect(d.name).toBe("Bench Press");
+    expect(d.direction).toBe("up");
+  });
 });
 
 describe("sessionImprovement", () => {
@@ -245,6 +266,38 @@ describe("sessionImprovement", () => {
     ];
     // Junk name and weighted-then-bodyweight push-up are skipped; only bench counts.
     expect(sessionImprovement(logs)).toEqual({ pct: 10, lifts: 1 });
+  });
+
+  it("a cardio-only newest log is skipped — the latest LIFTING session is compared", () => {
+    const logs = [
+      log(daysAgo(0), [run()]), // this morning's run, pulled from HealthKit
+      log(daysAgo(1), [ex("Bench Press", 88)]),
+      log(daysAgo(8), [ex("Bench Press", 80)]),
+    ];
+    expect(sessionImprovement(logs)).toEqual({ pct: 10, lifts: 1 });
+  });
+
+  it("a placeholder-only newest import is skipped the same way", () => {
+    const logs = [
+      log(daysAgo(0), [ex("Exercise 1", 200)]),
+      log(daysAgo(1), [ex("Bench Press", 88)]),
+      log(daysAgo(8), [ex("Bench Press", 80)]),
+    ];
+    expect(sessionImprovement(logs)).toEqual({ pct: 10, lifts: 1 });
+  });
+
+  it("cardio logs between two lifting sessions never break the comparison", () => {
+    const logs = [
+      log(daysAgo(1), [ex("Bench Press", 88)]),
+      log(daysAgo(3), [run()]),
+      log(daysAgo(5), [run(3000, 1000)]),
+      log(daysAgo(8), [ex("Bench Press", 80)]),
+    ];
+    expect(sessionImprovement(logs)).toEqual({ pct: 10, lifts: 1 });
+  });
+
+  it("null when no lifting session exists at all", () => {
+    expect(sessionImprovement([log(daysAgo(0), [run()]), log(daysAgo(3), [run()])])).toBeNull();
   });
 });
 

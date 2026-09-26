@@ -838,3 +838,187 @@ describe("applyVoiceIntent — 'scratch the last one' (correct + undo)", () => {
     expect(result.summary).toEqual(["Last set · nothing logged yet to fix"]);
   });
 });
+
+describe("applyVoiceIntent — recency (recentSetIds) beats list order", () => {
+  /** Superset logged curl 1 → bench 1 → curl 2. In LIST order bench is
+      last; in TIME order curl 2 is. The UI supplies the time order. */
+  const superset = (): VoiceLoggedExercise[] => [
+    {
+      id: "c",
+      name: "Bicep Curl",
+      category: "Arms",
+      target: "",
+      sets: [
+        set({ id: "c1", reps: "10", weight: "25", completed: true, targetReps: 10, targetWeight: 25 }),
+        set({ id: "c2", reps: "9", weight: "25", completed: true, targetReps: 10, targetWeight: 25 }),
+        set({ id: "c3", targetReps: 10, targetWeight: 25 }),
+      ],
+    },
+    {
+      id: "b",
+      name: "Bench Press",
+      category: "Chest",
+      target: "",
+      sets: [
+        set({ id: "b0", isWarmup: true, reps: "10", weight: "95", completed: true }),
+        set({ id: "b1", reps: "8", weight: "185", completed: true }),
+        set({ id: "b2" }),
+      ],
+    },
+  ];
+  const recent = ["c2", "b1", "c1"];
+
+  it("'scratch that' clears curl 2 (the newest set), not bench", () => {
+    const result = applyVoiceIntent(
+      superset(),
+      { kind: "sets", actions: [{ exercise: "", correct: true, undo: true, sets: [] }] },
+      { recentSetIds: recent },
+    );
+    expect(result.exercises[0].sets[1]).toMatchObject({ reps: "", weight: "", completed: false });
+    expect(result.exercises[1].sets[1]).toMatchObject({ reps: "8", weight: "185", completed: true });
+    expect(result.summary).toEqual(["Bicep Curl · last set scratched"]);
+    expect(result.touched).toEqual([{ exerciseId: "c", setId: "c2" }]);
+  });
+
+  it("'actually that was 12' rewrites curl 2, not bench", () => {
+    const result = applyVoiceIntent(
+      superset(),
+      { kind: "sets", actions: [{ exercise: "", correct: true, sets: [{ reps: 12 }] }] },
+      { recentSetIds: recent },
+    );
+    expect(result.exercises[0].sets[1]).toMatchObject({ reps: "12", weight: "25", completed: true });
+    expect(result.exercises[1].sets[1].reps).toBe("8");
+    expect(result.summary).toEqual(["Bicep Curl · corrected to 25 lb × 12 reps"]);
+    expect(result.touched).toEqual([{ exerciseId: "c", setId: "c2" }]);
+  });
+
+  it("without recentSetIds the same session still falls back to list order (bench)", () => {
+    const result = applyVoiceIntent(superset(), {
+      kind: "sets",
+      actions: [{ exercise: "", correct: true, undo: true, sets: [] }],
+    });
+    expect(result.summary).toEqual(["Bench Press · last set scratched"]);
+    expect(result.exercises[0].sets[1].completed).toBe(true);
+  });
+
+  it("named: prefers that exercise's most recent row even when a later row is also done", () => {
+    // Curl set 1 was (re)logged AFTER set 2 — list order would pick c2.
+    const result = applyVoiceIntent(
+      superset(),
+      { kind: "sets", actions: [{ exercise: "Bicep Curl", correct: true, sets: [{ reps: 11 }] }] },
+      { recentSetIds: ["b1", "c1", "c2"] },
+    );
+    expect(result.exercises[0].sets[0]).toMatchObject({ reps: "11", completed: true });
+    expect(result.exercises[0].sets[1].reps).toBe("9");
+    expect(result.touched).toEqual([{ exerciseId: "c", setId: "c1" }]);
+  });
+
+  it("named: ignores newer rows of OTHER exercises and stays in scope", () => {
+    const result = applyVoiceIntent(
+      superset(),
+      { kind: "sets", actions: [{ exercise: "Bench Press", correct: true, sets: [{ reps: 6 }] }] },
+      { recentSetIds: recent }, // c2 is newest, but bench was named
+    );
+    expect(result.exercises[1].sets[1]).toMatchObject({ reps: "6", weight: "185" });
+    expect(result.exercises[0].sets[1].reps).toBe("9");
+    expect(result.summary[0]).toBe("Bench Press · corrected to 185 lb × 6 reps");
+  });
+
+  it("named + ordinal: the spoken ordinal still wins over recency", () => {
+    const result = applyVoiceIntent(
+      superset(),
+      { kind: "sets", actions: [{ exercise: "Bicep Curl", correct: true, sets: [{ ordinal: 1, reps: 12 }] }] },
+      { recentSetIds: recent },
+    );
+    expect(result.exercises[0].sets[0].reps).toBe("12");
+    expect(result.exercises[0].sets[1].reps).toBe("9");
+  });
+
+  it("stale ids fall back to the list-order walk", () => {
+    const result = applyVoiceIntent(
+      superset(),
+      { kind: "sets", actions: [{ exercise: "", correct: true, sets: [{ reps: 6 }] }] },
+      { recentSetIds: ["gone-1", "gone-2"] },
+    );
+    expect(result.summary).toEqual(["Bench Press · corrected to 185 lb × 6 reps"]);
+    expect(result.touched).toEqual([{ exerciseId: "b", setId: "b1" }]);
+  });
+
+  it("skips ids that point at open rows or warm-ups and takes the next recent one", () => {
+    // c3 was never completed, b0 is a warm-up → c2 is the real target.
+    const result = applyVoiceIntent(
+      superset(),
+      { kind: "sets", actions: [{ exercise: "", correct: true, sets: [{ reps: 6 }] }] },
+      { recentSetIds: ["c3", "b0", "c2", "b1"] },
+    );
+    expect(result.exercises[0].sets[1].reps).toBe("6");
+    expect(result.exercises[1].sets[0]).toMatchObject({ reps: "10", weight: "95" }); // warm-up untouched
+    expect(result.touched).toEqual([{ exerciseId: "c", setId: "c2" }]);
+  });
+
+  it("named with only stale ids falls back to that exercise's last completed row", () => {
+    const result = applyVoiceIntent(
+      superset(),
+      { kind: "sets", actions: [{ exercise: "Bicep Curl", correct: true, sets: [{ reps: 6 }] }] },
+      { recentSetIds: ["gone"] },
+    );
+    expect(result.touched).toEqual([{ exerciseId: "c", setId: "c2" }]);
+  });
+
+  it("a second 'scratch that' skips the row just scratched and takes the next most recent", () => {
+    const result = applyVoiceIntent(
+      superset(),
+      {
+        kind: "sets",
+        actions: [
+          { exercise: "", correct: true, undo: true, sets: [] },
+          { exercise: "", correct: true, undo: true, sets: [] },
+        ],
+      },
+      { recentSetIds: recent },
+    );
+    expect(result.exercises[0].sets[1].completed).toBe(false); // c2
+    expect(result.exercises[1].sets[1].completed).toBe(false); // b1
+    expect(result.exercises[0].sets[0].completed).toBe(true); // c1 stays
+    expect(result.touched).toEqual([
+      { exerciseId: "c", setId: "c2" },
+      { exerciseId: "b", setId: "b1" },
+    ]);
+  });
+
+  it("a set logged in the same utterance is newer than anything the UI remembers", () => {
+    // "Curls, 10 at 25… actually that was 12": the row written a moment
+    // ago (c3) is the target, not b1 from the UI's list.
+    const result = applyVoiceIntent(
+      superset(),
+      {
+        kind: "sets",
+        actions: [
+          { exercise: "Bicep Curl", sets: [{ reps: 10, weight: 25 }] },
+          { exercise: "", correct: true, sets: [{ reps: 12 }] },
+        ],
+      },
+      { recentSetIds: ["b1", "c2", "c1"] },
+    );
+    expect(result.exercises[0].sets[2]).toMatchObject({ reps: "12", weight: "25", completed: true });
+    expect(result.exercises[1].sets[1].reps).toBe("8");
+    expect(result.summary).toEqual([
+      "Bicep Curl · 25 lb × 10 reps",
+      "Bicep Curl · corrected to 25 lb × 12 reps",
+    ]);
+    expect(result.touched).toEqual([
+      { exerciseId: "c", setId: "c3" },
+      { exerciseId: "c", setId: "c3" },
+    ]);
+    expect(result.setsLogged).toBe(1);
+  });
+
+  it("recency corrections report in the lifter's units", () => {
+    const result = applyVoiceIntent(
+      superset(),
+      { kind: "sets", actions: [{ exercise: "", correct: true, sets: [{ reps: 12 }] }] },
+      { units: "kg", recentSetIds: recent },
+    );
+    expect(result.summary[0]).toBe("Bicep Curl · corrected to 25 kg × 12 reps");
+  });
+});
