@@ -7,7 +7,7 @@
    each, so two "Bench Press" rows map in order. ── */
 
 const norm = (s: string): string =>
-  s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+  s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 export const reuseRowIds = (
   previous: { id: string; name: string }[],
