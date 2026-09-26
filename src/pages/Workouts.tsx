@@ -38,7 +38,7 @@ import { interpretPlan } from "@/lib/voice";
 import { voiceDiag } from "@/lib/speech";
 import { dictationVocabulary } from "@/lib/voiceVocabulary";
 import { reuseRowIds } from "@/lib/voicePlanRows";
-import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X, Mic } from "lucide-react";
+import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X, Mic, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -312,6 +312,11 @@ const Workouts = () => {
   // Live: the transcript is re-interpreted every ~second while you talk.
   // One call in flight at a time; the newest transcript waits its turn, so
   // a burst of partials never queues a dozen requests.
+  // "Build with AI" (Pro): type a description or talk — both feed the same
+  // interpreter and the same row-supersede path.
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiText, setAiText] = useState("");
+  const typedSession = useRef(1000); // typed builds get their own session ids
   const liveInFlight = useRef(false);
   const liveQueued = useRef<{ transcript: string; session: number } | null>(null);
   const interpretLatest = (transcript: string, session: number): void => {
@@ -384,6 +389,13 @@ const Workouts = () => {
           interpretLatest(next.transcript, next.session);
         }
       });
+  };
+  const buildFromText = (): void => {
+    const text = aiText.trim();
+    if (!text || liveInFlight.current) return;
+    typedSession.current += 1;
+    voiceDiag(`builder: typed build (${text.length} chars)`);
+    interpretLatest(text, typedSession.current);
   };
   const dictation = useDictation(
     (transcript, session) => {
@@ -503,34 +515,88 @@ const Workouts = () => {
             aria-label="Workout name"
             className="h-12 w-full min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-[15px] font-medium text-fg outline-none transition placeholder:font-normal focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
           />
-          {dictation.supported && (
-            <button
-              type="button"
-              onClick={() => void dictation.start()}
-              disabled={dictating}
-              aria-label={dictation.state.at === "listening" ? "Stop dictating" : "Dictate this workout"}
+          {/* Build with AI — Pro. Type it or say it; rows appear as you go. */}
+          <button
+            type="button"
+            onClick={() => setAiOpen((open) => !open)}
+            aria-pressed={aiOpen}
+            aria-label="Build with AI"
+            className={cn(
+              "relative inline-flex h-12 shrink-0 items-center gap-1.5 rounded-lg border pl-3 pr-2 text-[13px] font-semibold transition after:absolute after:-inset-1 after:content-['']",
+              aiOpen
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-card text-primary",
+            )}
+          >
+            <Sparkles size={15} />
+            AI
+            <span
               className={cn(
-                "relative inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition after:absolute after:-inset-1 after:content-[''] disabled:opacity-50",
-                dictation.state.at === "listening"
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-card text-primary",
+                "rounded-full px-1.5 text-[8.5px] font-bold uppercase leading-[15px] tracking-[0.1em]",
+                aiOpen ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary text-primary-foreground",
               )}
             >
-              <Mic size={18} className={dictation.state.at === "listening" ? "animate-pulse" : ""} />
-            </button>
-          )}
+              Pro
+            </span>
+          </button>
         </div>
-        {(dictation.state.at !== "idle" || dictating) && (
-          <p className="mt-2 min-h-[18px] text-[12.5px] leading-[18px] text-fg-muted">
-            {dictating && dictation.state.at === "idle"
-              ? "Building your rows…"
-              : dictation.state.at === "starting"
-                ? "Opening the mic…"
-                : dictation.state.at === "blocked"
-                  ? dictation.state.reason
-                  : (dictation.state.at === "listening" && dictation.state.partial) ||
-                    "Just talk — rows appear as you go. “Wait, take the bench out” removes it. It closes after a longer silence."}
-          </p>
+
+        {aiOpen && (
+          <div className="mt-2 rounded-[14px] border border-primary/25 bg-primary/[0.05] p-3">
+            <div className="flex items-start gap-2">
+              <textarea
+                value={aiText}
+                onChange={(event) => setAiText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    buildFromText();
+                  }
+                }}
+                rows={2}
+                placeholder="Describe it — “push day: bench 4×8 at 135, incline dumbbell 3×10, 20 min bike”"
+                aria-label="Describe the workout for the AI to build"
+                className="min-h-[60px] w-full min-w-0 flex-1 resize-none rounded-lg border border-border bg-card px-3 py-2 text-[14px] leading-5 text-fg outline-none transition placeholder:text-fg-muted focus:border-primary/60"
+              />
+              {dictation.supported && (
+                <button
+                  type="button"
+                  onClick={() => void dictation.start()}
+                  aria-label={dictation.state.at === "listening" ? "Stop dictating" : "Dictate the workout"}
+                  className={cn(
+                    "relative inline-flex h-[60px] w-12 shrink-0 items-center justify-center rounded-lg border transition after:absolute after:-inset-1 after:content-['']",
+                    dictation.state.at === "listening"
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-primary",
+                  )}
+                >
+                  <Mic size={18} className={dictation.state.at === "listening" ? "animate-pulse" : ""} />
+                </button>
+              )}
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <p className="min-h-[18px] min-w-0 flex-1 truncate text-[12px] leading-[18px] text-fg-muted">
+                {dictating && dictation.state.at === "idle"
+                  ? "Building your rows…"
+                  : dictation.state.at === "starting"
+                    ? "Opening the mic…"
+                    : dictation.state.at === "blocked"
+                      ? dictation.state.reason
+                      : dictation.state.at === "listening"
+                        ? dictation.state.partial || "Listening — rows appear as you talk."
+                        : "Type it, or tap the mic and just talk. “Take the bench out” removes it."}
+              </p>
+              <button
+                type="button"
+                onClick={buildFromText}
+                disabled={!aiText.trim() || dictating}
+                className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-primary px-3.5 text-[12.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.97] disabled:opacity-40"
+              >
+                <Sparkles size={13} />
+                Build
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
