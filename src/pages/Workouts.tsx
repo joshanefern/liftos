@@ -36,6 +36,7 @@ import { useUser } from "@/context/UserContext";
 import { cn } from "@/lib/utils";
 import { interpretPlan } from "@/lib/voice";
 import { voiceDiag } from "@/lib/speech";
+import { dictationVocabulary } from "@/lib/voiceVocabulary";
 import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X, Mic } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -302,6 +303,11 @@ const Workouts = () => {
   const voiceSession = useRef(0);
   const voiceRowIds = useRef<Set<string>>(new Set());
   const nameFromVoice = useRef(false);
+  // The lifter's own templates + starter programs bias the recognizer.
+  const vocabulary = useMemo(
+    () => dictationVocabulary([...templates, ...starterPrograms]),
+    [templates],
+  );
   const dictation = useDictation((transcript, session) => {
     const seq = ++planSeq.current;
     setPendingPlans((n) => n + 1);
@@ -363,7 +369,7 @@ const Workouts = () => {
         );
       })
       .finally(() => setPendingPlans((n) => n - 1));
-  });
+  }, { vocabulary });
 
   const updateExercise = <K extends keyof ExerciseDraft>(id: string, key: K, value: ExerciseDraft[K]) => {
     setExercises((current) =>

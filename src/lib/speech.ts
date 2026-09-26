@@ -13,7 +13,10 @@ import {
 interface SpeechPluginIface {
   isAvailable(): Promise<{ available: boolean; onDevice: boolean }>;
   requestSpeechPermissions(): Promise<{ speech: boolean; microphone: boolean }>;
-  startListening(options: { contextualStrings?: string[] }): Promise<{ started: boolean }>;
+  startListening(options: {
+    contextualStrings?: string[];
+    preferServer?: boolean;
+  }): Promise<{ started: boolean }>;
   stopListening(): Promise<{ transcript: string }>;
   cancelListening(): Promise<void>;
   logDiag(options: { line: string }): Promise<void>;
@@ -76,8 +79,11 @@ export const ensureSpeechPermissions = async (): Promise<boolean> => {
   return permissionsGranted;
 };
 
-export const startListening = (contextualStrings: string[]): Promise<{ started: boolean }> =>
-  Speech.startListening({ contextualStrings });
+export const startListening = (
+  contextualStrings: string[],
+  options: { preferServer?: boolean } = {},
+): Promise<{ started: boolean }> =>
+  Speech.startListening({ contextualStrings, preferServer: options.preferServer ?? false });
 
 export const stopListening = (): Promise<{ transcript: string }> => Speech.stopListening();
 

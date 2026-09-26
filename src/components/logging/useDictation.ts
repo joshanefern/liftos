@@ -37,7 +37,14 @@ export type DictationState =
 
 export const useDictation = (
   onTranscript: (transcript: string, sessionId: number) => void,
+  options: {
+    /** Words to bias the recognizer toward — exercise names, split names.
+        "chest day" came back as "chain day" without them. */
+    vocabulary?: string[];
+  } = {},
 ) => {
+  const vocabularyRef = useRef(options.vocabulary ?? []);
+  vocabularyRef.current = options.vocabulary ?? [];
   const [state, setState] = useState<DictationState>({ at: "idle" });
   const active = useRef(false);
   const partialRef = useRef<PluginListenerHandle | null>(null);
@@ -154,7 +161,9 @@ export const useDictation = (
       else if (!heard && total >= EMPTY_CANCEL_MS) cancel();
     }, 250);
     try {
-      await startListening([]);
+      // Server-based recognition for long free-form dictation — accuracy over
+      // latency; segment chaining covers Apple's per-task limit.
+      await startListening(vocabularyRef.current.slice(0, 100), { preferServer: true });
     } catch (err) {
       active.current = false;
       teardownListeners();

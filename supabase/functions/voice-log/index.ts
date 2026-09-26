@@ -16,6 +16,9 @@ const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 // Interpretation is a ~1s structured-extraction job — Haiku-class by
 // default, overridable without a redeploy.
 const VOICE_MODEL = Deno.env.get("VOICE_MODEL") ?? "claude-haiku-4-5-20251001";
+// Dictated PLANS are rare, long, and unforgiving of a misread exercise —
+// worth a Sonnet-class pass. Log utterances stay on the fast model.
+const PLAN_MODEL = Deno.env.get("PLAN_MODEL") ?? "claude-sonnet-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -146,7 +149,7 @@ serve(async (req) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: VOICE_MODEL,
+        model: PLAN_MODEL,
         max_tokens: 900,
         system: PLAN_SYSTEM,
         messages: [{ role: "user", content: `UNITS: ${units}\n\nTRANSCRIPT: "${transcript}"` }],

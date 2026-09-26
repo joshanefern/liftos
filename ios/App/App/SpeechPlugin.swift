@@ -111,6 +111,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
     private var finished = false
     private var contextual: [String] = []
     private var onDeviceRequested = false
+    private var preferServer = false
     private var triedServerFallback = false
     // Stale-task guard: bumped on begin/cancel/fallback so a dying task's
     // trailing callback can never touch the session that replaced it.
@@ -140,6 +141,11 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc public func startListening(_ call: CAPPluginCall) {
         let contextual = (call.getArray("contextualStrings") as? [String]) ?? []
+        // Dictating a whole plan wants Apple's server recognizer: markedly
+        // more accurate on free-form speech than the on-device model, and
+        // its ~1-minute task limit is handled by segment chaining. Short
+        // set-logging utterances stay on-device (fast, offline, private).
+        preferServer = call.getBool("preferServer") ?? false
         DispatchQueue.main.async { [weak self] in
             self?.beginSession(call: call, contextual: Array(contextual.prefix(100)))
         }
@@ -250,7 +256,7 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
         #if targetEnvironment(simulator)
         onDeviceRequested = false
         #else
-        onDeviceRequested = recognizer.supportsOnDeviceRecognition
+        onDeviceRequested = recognizer.supportsOnDeviceRecognition && !preferServer
         #endif
         triedServerFallback = false
         latestTranscript = ""
@@ -313,16 +319,22 @@ public class SpeechPlugin: CAPPlugin, CAPBridgedPlugin {
                     let text = result.bestTranscription.formattedString
                     let now = Date()
                     let gap = self.lastPartialAt.map { now.timeIntervalSince($0) } ?? 0
+                    // Two reset signatures, both seen on a real iPhone 17 / iOS 26:
+                    // a collapse (333 chars → 4, 0.7s after the last partial —
+                    // the recognizer finalized internally and started over),
+                    // or a shorter, non-prefix hypothesis after a real gap.
+                    // Revisions never lose half the text.
+                    let collapsed = text.count * 2 < self.currentSegment.count
+                    let afterGap = gap >= Self.resetGapSeconds && text.count < self.currentSegment.count
                     if !text.isEmpty,
                        !self.currentSegment.isEmpty,
-                       gap >= Self.resetGapSeconds,
-                       text.count < self.currentSegment.count,
+                       collapsed || afterGap,
                        !self.currentSegment.lowercased().hasPrefix(text.lowercased()) {
-                        // Recognizer restarted mid-task after a pause — what
-                        // it had is a finished segment, not a draft.
+                        // Recognizer restarted mid-task — what it had is a
+                        // finished segment, not a draft.
                         self.segmentPrefix = Self.joined(self.segmentPrefix, self.currentSegment)
                         self.currentSegment = ""
-                        SpeechPlugin.diag("in-task reset after \(String(format: "%.1f", gap))s → banked \(self.segmentPrefix.count)")
+                        SpeechPlugin.diag("in-task reset (\(collapsed ? "collapse" : "gap") after \(String(format: "%.1f", gap))s, \(self.currentSegment.count)→\(text.count)) → banked \(self.segmentPrefix.count)")
                     }
                     self.lastPartialAt = now
                     // iOS 26 delivers an EMPTY final result after endAudio —
