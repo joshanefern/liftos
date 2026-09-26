@@ -69,6 +69,8 @@ Rules:
 - Unilateral wording ("each arm", "single leg") never multiplies sets or reps.
 - "at 135" / "one thirty five" → weight 135 in the lifter's units. "two plates" → 225 (lb) or 100 (kg).
 - "twenty minutes on the bike" → kind cardio, minutes 20, sets 1.
+- The transcript is LIVE and may end mid-sentence. Include an exercise as soon as its name is spoken (sets/reps null until said). Ignore a trailing unfinished number or half-word.
+- CORRECTIONS are applied, never listed. "wait, nevermind", "scratch that", "take the bench out", "remove X", "forget X" → drop that exercise (no name given → drop the most recent one). "actually 3 sets", "make that four by ten", "change bench to incline" → edit the most recent (or the named) exercise. Output ONLY the final intended plan.
 - Keep the order spoken. Never invent exercises that were not said. Fewer is better than wrong.`;
 
 const SYSTEM = `You convert one spoken gym utterance into JSON for a workout logger. Respond with ONLY a JSON object, no prose.
@@ -151,6 +153,9 @@ serve(async (req) => {
       body: JSON.stringify({
         model: PLAN_MODEL,
         max_tokens: 900,
+        // Re-run every second on a growing transcript — deterministic output
+        // keeps rows from jittering between calls.
+        temperature: 0,
         system: PLAN_SYSTEM,
         messages: [{ role: "user", content: `UNITS: ${units}\n\nTRANSCRIPT: "${transcript}"` }],
       }),

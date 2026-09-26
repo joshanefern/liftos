@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { interpretPlan } from "@/lib/voice";
 import { voiceDiag } from "@/lib/speech";
 import { dictationVocabulary } from "@/lib/voiceVocabulary";
+import { reuseRowIds } from "@/lib/voicePlanRows";
 import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X, Mic } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -308,8 +309,14 @@ const Workouts = () => {
     () => dictationVocabulary([...templates, ...starterPrograms]),
     [templates],
   );
-  const dictation = useDictation((transcript, session) => {
+  // Live: the transcript is re-interpreted every ~second while you talk.
+  // One call in flight at a time; the newest transcript waits its turn, so
+  // a burst of partials never queues a dozen requests.
+  const liveInFlight = useRef(false);
+  const liveQueued = useRef<{ transcript: string; session: number } | null>(null);
+  const interpretLatest = (transcript: string, session: number): void => {
     const seq = ++planSeq.current;
+    liveInFlight.current = true;
     setPendingPlans((n) => n + 1);
     voiceDiag(`builder: interpret #${seq} session ${session} (${transcript.length} chars)`);
     void interpretPlan(transcript, units)
@@ -321,10 +328,6 @@ const Workouts = () => {
         voiceDiag(
           `builder: plan #${seq} → ${plan.exercises.length} exercises, name=${plan.name ?? "—"}, conf=${plan.confidence}`,
         );
-        if (plan.exercises.length === 0) {
-          toast({ title: "Didn’t catch a workout in that", description: `“${transcript}”`, variant: "destructive" });
-          return;
-        }
         // A new tap-to-dictate makes the previous dictation's rows permanent.
         if (session !== voiceSession.current) {
           voiceSession.current = session;
@@ -335,20 +338,24 @@ const Workouts = () => {
           setWorkoutName(plan.name);
           nameFromVoice.current = true;
         }
-        const rows = plan.exercises.map((e) =>
-          createExerciseDraft({
-            name: e.name,
-            mode: e.kind === "cardio" ? "cardio" : "lift",
-            sets: String(e.sets),
-            reps: e.reps !== null ? String(e.reps) : "",
-            weight: e.weight !== null ? String(e.weight) : "",
-            minutes: e.minutes !== null ? String(e.minutes) : "",
-            dirty: true,
-          }),
-        );
         const previous = voiceRowIds.current;
-        voiceRowIds.current = new Set(rows.map((r) => r.id));
         setExercises((current) => {
+          // Same-named rows keep their ids — on-screen rows never blink.
+          const prevVoice = current.filter((row) => previous.has(row.id));
+          const ids = reuseRowIds(prevVoice, plan.exercises.map((e) => e.name));
+          const rows = plan.exercises.map((e, i) =>
+            createExerciseDraft({
+              ...(ids[i] ? { id: ids[i] as string } : {}),
+              name: e.name,
+              mode: e.kind === "cardio" ? "cardio" : "lift",
+              sets: String(e.sets),
+              reps: e.reps !== null ? String(e.reps) : "",
+              weight: e.weight !== null ? String(e.weight) : "",
+              minutes: e.minutes !== null ? String(e.minutes) : "",
+              dirty: true,
+            }),
+          );
+          voiceRowIds.current = new Set(rows.map((r) => r.id));
           const kept = current.filter(
             (row) => !previous.has(row.id) && (row.name.trim() !== "" || row.dirty),
           );
@@ -368,8 +375,26 @@ const Workouts = () => {
             : { title: "Couldn’t interpret that — try again", variant: "destructive" },
         );
       })
-      .finally(() => setPendingPlans((n) => n - 1));
-  }, { vocabulary });
+      .finally(() => {
+        setPendingPlans((n) => n - 1);
+        liveInFlight.current = false;
+        const next = liveQueued.current;
+        if (next) {
+          liveQueued.current = null;
+          interpretLatest(next.transcript, next.session);
+        }
+      });
+  };
+  const dictation = useDictation(
+    (transcript, session) => {
+      if (liveInFlight.current) {
+        liveQueued.current = { transcript, session };
+        return;
+      }
+      interpretLatest(transcript, session);
+    },
+    { vocabulary, live: true },
+  );
 
   const updateExercise = <K extends keyof ExerciseDraft>(id: string, key: K, value: ExerciseDraft[K]) => {
     setExercises((current) =>
@@ -497,14 +522,14 @@ const Workouts = () => {
         </div>
         {(dictation.state.at !== "idle" || dictating) && (
           <p className="mt-2 min-h-[18px] text-[12.5px] leading-[18px] text-fg-muted">
-            {dictating
+            {dictating && dictation.state.at === "idle"
               ? "Building your rows…"
               : dictation.state.at === "starting"
                 ? "Opening the mic…"
                 : dictation.state.at === "blocked"
                   ? dictation.state.reason
                   : (dictation.state.at === "listening" && dictation.state.partial) ||
-                    "Say it exercise by exercise — “bench four by eight… rows three by ten… twenty minutes bike”. Each pause adds rows; it closes after a longer silence."}
+                    "Just talk — rows appear as you go. “Wait, take the bench out” removes it. It closes after a longer silence."}
           </p>
         )}
       </div>

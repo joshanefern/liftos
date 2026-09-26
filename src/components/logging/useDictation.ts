@@ -24,7 +24,11 @@ import { chooseTranscript, longerOf } from "@/lib/voiceTranscript";
 // one. Cumulative, not chunked: recognizers revise earlier words, so
 // diffing "what's new" produced duplicate rows on a real iPhone. The
 // session closes on its own once a longer silence passes.
-const SILENCE_FIRE_MS = 2000; // pause → emit the new chunk, keep listening
+const SILENCE_FIRE_MS = 2000; // pause → emit, keep listening
+// Live mode: emit while still talking — at a word boundary (a beat of
+// silence) and no more often than once a second. Rows appear as you speak.
+const LIVE_IDLE_MS = 500;
+const LIVE_MIN_INTERVAL_MS = 1100;
 const LATE_GRACE_MS = 8000; // no more speech for this long → close the mic
 const EMPTY_CANCEL_MS = 8000;
 const HARD_CAP_MS = 180_000; // native chains segments; this is the safety net
@@ -41,8 +45,12 @@ export const useDictation = (
     /** Words to bias the recognizer toward — exercise names, split names.
         "chest day" came back as "chain day" without them. */
     vocabulary?: string[];
+    /** Emit while still talking (throttled) instead of only on pauses. */
+    live?: boolean;
   } = {},
 ) => {
+  const live = options.live ?? false;
+  const lastEmitAt = useRef(0);
   const vocabularyRef = useRef(options.vocabulary ?? []);
   vocabularyRef.current = options.vocabulary ?? [];
   const [state, setState] = useState<DictationState>({ at: "idle" });
@@ -85,6 +93,7 @@ export const useDictation = (
     const text = transcript.trim();
     if (text === emitted.current) return;
     emitted.current = text;
+    lastEmitAt.current = Date.now();
     voiceDiag(`dictation: emit #${sessionId.current} (${text.length} chars)`);
     if (text.length >= 3) onTranscriptRef.current(text, sessionId.current);
   };
@@ -155,8 +164,10 @@ export const useDictation = (
       const current = longerOf(last.current, longest.current).trim();
       const heard = current.length >= 3;
       const unemitted = current !== emitted.current;
+      const liveDue =
+        live && idle >= LIVE_IDLE_MS && Date.now() - lastEmitAt.current >= LIVE_MIN_INTERVAL_MS;
       if (total >= HARD_CAP_MS) void finish();
-      else if (heard && unemitted && idle >= SILENCE_FIRE_MS) emit(current);
+      else if (heard && unemitted && (idle >= SILENCE_FIRE_MS || liveDue)) emit(current);
       else if (heard && !unemitted && idle >= SILENCE_FIRE_MS + LATE_GRACE_MS) void finish();
       else if (!heard && total >= EMPTY_CANCEL_MS) cancel();
     }, 250);
