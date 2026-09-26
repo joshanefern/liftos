@@ -74,6 +74,15 @@ Seed an active session with `localStorage.liftos_active_workout_session` to
 reach the logger; `localStorage.liftos-voice-dev="1"` renders the voice pill
 in a browser, `liftos-voice-dev-phase="applied"` mounts the receipt card.
 
+## Active session (src/components/ActiveWorkoutLogger.tsx)
+
+The session follows the selected theme (no forced dark). The tab bar is
+hidden on `/workouts/active`; a fixed session toolbar (Minimize · voice
+pill · Exercise) takes its 4rem + safe-bottom footprint, so anything
+fixed above it (rest bar, receipt) offsets from that. The "Now" block at
+the top shares SetInputRow and state with the list — never duplicate
+set logic in it. Finish is secondary; Discard lives in the ⋯ sheet.
+
 ## Design system (do not drift)
 
 Warm charcoal / porcelain surfaces, raspberry primary, **no gold**. Every
@@ -93,6 +102,9 @@ tap-outside-to-close. Toasts are iOS-style banners below the Dynamic Island
   truncation. Same rule in Swift (`chosenTranscript`). Keep them identical.
 - Endpointing is Jarvis-style: short pause fires, mic stays open, continued
   speech supersedes (logger: undo + re-apply; builder: rows replaced).
+- Receipt lines are "<Exercise> · <detail>" (units spelled out); the UI splits
+  on the first " · ". `correct`/`undo` actions rewrite or scratch the LAST
+  logged set and never add one. `touched[]` tells the UI which row to focus.
 - All hallucination guards live client-side in `src/lib/voiceApply.ts` and
   `src/lib/voiceUnilateral.ts` ("each arm" = one set). Tests are the spec.
 
