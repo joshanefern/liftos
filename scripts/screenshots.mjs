@@ -59,7 +59,7 @@ const SHOTS = [
   { name: "onboarding-step-2", path: "/onboarding", authed: false, actions: async (p) => { await advance(p, 1); } },
   { name: "onboarding-step-4", path: "/onboarding", authed: false, actions: async (p) => { await advance(p, 3); } },
   { name: "home-connections", path: "/dashboard", actions: async (p) => {
-      await p.getByRole("button", { name: /apple health|connections|where your data/i }).first().click();
+      await p.getByText("Connections", { exact: true }).first().click();
     } },
   { name: "workouts-library-preview", path: "/workouts", actions: async (p) => {
       await p.getByRole("button", { name: /full body foundations/i }).first().click();
@@ -116,7 +116,7 @@ for (const theme of ["dark", "light"]) {
       await page.waitForTimeout(1200);
       if (shot.actions) { await shot.actions(page); await page.waitForTimeout(900); }
       // Mock auth redirects the auth screens to the app — skip those shots then.
-      if (shot.authed === false && !/sign-in|create-account|onboarding/.test(page.url())) {
+      if (shot.authed === false && !/sign-in|create-account|onboarding|forgot-password/.test(page.url())) {
         console.log(`skip ${shot.name} (redirected to ${new URL(page.url()).pathname})`);
         await context.close();
         continue;
