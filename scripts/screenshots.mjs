@@ -52,7 +52,44 @@ const SHOTS = [
   { name: "progress", path: "/progress", full: true },
   { name: "calendar", path: "/calendar", full: true },
   { name: "coach", path: "/coach" },
+  { name: "coach-starting-point", path: "/coach", actions: async (p) => {
+      await p.getByRole("button", { name: /only have 30 minutes/i }).click();
+    } },
+  { name: "forgot-password", path: "/forgot-password", authed: false },
+  { name: "onboarding-step-2", path: "/onboarding", authed: false, actions: async (p) => { await advance(p, 1); } },
+  { name: "onboarding-step-4", path: "/onboarding", authed: false, actions: async (p) => { await advance(p, 3); } },
+  { name: "home-connections", path: "/dashboard", actions: async (p) => {
+      await p.getByRole("button", { name: /apple health|connections|where your data/i }).first().click();
+    } },
+  { name: "workouts-library-preview", path: "/workouts", actions: async (p) => {
+      await p.getByRole("button", { name: /full body foundations/i }).first().click();
+    } },
+  { name: "workout-builder-ai-chips", path: "/workouts?new=1", actions: async (p) => {
+      await p.getByRole("button", { name: "Design with AI" }).click();
+      await p.getByRole("button", { name: /^45 min$/i }).click();
+      await p.getByRole("button", { name: /dumbbells only/i }).click();
+    } },
+  { name: "active-session-set-done", path: "/workouts/active", full: true,
+    seeds: { liftos_active_workout_session: SESSION, "liftos-voice-dev": "1" },
+    actions: async (p) => { await p.getByRole("button", { name: /^complete set$/i }).click(); } },
+  { name: "active-session-menu", path: "/workouts/active",
+    seeds: { liftos_active_workout_session: SESSION },
+    actions: async (p) => { await p.getByRole("button", { name: /more session options/i }).click(); } },
+  { name: "privacy", path: "/privacy", full: true },
+  { name: "terms", path: "/terms", full: true },
 ];
+
+/** Onboarding: pick the first choice on each step and continue N times. */
+async function advance(p, times) {
+  for (let i = 0; i < times; i += 1) {
+    const choice = p.locator("button").filter({ hasNotText: /continue|next|back|skip|finish/i }).first();
+    if (await choice.count()) await choice.click();
+    await p.waitForTimeout(250);
+    const next = p.getByRole("button", { name: /continue|next|finish/i }).first();
+    if (await next.count()) await next.click();
+    await p.waitForTimeout(450);
+  }
+}
 
 const browser = await chromium.launch();
 const index = [];
