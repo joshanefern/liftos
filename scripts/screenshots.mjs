@@ -58,9 +58,7 @@ const SHOTS = [
   { name: "forgot-password", path: "/forgot-password", authed: false },
   { name: "onboarding-step-2", path: "/onboarding", authed: false, actions: async (p) => { await advance(p, 1); } },
   { name: "onboarding-step-4", path: "/onboarding", authed: false, actions: async (p) => { await advance(p, 3); } },
-  { name: "home-connections", path: "/dashboard", actions: async (p) => {
-      await p.getByText("Connections", { exact: true }).first().click();
-    } },
+  // Connections drawer: iOS-native only (healthKitAvailable) — not capturable on web.
   { name: "workouts-library-preview", path: "/workouts", actions: async (p) => {
       await p.getByRole("button", { name: /full body foundations/i }).first().click();
     } },
