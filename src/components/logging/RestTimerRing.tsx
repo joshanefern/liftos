@@ -16,6 +16,9 @@ type Props = {
   strokeWidth?: number;
   /** Brief accent celebration when the rest period just finished. */
   pulse?: boolean;
+  /** Ring only: the caller prints the countdown beside it, so the ring
+      drops its own numerals and leaves the announcing to that text. */
+  bare?: boolean;
   className?: string;
 };
 
@@ -31,6 +34,7 @@ export const RestTimerRing = ({
   size = 96,
   strokeWidth = 5,
   pulse = false,
+  bare = false,
   className,
 }: Props) => {
   const radius = (size - strokeWidth) / 2;
@@ -41,8 +45,9 @@ export const RestTimerRing = ({
     <div
       className={cn("relative shrink-0", className)}
       style={{ width: size, height: size }}
-      role="timer"
-      aria-label={`Rest: ${formatMmSs(remaining)} remaining`}
+      role={bare ? undefined : "timer"}
+      aria-label={bare ? undefined : `Rest: ${formatMmSs(remaining)} remaining`}
+      aria-hidden={bare ? true : undefined}
     >
       <svg width={size} height={size} className="-rotate-90">
         <circle
@@ -68,21 +73,25 @@ export const RestTimerRing = ({
           }}
         />
       </svg>
+      {/* The ping scales to twice the ring — motion, so it is left out
+          for a lifter who asked for less; the tint alone marks the end. */}
       {pulse && (
         <span
           aria-hidden
-          className="absolute inset-0 rounded-full bg-primary/20 animate-ping"
+          className="absolute inset-0 rounded-full bg-primary/20 motion-safe:animate-ping"
         />
       )}
-      <span
-        className={cn(
-          "mono absolute inset-0 flex items-center justify-center font-semibold tabular-nums",
-          size >= 80 ? "text-lg" : "text-[11px]",
-          pulse ? "text-primary" : "text-fg",
-        )}
-      >
-        {formatMmSs(remaining)}
-      </span>
+      {!bare && (
+        <span
+          className={cn(
+            "mono absolute inset-0 flex items-center justify-center font-semibold tabular-nums",
+            size >= 80 ? "text-lg" : "text-[11px]",
+            pulse ? "text-primary" : "text-fg",
+          )}
+        >
+          {formatMmSs(remaining)}
+        </span>
+      )}
     </div>
   );
 };

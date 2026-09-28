@@ -10,7 +10,7 @@
 
      The mode is inferred from the exercise name and can be overridden per
      exercise (WorkoutExercise.tracking) — inference is a default, never a
-     cage. ── */
+     cage. Cardio is the one fixed case: it is always measured in time. ── */
 
 export type EffortTracking = "reps" | "time";
 
@@ -37,11 +37,19 @@ export const inferKind = (name: string): InferredKind => {
   return CARDIO_NAME.test(n) ? "cardio" : "weighted";
 };
 
-/** Explicit per-exercise setting wins; otherwise infer from the name. */
+/** Cardio is timed, whatever else the exercise says: a cardio row's effort
+    column holds minutes, and reading it as a rep count saves "30 min" as 30
+    reps, drops an m:ss time and counts minutes × distance as weight moved.
+    That beats even an explicit "reps", because saved logs can carry kind
+    "cardio" next to tracking "reps" and must still repeat as cardio.
+    For everything else the explicit per-exercise setting wins, and the
+    name fills in when there is none. */
 export const trackingFor = (exercise: {
   name: string;
   tracking?: EffortTracking;
-}): EffortTracking => exercise.tracking ?? inferTracking(exercise.name);
+  kind?: string | null;
+}): EffortTracking =>
+  exercise.kind === "cardio" ? "time" : (exercise.tracking ?? inferTracking(exercise.name));
 
 /** Display seconds as a hold: "45s", "1:30", "1:02:05". */
 export const formatHold = (totalSeconds: number): string => {

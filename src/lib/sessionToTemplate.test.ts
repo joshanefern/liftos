@@ -38,6 +38,63 @@ describe("sessionToTemplateExercises", () => {
   });
 });
 
+describe("sessionToTemplateExercises — cardio", () => {
+  it("a hand-added cardio row (kind, no tracking) saves as a duration, never as reps", () => {
+    const result = sessionToTemplateExercises([
+      {
+        name: "Treadmill",
+        kind: "cardio",
+        sets: [{ reps: "30", weight: "3.1", completed: true }],
+      },
+    ]);
+    expect(result[0]).toMatchObject({ name: "Treadmill", kind: "cardio", tracking: "time" });
+    expect(result[0].sets[0]).toMatchObject({ reps: 0, duration_seconds: 1800 });
+  });
+
+  it("keeps an m:ss cardio time", () => {
+    const result = sessionToTemplateExercises([
+      {
+        name: "Stairmaster",
+        kind: "cardio",
+        sets: [{ reps: "20:30", weight: "", completed: true }],
+      },
+    ]);
+    expect(result[0].sets[0]).toMatchObject({ reps: 0, duration_seconds: 1230 });
+  });
+
+  it("a saved log's duration_seconds wins", () => {
+    const result = sessionToTemplateExercises([
+      {
+        name: "Treadmill",
+        kind: "cardio",
+        tracking: "time",
+        sets: [{ reps: 0, weight: 0, duration_seconds: 1500, completed: true }],
+      },
+    ]);
+    expect(result[0].sets[0]).toMatchObject({ reps: 0, duration_seconds: 1500 });
+  });
+
+  it("reads a log saved as cardio reps as the minutes that were typed", () => {
+    const result = sessionToTemplateExercises([
+      {
+        name: "Treadmill",
+        kind: "cardio",
+        tracking: "reps",
+        sets: [{ reps: 30, weight: 0, completed: true }],
+      },
+    ]);
+    expect(result[0].tracking).toBe("time");
+    expect(result[0].sets[0]).toMatchObject({ reps: 0, duration_seconds: 1800 });
+  });
+
+  it("a numeric hold stays seconds", () => {
+    const result = sessionToTemplateExercises([
+      { name: "Plank", tracking: "time", sets: [{ reps: 45, weight: 0, completed: true }] },
+    ]);
+    expect(result[0].sets[0]).toMatchObject({ reps: 0, duration_seconds: 45 });
+  });
+});
+
 describe("exerciseListChanged", () => {
   const doneBench = {
     name: "Bench Press",

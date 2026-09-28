@@ -1,8 +1,15 @@
 import { CTAButton } from "@/components/GoldButton";
 import { ShareButton } from "@/components/ShareButton";
-import { RestTimerRing } from "@/components/logging/RestTimerRing";
 import { VoiceLogControl } from "@/components/logging/VoiceLogControl";
 import { CardioVitalsSheet } from "@/components/logging/CardioVitalsSheet";
+import { CompletedSetRow } from "@/components/logging/CompletedSetRow";
+import { ExerciseList } from "@/components/logging/ExerciseList";
+import { RestBlock } from "@/components/logging/RestBlock";
+import { SessionBar } from "@/components/logging/SessionBar";
+import {
+  CLEAR_OF_SESSION_BAR,
+  SESSION_PAGE_CLEARANCE,
+} from "@/components/logging/sessionBarLayout";
 import ExerciseNameSuggestions from "@/components/ExerciseNameSuggestions";
 import { SetInputRow, formatWeightForDisplay } from "@/components/logging/SetInputRow";
 import { useEnterAdvance } from "@/components/logging/useEnterAdvance";
@@ -32,11 +39,16 @@ import type { VoiceApplyResult } from "@/lib/voiceApply";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { useWorkoutLogs, type WorkoutLog } from "@/hooks/useWorkoutLogs";
-import { TEMPLATE_LIMIT_ERROR, useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import {
+  MAX_TEMPLATES,
+  TEMPLATE_LIMIT_ERROR,
+  useWorkoutTemplates,
+} from "@/hooks/useWorkoutTemplates";
 import {
   exerciseListChanged,
   sessionToTemplateExercises,
 } from "@/lib/sessionToTemplate";
+import { templateLimitNotice } from "@/lib/templateLimit";
 import {
   formatCardioInput,
   formatHold,
@@ -47,26 +59,49 @@ import {
   type EffortTracking,
   inferKind,
 } from "@/lib/exerciseTracking";
-import { successHaptic, tapHaptic } from "@/lib/haptics";
+import { FINISH_GUARD_MS, finishGuarded } from "@/lib/finishGuard";
+import { selectionHaptic, successHaptic, tapHaptic } from "@/lib/haptics";
 import { formatPlateMath, plateBreakdown } from "@/lib/plateMath";
 import { detectSessionPRs, type PREvent } from "@/lib/prs";
 import { isMetricUnits } from "@/lib/review/inputFormatters";
+import {
+  currentSetOf,
+  openSetIds,
+  pinAfterLogging,
+  pinFor,
+  resolveFocusId,
+  rowStates,
+  setOfLabel,
+  setSummary as summarizeSet,
+  setsProgress,
+  settlePin,
+  upNextOf,
+  type FocusPin,
+} from "@/lib/sessionFocus";
+import {
+  restoredRecentSetIds,
+  restoredRest,
+  type RestWindow,
+} from "@/lib/sessionResume";
+import { followsCurrentSet, revealScrollTop, type FollowState } from "@/lib/sessionScroll";
+import { removableSetOf, removeSetLabel, withoutSet } from "@/lib/sessionSets";
+import { revertVoiceApply, revertVoiceNote } from "@/lib/voiceRevert";
 import type { WeightUnit } from "@/lib/warmup";
 import type { ActiveSession } from "@/pages/ActiveWorkout";
 import { cn } from "@/lib/utils";
 import {
+  ArrowRight,
   Check,
-  ChevronDown,
+  CheckCheck,
   HeartPulse,
+  Minus,
   MoreHorizontal,
   Plus,
-  SkipForward,
-  Timer,
   Trash2,
   Trophy,
   Weight,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
@@ -84,6 +119,21 @@ const REST_SECONDS = 120;
 const RECENT_SET_CAP = 20;
 /** Scroll lands first; the focus (and its keyboard) follows after this. */
 const KEYBOARD_FOCUS_DELAY_MS = 60;
+/** Long enough for iOS to finish closing the keyboard. The native shell
+    puts the page back at its pre-keyboard offset when the keyboard hides,
+    so a scroll issued before that has landed is simply undone. */
+const KEYBOARD_CLOSE_MS = 450;
+/** How long a jump to the card (an exercise picked, voice Edit) owns the
+    scroll position; following the current set waits it out. */
+const REVEAL_SETTLE_MS = 700;
+/** How long the focus card ignores touches after its layout changed. A
+    change puts a different control under a finger that is already coming
+    down — a double tap on "Complete set" would land on whatever took its
+    place, or on the button again once the page has followed the new set.
+    Longer than a double tap, shorter than a deliberate second tap. */
+const CARD_SETTLE_MS = 400;
+/** How long "Rest complete" stays in the screen-reader live region. */
+const REST_ANNOUNCE_MS = 5000;
 
 /** Tells MobileTabBar whether a session is LIVE on this route — it hides
     only then, so the recap and the "no session" screen keep their bottom
@@ -131,34 +181,6 @@ type SessionPR =
   // PR banner, which has always celebrated these.
   | { name: string; kind: "reps"; reps: number; weight: number; isFirst: boolean };
 
-/** The set the "Now" block is pointed at: the first open WORKING set of the
-    first exercise that still has one. Warm-ups are never "now" — they sit
-    outside the set count, and a skipped ramp must not pin the block to an
-    exercise the lifter has already moved past. */
-type CurrentSet = {
-  exercise: LoggedExercise;
-  set: LoggedSet;
-  setIndex: number;
-  /** 1-based among working sets. */
-  ordinal: number;
-  workingTotal: number;
-};
-
-const findCurrentSet = (exercises: LoggedExercise[]): CurrentSet | null => {
-  for (const exercise of exercises) {
-    let workingTotal = 0;
-    let found: { set: LoggedSet; setIndex: number; ordinal: number } | null = null;
-    for (let i = 0; i < exercise.sets.length; i++) {
-      const set = exercise.sets[i];
-      if (set.isWarmup) continue;
-      workingTotal++;
-      if (found === null && !set.completed) found = { set, setIndex: i, ordinal: workingTotal };
-    }
-    if (found !== null) return { exercise, ...found, workingTotal };
-  }
-  return null;
-};
-
 type SessionSummary = {
   durationSeconds: number;
   volume: number;
@@ -191,6 +213,14 @@ type PersistedProgress = {
   startedAt: string;
   exercises: LoggedExercise[];
   notes: string;
+  /** The lifter's manual exercise pick, so a resumed session re-opens on
+      the exercise they chose. Absent in progress saved before it existed. */
+  focusPin?: FocusPin | null;
+  /** Set ids in the order they were logged, most recent first — what a
+      spoken "scratch that" means after a resume. */
+  recentSetIds?: string[];
+  /** The rest that was counting down, as an end time. */
+  rest?: RestWindow | null;
 };
 
 /** Restore in-flight progress for THIS seeded session, if any survives. */
@@ -314,12 +344,22 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const isMetric = isMetricUnits(units);
   const weightUnit: WeightUnit = isMetric ? "kg" : "lb";
 
+  // Progress saved by an earlier mount of this same session, read once.
+  const [restored] = useState(() => restoreProgress(session.startedAt));
   const [exercises, setExercises] = useState<LoggedExercise[]>(
-    () => restoreProgress(session.startedAt)?.exercises ?? cloneExercises(session.exercises),
+    () => restored?.exercises ?? cloneExercises(session.exercises),
   );
-  const [notes, setNotes] = useState(
-    () => restoreProgress(session.startedAt)?.notes ?? "",
+  const [notes, setNotes] = useState(() => restored?.notes ?? "");
+  // The lifter's manual pick from the exercise list; null = the focus
+  // follows the work (lib/sessionFocus decides).
+  const [focusPin, setFocusPin] = useState<FocusPin | null>(
+    () => restored?.focusPin ?? null,
   );
+  // The freshest pin for handlers that outlive their render (voice).
+  const focusPinRef = useRef(focusPin);
+  focusPinRef.current = focusPin;
+  // The one logged set whose cells are open again for fixing.
+  const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [prCelebration, setPrCelebration] = useState<PREvent[] | null>(null);
@@ -332,20 +372,31 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     [savedLog],
   );
 
-  // ── Voice logging: apply results from the hold-to-talk control and keep
-  // one level of undo (state + notes snapshot from just before the apply).
-  const voiceUndoRef = useRef<{ exercises: LoggedExercise[]; notes: string } | null>(null);
-  // Snapshot sources that dodge the async closure: edits made while the
-  // voice call was in flight must survive an Undo.
-  const notesRef = useRef(notes);
-  notesRef.current = notes;
+  // ── Voice logging: apply results from the tap-to-speak control and keep
+  // one level of undo. Undo takes back what VOICE changed and nothing the
+  // lifter did by hand afterwards (lib/voiceRevert), so it keeps the
+  // session before and after the apply rather than one snapshot to restore.
+  // Both handlers are called from the render in which the pill was tapped:
+  // they read state through functional setters and refs only.
+  const voiceUndoRef = useRef<{
+    before: LoggedExercise[];
+    after: LoggedExercise[];
+    note: string | null;
+    /** Where the card pointed before the apply, and where the apply left it. */
+    pin: FocusPin | null;
+    pinAfter: FocusPin | null;
+  } | null>(null);
 
   // Set ids in the order they were completed, MOST RECENT FIRST, by every
   // path (row tick, exercise Done, Complete set, voice). "That was 12" /
   // "scratch that" rewrite the LAST logged set, and rows carry no
   // timestamps — this list is how lib/voiceApply knows which one. A ref:
   // every writer also sets exercises, so the render that follows sees it.
-  const recentSetIdsRef = useRef<string[]>([]);
+  // It is saved with the progress, so it survives Minimize and a reload.
+  const [restoredRecent] = useState(() =>
+    restoredRecentSetIds(restored?.recentSetIds, RECENT_SET_CAP),
+  );
+  const recentSetIdsRef = useRef<string[]>(restoredRecent);
   const noteSetsCompleted = (idsInOrder: string[]): void => {
     if (idsInOrder.length === 0) return;
     const fresh = [...idsInOrder].reverse();
@@ -366,12 +417,24 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       result.exercises.flatMap((e) => e.sets.filter((s) => s.completed).map((s) => s.id)),
     );
     noteSetsCompleted(result.touched.map((t) => t.setId).filter((id) => completed.has(id)));
+    const after = result.exercises as LoggedExercise[];
+    const pin = focusPinRef.current;
+    const lastLogged = [...result.touched].reverse().find((t) => completed.has(t.setId));
+    const pinAfter = lastLogged ? pinAfterLogging(after, pin, lastLogged.exerciseId) : pin;
     setExercises((current) => {
-      voiceUndoRef.current = { exercises: current, notes: notesRef.current };
-      return result.exercises as LoggedExercise[];
+      voiceUndoRef.current = { before: current, after, note: result.note, pin, pinAfter };
+      return after;
     });
+    if (pinAfter !== pin) setFocusPin(pinAfter);
     if (result.note) {
       setNotes((current) => (current.trim() ? `${current}\n${result.note}` : result.note!));
+    }
+    // A set logged by voice re-lays the card out like one logged by hand —
+    // and when it was the workout's last, "Finish workout" has just taken
+    // the place of "Complete set" under a finger that may be on its way.
+    if (lastLogged) {
+      noteCardMoved();
+      if (upNextOf(after, pinAfter) === null) holdCardFinish();
     }
   };
 
@@ -379,19 +442,112 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     const snapshot = voiceUndoRef.current;
     if (!snapshot) return;
     voiceUndoRef.current = null;
-    setExercises(snapshot.exercises);
-    setNotes(snapshot.notes);
+    setExercises((now) => revertVoiceApply(snapshot.before, snapshot.after, now));
+    setNotes((now) => revertVoiceNote(now, snapshot.note));
+    // The card goes back to where it pointed — unless the lifter has
+    // picked an exercise since, which is the newer choice. Written to the
+    // ref as well: a voice log that REPLACES this one is applied in the
+    // same breath, before any render, and must start from this pin.
+    const now = focusPinRef.current;
+    const left = snapshot.pinAfter;
+    const untouched =
+      now === null ||
+      (left !== null &&
+        now.exerciseId === left.exerciseId &&
+        now.hadOpenSets === left.hadOpenSets);
+    const pin = untouched ? snapshot.pin : now;
+    focusPinRef.current = pin;
+    setFocusPin(pin);
   };
 
-  // DOM handles for "take me there" jumps: the receipt's Edit lands on the
-  // touched row, the toolbar's + lands on the add-exercise field.
-  const exerciseCardRefs = useRef<Record<string, HTMLElement | null>>({});
+  // DOM handles for "take me there" jumps: the focus card, the reps cells
+  // it currently has mounted, and the add-exercise field.
+  const focusCardRef = useRef<HTMLElement | null>(null);
   const repsInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const addExerciseInputRef = useRef<HTMLInputElement | null>(null);
+  // Jumps that must wait for the render that mounts their target: a set id
+  // whose reps cell takes the cursor, or (setId null) the card itself.
+  const pendingJumpRef = useRef<{ setId: string | null } | null>(null);
+  const revealTimeout = useRef<number | null>(null);
+  // The current set's row, its "Complete set" and the rest under it — what
+  // has to stay clear of the floating bar as the card grows.
+  const currentSetWrapRef = useRef<HTMLDivElement | null>(null);
+  const followTimeout = useRef<number | null>(null);
+  /** When a jump last took the scroll position (see REVEAL_SETTLE_MS). */
+  const revealedAtRef = useRef(0);
+  /** A field was blurred by the tap that logged a set: its keyboard is on
+      the way down, and a scroll issued before it lands is undone. */
+  const keyboardClosingRef = useRef(false);
+  useEffect(
+    () => () => {
+      if (revealTimeout.current !== null) window.clearTimeout(revealTimeout.current);
+      if (followTimeout.current !== null) window.clearTimeout(followTimeout.current);
+    },
+    [],
+  );
 
-  /** Receipt → Edit: scroll the first touched exercise into view and put
-      the cursor in that set's reps cell. The first summary line's exercise
-      name is the fallback target when nothing was touched (a note). */
+  /** Bring the focus card to the top of the screen — or, when the card is
+      too tall for that, as far as keeps its current set clear of the
+      session bar (lib/sessionScroll). Measured from the card as it is
+      rendered, so it runs AFTER the render that re-pointed the card. If a
+      field has the keyboard up, close it first and scroll once it is gone. */
+  const revealFocusCard = (): void => {
+    revealedAtRef.current = performance.now();
+    const active = document.activeElement;
+    const typing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+    if (typing) active.blur();
+    const scroll = (): void => {
+      const card = focusCardRef.current;
+      if (!card) return;
+      const set = currentSetWrapRef.current;
+      const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // The margins are the ones the stylesheet gives these two elements
+      // (the status bar above, the session bar's footprint below).
+      const margin = (el: HTMLElement, side: "scrollMarginTop" | "scrollMarginBottom"): number =>
+        parseFloat(window.getComputedStyle(el)[side]) || 0;
+      const setBox = set?.getBoundingClientRect();
+      window.scrollTo({
+        top: revealScrollTop({
+          scrollY: window.scrollY,
+          viewportHeight: document.documentElement.clientHeight,
+          cardTop: card.getBoundingClientRect().top,
+          topMargin: margin(card, "scrollMarginTop"),
+          current:
+            set && setBox
+              ? {
+                  top: setBox.top,
+                  bottom: setBox.bottom,
+                  bottomMargin: margin(set, "scrollMarginBottom"),
+                }
+              : null,
+        }),
+        behavior: calm ? "instant" : "smooth",
+      });
+    };
+    if (revealTimeout.current !== null) window.clearTimeout(revealTimeout.current);
+    if (!typing) {
+      scroll();
+      return;
+    }
+    revealTimeout.current = window.setTimeout(scroll, KEYBOARD_CLOSE_MS);
+  };
+
+  /** Point the focus card at an exercise the lifter chose. The page goes
+      to the card once it shows that exercise: where its current set sits
+      is not known before. */
+  const pickExercise = (exerciseId: string): void => {
+    selectionHaptic();
+    noteCardMoved();
+    setFocusPin(pinFor(exercises, exerciseId));
+    setEditingSetId(null);
+    setVestEditing(null);
+    pendingJumpRef.current = { setId: null };
+  };
+
+  /** Receipt → Edit: point the focus card at the first touched exercise,
+      re-open the touched set and put the cursor in its reps cell. The
+      first summary line's exercise name is the fallback target when
+      nothing was touched (a note). */
   const handleVoiceEdit = (result: VoiceApplyResult): void => {
     // Edit takes over from voice: the snapshot behind Undo is stale the
     // moment the lifter types, so no later fire may restore it.
@@ -405,9 +561,11 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         exercises.find((e) => e.name.trim().toLowerCase() === name)?.id ?? null;
     }
     if (!exerciseId) return;
-    const card = exerciseCardRefs.current[exerciseId] ?? null;
-    const input = touched ? (repsInputRefs.current[touched.setId] ?? null) : null;
-    jumpToInput(card, input);
+    setFocusPin(pinFor(exercises, exerciseId));
+    setVestEditing(null);
+    // A logged set renders folded — open it so its cells exist to land on.
+    setEditingSetId(touched?.setId ?? null);
+    pendingJumpRef.current = { setId: touched?.setId ?? null };
   };
 
   const focusAddExercise = (): void => {
@@ -455,7 +613,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       setTemplateSaveState("idle");
       toast(
         err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR
-          ? { title: "Workout limit reached", description: "You have 7 saved workouts — the max. Delete one in Workouts to make room." }
+          ? { ...templateLimitNotice(MAX_TEMPLATES), variant: "destructive" }
           : { title: "Could not save workout", variant: "destructive" },
       );
     }
@@ -482,12 +640,23 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const addExercise = (): void => {
     const name = newExerciseName.trim();
     if (!name) return;
+    const id = `exercise-${Date.now()}`;
+    const kind = inferKind(name);
+    // Adding an exercise means "this is what I'm doing" — the focus card
+    // turns to it rather than leaving it as a row at the end of the list.
+    setFocusPin({ exerciseId: id, hadOpenSets: true });
+    setEditingSetId(null);
+    setVestEditing(null);
+    pendingJumpRef.current = { setId: null };
     setExercises((current) => [
       ...current,
       {
-        id: `exercise-${Date.now()}`,
+        id,
         name,
-        kind: inferKind(name),
+        kind,
+        // Cardio logs minutes, so the row is saved as timed — the same
+        // shape the workout builder gives a cardio block.
+        ...(kind === "cardio" ? { tracking: "time" as const } : {}),
         category: "",
         target: "",
         sets: [
@@ -506,11 +675,87 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     setNewExerciseName("");
   };
 
+  // The focus card sits out a beat after its layout changes (see
+  // CARD_SETTLE_MS), and the exercise list with it: whatever the card
+  // gains or loses moves the rows under it. Called by every tap that
+  // re-lays the card out, and when the rest block leaves on its own.
+  const [cardSettling, setCardSettling] = useState(false);
+  const cardSettleTimeout = useRef<number | null>(null);
+  const noteCardMoved = (): void => {
+    setCardSettling(true);
+    if (cardSettleTimeout.current !== null) window.clearTimeout(cardSettleTimeout.current);
+    cardSettleTimeout.current = window.setTimeout(() => setCardSettling(false), CARD_SETTLE_MS);
+  };
+
+  // The card's "Finish workout" sits out longer, once: right after the
+  // workout's last open set is logged, when it has just taken the place
+  // of "Complete set" (lib/finishGuard). The time is what decides; the
+  // state only keeps the button from answering the touch at all — no
+  // press, no haptic — and changes nothing about how it looks.
+  const lastSetLoggedAtRef = useRef<number | null>(null);
+  const [finishHeld, setFinishHeld] = useState(false);
+  const finishHoldTimeout = useRef<number | null>(null);
+  const holdCardFinish = (): void => {
+    lastSetLoggedAtRef.current = performance.now();
+    setFinishHeld(true);
+    if (finishHoldTimeout.current !== null) window.clearTimeout(finishHoldTimeout.current);
+    finishHoldTimeout.current = window.setTimeout(() => setFinishHeld(false), FINISH_GUARD_MS);
+  };
+
+  // Rest countdown with a brief raspberry pulse + haptic when it hits zero.
+  // A rest that was still counting when the logger last unmounted
+  // (Minimize, reload) is taken up where it stands.
+  const [restPulse, setRestPulse] = useState(false);
+  const restPulseTimeout = useRef<number | null>(null);
+  // Screen readers hear the end of rest from a region that is mounted for
+  // the whole session: one created together with its text, inside a block
+  // that leaves 1.6s later, is easily never spoken. Cleared after a few
+  // seconds so the next rest writes a change, not the same string.
+  const [restAnnouncement, setRestAnnouncement] = useState("");
+  const restAnnounceTimeout = useRef<number | null>(null);
+  const clearRestAnnouncement = (): void => {
+    if (restAnnounceTimeout.current !== null) window.clearTimeout(restAnnounceTimeout.current);
+    restAnnounceTimeout.current = null;
+    setRestAnnouncement("");
+  };
+  const restTimer = useRestTimer(
+    REST_SECONDS,
+    () => {
+      setRestPulse(true);
+      if (restPulseTimeout.current !== null) window.clearTimeout(restPulseTimeout.current);
+      restPulseTimeout.current = window.setTimeout(() => {
+        setRestPulse(false);
+        noteCardMoved();
+      }, 1600);
+      setRestAnnouncement("Rest complete");
+      if (restAnnounceTimeout.current !== null) window.clearTimeout(restAnnounceTimeout.current);
+      restAnnounceTimeout.current = window.setTimeout(
+        () => setRestAnnouncement(""),
+        REST_ANNOUNCE_MS,
+      );
+    },
+    restored?.rest,
+  );
+  useEffect(
+    () => () => {
+      if (restPulseTimeout.current !== null) window.clearTimeout(restPulseTimeout.current);
+      if (restAnnounceTimeout.current !== null) window.clearTimeout(restAnnounceTimeout.current);
+      if (cardSettleTimeout.current !== null) window.clearTimeout(cardSettleTimeout.current);
+      if (finishHoldTimeout.current !== null) window.clearTimeout(finishHoldTimeout.current);
+    },
+    [],
+  );
+
   // Every edit lands in localStorage so Minimize (or the app being killed)
   // and coming back through the Home resume banner restores the session
-  // exactly. Skipped once the recap is up — the session is over.
+  // exactly: sets, notes, the picked exercise, the order sets were logged
+  // in, and a rest that is still counting. Skipped once the session is
+  // over (recap up, or discarded) — a write after the keys were cleared
+  // would leave a stray entry behind.
+  const sessionOverRef = useRef(false);
+  const { endsAt: restEndsAt, totalSeconds: restTotalSeconds } = restTimer;
   useEffect(() => {
-    if (summary) return;
+    if (summary || sessionOverRef.current) return;
     try {
       window.localStorage.setItem(
         ACTIVE_WORKOUT_PROGRESS_KEY,
@@ -518,12 +763,17 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           startedAt: session.startedAt,
           exercises,
           notes,
+          focusPin,
+          // Every writer of the list also sets `exercises`, so this effect
+          // runs again and reads the updated ref.
+          recentSetIds: recentSetIdsRef.current,
+          rest: restEndsAt !== null ? { endsAt: restEndsAt, totalSeconds: restTotalSeconds } : null,
         } satisfies PersistedProgress),
       );
     } catch {
       /* storage full/unavailable — resume just falls back to the bare seed */
     }
-  }, [exercises, notes, session.startedAt, summary]);
+  }, [exercises, notes, focusPin, restEndsAt, restTotalSeconds, session.startedAt, summary]);
   // Plate math sheet: weight sticks around while the drawer animates closed.
   const [plateWeight, setPlateWeight] = useState<number | null>(null);
   const [plateOpen, setPlateOpen] = useState(false);
@@ -549,6 +799,11 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     Math.max(0, Math.floor((Date.now() - startedAt.current.getTime()) / 1000)),
   );
   const finished = summary !== null;
+  // The recap opens at its title, wherever the logger was scrolled to
+  // when Finish was tapped. Before paint, so it is never seen cut off.
+  useLayoutEffect(() => {
+    if (finished) window.scrollTo({ top: 0, behavior: "instant" });
+  }, [finished]);
   useEffect(() => {
     if (finished) return;
     const tick = () =>
@@ -619,21 +874,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   useEffect(
     () => () => {
       if (liveBannerTimeout.current !== null) window.clearTimeout(liveBannerTimeout.current);
-    },
-    [],
-  );
-
-  // Rest countdown with a brief terracotta pulse + haptic when it hits zero.
-  const [restPulse, setRestPulse] = useState(false);
-  const restPulseTimeout = useRef<number | null>(null);
-  const restTimer = useRestTimer(REST_SECONDS, () => {
-    setRestPulse(true);
-    if (restPulseTimeout.current !== null) window.clearTimeout(restPulseTimeout.current);
-    restPulseTimeout.current = window.setTimeout(() => setRestPulse(false), 1600);
-  });
-  useEffect(
-    () => () => {
-      if (restPulseTimeout.current !== null) window.clearTimeout(restPulseTimeout.current);
     },
     [],
   );
@@ -739,12 +979,54 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     return { exercises: exercises.length, completedSets, totalSets, volume };
   }, [exercises]);
 
-  // ── "Now" — the one set to do next ──
+  // ── Focus — the one exercise the card shows, and its current set ──
 
-  const current = useMemo(() => findCurrentSet(exercises), [exercises]);
+  const focusId = useMemo(() => resolveFocusId(exercises, focusPin), [exercises, focusPin]);
+  const focus = useMemo(
+    () => exercises.find((e) => e.id === focusId) ?? null,
+    [exercises, focusId],
+  );
+  const current = useMemo(() => (focus ? currentSetOf(focus) : null), [focus]);
+  /** The set "Next:" names — the current set, or the first open one in the
+      workout while a finished exercise is being looked over. */
+  const next = useMemo(() => upNextOf(exercises, focusPin), [exercises, focusPin]);
+  // A pick releases itself once its exercise is finished. Settled here, on
+  // every change to the sets, so voice and undo are covered with the taps.
+  useEffect(() => {
+    setFocusPin((pin) => settlePin(exercises, pin));
+  }, [exercises]);
+  // Only a set that is still logged, in the card, can be open for fixing.
+  const editingId =
+    editingSetId !== null &&
+    focus?.sets.some((set) => set.id === editingSetId && set.completed) === true
+      ? editingSetId
+      : null;
 
-  /** One line under the Now heading: what this lift looked like last time,
-      or the plan, or an honest "first time". */
+  // Rest is a pause BEFORE a set. With nothing left to log there is nothing
+  // to rest for — a countdown left running would buzz at a finished workout.
+  const { running: resting, skip: skipRest, resume: resumeRest } = restTimer;
+  const hasNext = next !== null;
+  useEffect(() => {
+    if (resting && !hasNext) skipRest();
+  }, [resting, hasNext, skipRest]);
+  // The rest owed after a set that left nothing to log. It is not counted
+  // down (nothing to rest for yet, and no buzz at a finished workout); it
+  // is taken up, with whatever time it has left, the moment there is a set
+  // to rest before again — "Add set", a new exercise, a set re-opened. A
+  // workout logged as you go gets its rest this way. Before paint, so the
+  // new row and its rest arrive together.
+  const pendingRestRef = useRef<RestWindow | null>(null);
+  useLayoutEffect(() => {
+    if (!hasNext) return;
+    const owed = restoredRest(pendingRestRef.current, Date.now());
+    pendingRestRef.current = null;
+    if (owed) resumeRest(owed);
+  }, [hasNext, resumeRest]);
+  const restShown = (resting || restPulse) && hasNext;
+
+
+  /** One line under the exercise name: what this lift looked like last
+      time, or the plan, or an honest "first time". */
   const previousLine = (exercise: LoggedExercise, set: LoggedSet): string => {
     const mode = effortModeFor(exercise);
     const hist = historyFor.get(exercise.name.trim().toLowerCase());
@@ -772,20 +1054,104 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     return "First time — whatever you do sets the bar";
   };
 
-  // ── Focus auto-advance (reps → weight → next set, across exercises) ──
+  // ── Cursor travel (reps → weight → next set) ──
 
-  const allSetIds = exercises.flatMap((exercise) => exercise.sets.map((set) => set.id));
+  // Only the focused exercise has cells on screen, so the cursor travels
+  // within it; crossing to the next exercise is the focus moving on.
+  const focusSetIds = focus ? focus.sets.map((set) => set.id) : [];
   const { registerRepsRef, registerWeightRef, focusWeight, focusNextReps } =
-    useEnterAdvance(allSetIds);
-  /** List rows register with the advance hook AND the jump map. */
-  const registerListRepsRef = (id: string) => (el: HTMLInputElement | null) => {
+    useEnterAdvance(focusSetIds);
+  /** Rows register with the advance hook AND the jump map. */
+  const registerRowRepsRef = (id: string) => (el: HTMLInputElement | null) => {
     repsInputRefs.current[id] = el;
     registerRepsRef(id)(el);
   };
-  // The Now block's own cells — kept off the advance hook so the list's
-  // registrations stay canonical; Enter travels within the block instead.
-  const nowRepsRef = useRef<HTMLInputElement | null>(null);
-  const nowWeightRef = useRef<HTMLInputElement | null>(null);
+  // Keyboard flow: Enter on the current set's weight logs it, and the
+  // cursor follows to whichever set is current NEXT — a row that may only
+  // mount with the render the completion causes.
+  const followCurrentRef = useRef(false);
+  const currentSetId = current?.set.id ?? null;
+  useEffect(() => {
+    if (pendingJumpRef.current !== null) {
+      const { setId } = pendingJumpRef.current;
+      pendingJumpRef.current = null;
+      const input = setId !== null ? (repsInputRefs.current[setId] ?? null) : null;
+      if (input) jumpToInput(null, input);
+      else revealFocusCard();
+    }
+    if (followCurrentRef.current) {
+      followCurrentRef.current = false;
+      const input = currentSetId !== null ? (repsInputRefs.current[currentSetId] ?? null) : null;
+      if (input) {
+        // Focus alone does not scroll a field that is inside the viewport
+        // but under the floating bar: bring the set clear of it first.
+        currentSetWrapRef.current?.scrollIntoView({ behavior: "instant", block: "nearest" });
+        input.focus({ preventScroll: true });
+      }
+    }
+  });
+
+  // Keep the current set clear of the floating bar. Every logged set folds
+  // to a row above it and the rest opens under its button, so the card
+  // grows downward while the bar stays put; without this the primary
+  // button slides underneath it and taps land on Minimize or the mic.
+  // Runs after the render that moved things, for every way a set gets
+  // logged (button, Enter, warm-up tick, voice). "nearest" leaves the page
+  // alone when the set is already in clear view. The rest block LEAVING
+  // moves nothing: a rest runs out on its own, and the page stays where
+  // the lifter has it (lib/sessionScroll).
+  const followedRef = useRef<FollowState | null>(null);
+  const focusedId = focus?.id ?? null;
+  const followedFocusRef = useRef(focusedId);
+  useEffect(() => {
+    const was = followedRef.current;
+    const now: FollowState = { setId: currentSetId, restShown };
+    followedRef.current = now;
+    const movedOn = followedFocusRef.current !== focusedId;
+    followedFocusRef.current = focusedId;
+    if (!followsCurrentSet(was, now)) return;
+    const wrap = currentSetWrapRef.current;
+    if (!wrap) return;
+    const keyboardClosing = keyboardClosingRef.current;
+    keyboardClosingRef.current = false;
+    // A jump to the card is already placing the page.
+    if (performance.now() - revealedAtRef.current < REVEAL_SETTLE_MS) return;
+    // Never scroll under a keyboard that is up: the lifter is typing, and
+    // the shell would put the page back when it closes.
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+    // The card has moved on to another exercise by itself (the last set of
+    // the previous one was logged): "nearest" would leave the page where
+    // it was, with the new exercise's NAME above the fold — and the next
+    // set logged against an exercise the lifter cannot see named.
+    if (movedOn) {
+      revealFocusCard();
+      return;
+    }
+    const scroll = (): void => {
+      const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      currentSetWrapRef.current?.scrollIntoView({
+        behavior: calm ? "instant" : "smooth",
+        block: "nearest",
+      });
+    };
+    if (followTimeout.current !== null) window.clearTimeout(followTimeout.current);
+    if (!keyboardClosing) {
+      scroll();
+      return;
+    }
+    followTimeout.current = window.setTimeout(scroll, KEYBOARD_CLOSE_MS);
+  }, [currentSetId, restShown, focusedId]);
+
+  /** The tap that logs a set ends the typing: close the keyboard so the
+      page can follow the next set once it is down. */
+  const closeKeyboardBeforeFollow = (): void => {
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+      active.blur();
+      keyboardClosingRef.current = true;
+    }
+  };
 
   // ── Mutations ──
 
@@ -804,9 +1170,25 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     );
   };
 
-  const onSetCompleted = (exerciseName: string, isWarmup = false) => {
-    restTimer.start();
-    // Warm-ups don't feed the heat map, so no pulse — just the rest countdown.
+  /** A set of `exerciseId` was just logged: rest before the next one if
+      there is one; if not, the rest is owed (see pendingRestRef) and the
+      card stays on this exercise. */
+  const afterLogging = (after: LoggedExercise[], exerciseId: string): void => {
+    noteCardMoved();
+    clearRestAnnouncement();
+    if (upNextOf(after, focusPin) !== null) {
+      pendingRestRef.current = null;
+      restTimer.start();
+    } else {
+      restTimer.skip();
+      pendingRestRef.current = {
+        endsAt: Date.now() + REST_SECONDS * 1000,
+        totalSeconds: REST_SECONDS,
+      };
+      // "Finish workout" is about to stand where this tap landed.
+      holdCardFinish();
+    }
+    setFocusPin(pinAfterLogging(after, focusPin, exerciseId));
   };
 
   /** Toggle one set. Marking done commits hint values so the log stays honest. */
@@ -816,6 +1198,8 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     if (!exercise || index < 0) return;
     const set = exercise.sets[index];
     const becomingDone = !set.completed;
+    // The Enter flow keeps its keyboard: the cursor travels to the next set.
+    if (!followCurrentRef.current) closeKeyboardBeforeFollow();
 
     let reps = set.reps;
     let weight = set.weight;
@@ -832,8 +1216,8 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       noteSetsCompleted([setId]);
     }
 
-    setExercises((current) =>
-      current.map((e) =>
+    const apply = (list: LoggedExercise[]): LoggedExercise[] =>
+      list.map((e) =>
         e.id === exerciseId
           ? {
               ...e,
@@ -842,11 +1226,12 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
               ),
             }
           : e,
-      ),
-    );
+      );
+    setExercises(apply);
 
+    if (!becomingDone) noteCardMoved();
     if (becomingDone) {
-      onSetCompleted(exercise.name, set.isWarmup === true);
+      afterLogging(apply(exercises), exerciseId);
       if (!set.isWarmup) {
         tapHaptic();
         celebrateIfRecord(exercise, weight, reps);
@@ -854,27 +1239,20 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     }
   };
 
-  /** The Now block's primary action — exactly the row's done control. */
+  /** The focus card's primary action. */
   const completeCurrentSet = (): void => {
-    if (!current) return;
-    toggleSetDone(current.exercise.id, current.set.id);
+    if (!focus || !current) return;
+    setEditingSetId(null);
+    toggleSetDone(focus.id, current.set.id);
   };
 
-  /** Exercise-level Done: complete (or reopen) every set, filling hints in order. */
-  const setAllSetsDone = (exerciseId: string, done: boolean) => {
+  /** "Complete remaining sets": tick every open set of one exercise,
+      filling hints in order. Sets already logged are left exactly as they
+      were logged. */
+  const completeRemainingSets = (exerciseId: string) => {
     const exercise = exercises.find((e) => e.id === exerciseId);
     if (!exercise) return;
-
-    if (!done) {
-      setExercises((current) =>
-        current.map((e) =>
-          e.id === exerciseId
-            ? { ...e, sets: e.sets.map((s) => ({ ...s, completed: false })) }
-            : e,
-        ),
-      );
-      return;
-    }
+    closeKeyboardBeforeFollow();
 
     const tracking = trackingFor(exercise);
     const timed = tracking === "time";
@@ -885,6 +1263,14 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     let prevWeight: string | null = null;
     const filled = exercise.sets.map((set) => {
       const targetEffort = timed ? set.targetTime : set.targetReps;
+      if (set.completed) {
+        // Logged values still lead the cascade for the sets after them.
+        if (!set.isWarmup) {
+          if (set.reps.trim() !== "") prevReps = set.reps;
+          if (set.weight.trim() !== "") prevWeight = set.weight;
+        }
+        return set;
+      }
       // Warm-ups fill from their own ramp prescription and stay out of the
       // working-set cascade in both directions.
       if (set.isWarmup) {
@@ -921,14 +1307,33 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
 
     // Rows flipping to done here complete in list order — the last one is
     // the most recent.
-    noteSetsCompleted(exercise.sets.filter((set) => !set.completed).map((set) => set.id));
-    setExercises((current) =>
-      current.map((e) => (e.id === exerciseId ? { ...e, sets: filled } : e)),
-    );
-    onSetCompleted(exercise.name);
+    noteSetsCompleted(openSetIds(exercise));
+    const apply = (list: LoggedExercise[]): LoggedExercise[] =>
+      list.map((e) => (e.id === exerciseId ? { ...e, sets: filled } : e));
+    setExercises(apply);
+    setEditingSetId(null);
+    tapHaptic();
+    afterLogging(apply(exercises), exerciseId);
   };
 
+  /** Take an open set off an exercise — the inverse of "Add set", offered
+      in the ⋯ sheet so the card gains no control for a rare action.
+      lib/sessionSets holds the rules (open rows only, never the only
+      working set). With nothing left to log anywhere the card stays on
+      this exercise, the same as after logging its last set. */
+  const removeSet = (exerciseId: string, setId: string): void => {
+    const after = withoutSet(exercises, exerciseId, setId);
+    if (after === exercises) return;
+    noteCardMoved();
+    selectionHaptic();
+    setExercises((current) => withoutSet(current, exerciseId, setId));
+    setFocusPin(pinAfterLogging(after, focusPin, exerciseId));
+  };
+  // What the ⋯ sheet offers to remove: the focused exercise's last open set.
+  const removable = focus ? removableSetOf(focus) : null;
+
   const addSet = (exerciseId: string) => {
+    noteCardMoved();
     setExercises((current) =>
       current.map((exercise) =>
         exercise.id === exerciseId
@@ -1050,6 +1455,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       // The workout is history now — clear the live-session keys HERE, not
       // on the recap's exit buttons, so a surviving seed can never haunt the
       // Dashboard as a phantom "Resume workout" banner.
+      sessionOverRef.current = true;
       clearActiveWorkoutStorage();
       if (saved) setSavedLog(saved);
       restTimer.skip();
@@ -1079,12 +1485,21 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     }
   };
 
+  /** The focus card's "Finish workout". Unlike the header's Finish it can
+      turn up under a finger that is still tapping "Complete set". */
+  const finishFromCard = (): void => {
+    if (finishGuarded(lastSetLoggedAtRef.current, performance.now())) return;
+    void handleFinish();
+  };
+
   /** Abandon the session: same teardown as a successful finish, minus the
       save. Navigating away unmounts the component, which releases the wake
-      lock and clears the elapsed/rest intervals via their effect cleanups. */
+      lock and clears the elapsed/rest intervals via their effect cleanups —
+      the rest is not skipped by hand, since that state change would re-run
+      the save-progress effect on the keys just cleared. */
   const handleDiscard = () => {
     setDiscardOpen(false);
-    restTimer.skip();
+    sessionOverRef.current = true;
     clearActiveWorkoutStorage();
     announceSession(false);
     toast({ title: "Session discarded" });
@@ -1276,12 +1691,10 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   />
                 </div>
               )}
-              <CTAButton
-                to="/dashboard"
-                onClick={clearActiveWorkoutStorage}
-                fullWidth
-                className={savedLog ? "mt-3" : "mt-6"}
-              >
+              {/* Leaving the recap clears nothing: Finish already cleared
+                  this session's keys, and whatever is in storage by now
+                  belongs to a workout started since. */}
+              <CTAButton to="/dashboard" fullWidth className={savedLog ? "mt-3" : "mt-6"}>
                 View dashboard
               </CTAButton>
               {savedLog && (
@@ -1303,12 +1716,336 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     );
   }
 
+  // ── Focus card ──
+
+  const quietActionClass =
+    "relative inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-3 text-xs font-medium text-fg-muted transition after:absolute after:-inset-1 after:content-[''] hover:border-fg-soft hover:text-fg active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
+
+  /** The focus card's content for one exercise. A render helper, not a
+      component: a component declared inside this one would be a new type
+      on every render and remount its inputs mid-keystroke. */
+  const renderFocus = (exercise: LoggedExercise) => {
+    const tracking = trackingFor(exercise);
+    const mode = effortModeFor(exercise);
+    const isCardio = exercise.kind === "cardio";
+    const isWeighted = !isCardio && exercise.kind !== "bodyweight";
+    const unitsLabel = isCardio ? (isMetric ? "km" : "mi") : units;
+    const states = rowStates(exercise);
+    const progress = setsProgress(exercise);
+    const remaining = openSetIds(exercise);
+    // The reps⇄time flip lives on the name, and only for exercises where
+    // it is a plausible want — "Squat" never grows a mystery tap.
+    const canFlip = !isCardio && (tracking === "time" || TIMED_TOGGLE_HINT.test(exercise.name));
+    // Working sets number 1..n; warm-up rows show a W chip instead.
+    let workingOrdinal = 0;
+    const ordinals = exercise.sets.map((set) => (set.isWarmup ? 0 : workingOrdinal++));
+    const lineSet =
+      current?.set ?? exercise.sets.filter((set) => !set.isWarmup).at(-1) ?? exercise.sets.at(-1);
+    // Rest sits UNDER the primary button, never above it: whatever the
+    // rest does, the set's cells and the button stay where they are.
+    const restBlock =
+      restShown && next !== null ? (
+        <div className="mt-3">
+          <RestBlock
+            remaining={restTimer.remaining}
+            progress={restTimer.progress}
+            finished={restPulse && !restTimer.running}
+            nextName={next.exercise.name}
+            nextOrdinal={next.ordinal}
+            nextTotal={next.workingTotal}
+            onExtend={() => restTimer.extend(30)}
+            onSkip={() => {
+              noteCardMoved();
+              restTimer.skip();
+            }}
+          />
+        </div>
+      ) : null;
+    const nameHeading = (
+      <h2 className="break-words text-[20px] font-semibold capitalize leading-tight tracking-tight text-fg">
+        {exercise.name}
+      </h2>
+    );
+
+    return (
+      <>
+        <p className="eyebrow !text-primary">Now</p>
+        <div className="mt-1 flex items-start justify-between gap-3">
+          {canFlip ? (
+            <button
+              type="button"
+              onClick={() => setTracking(exercise.id, tracking === "time" ? "reps" : "time")}
+              className="relative min-w-0 rounded-md text-left after:absolute after:-inset-1.5 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              {nameHeading}
+              <span className="caption mt-0.5 block">
+                {tracking === "time"
+                  ? "timed · tap to switch to reps"
+                  : "reps · tap to switch to time"}
+              </span>
+            </button>
+          ) : (
+            <div className="min-w-0">
+              {nameHeading}
+              {isCardio && <p className="caption mt-0.5">cardio · minutes</p>}
+            </div>
+          )}
+          {current && (
+            <span className="mono shrink-0 pt-1 text-[12px] font-medium text-fg-muted">
+              {setOfLabel(current.ordinal, current.workingTotal)}
+            </span>
+          )}
+        </div>
+        {lineSet && <p className="caption mt-1">{previousLine(exercise, lineSet)}</p>}
+
+        <div className="mt-3 space-y-1">
+          {exercise.sets.map((set, setIndex) => {
+            const state = states[setIndex];
+            const isCurrent = state === "current";
+            const editing = editingId === set.id;
+            const openWarmup = state === "open" && set.isWarmup === true;
+            return (
+              <div
+                key={set.id}
+                ref={isCurrent ? currentSetWrapRef : undefined}
+                className={cn(
+                  (isCurrent || editing) && "py-1.5",
+                  isCurrent && CLEAR_OF_SESSION_BAR,
+                )}
+              >
+                {state === "done" && !editing ? (
+                  <CompletedSetRow
+                    idx={ordinals[setIndex]}
+                    isWarmup={set.isWarmup === true}
+                    summary={summarizeSet(set, mode, unitsLabel)}
+                    onOpen={() => setEditingSetId(set.id)}
+                  />
+                ) : (
+                  <SetInputRow
+                    idx={ordinals[setIndex]}
+                    showLabels={isCurrent || editing}
+                    scoreboard
+                    quiet={state === "open"}
+                    hideDone={!openWarmup}
+                    effort={mode}
+                    reps={set.reps}
+                    weight={set.weight}
+                    done={set.completed}
+                    unitsLabel={unitsLabel}
+                    repsHint={hintFor(exercise, setIndex, "reps")}
+                    weightHint={hintFor(exercise, setIndex, "weight")}
+                    isWarmup={set.isWarmup === true}
+                    bodyweight={exercise.kind === "bodyweight"}
+                    registerRepsRef={registerRowRepsRef(set.id)}
+                    registerWeightRef={registerWeightRef(set.id)}
+                    onRepsChange={(v) => updateSetField(exercise.id, set.id, "reps", v)}
+                    onWeightChange={(v) => updateSetField(exercise.id, set.id, "weight", v)}
+                    onRepsEnter={() => focusWeight(set.id)}
+                    onDoneTap={() => toggleSetDone(exercise.id, set.id)}
+                    onWeightEnter={() => {
+                      if (editing) {
+                        setEditingSetId(null);
+                      } else if (isCurrent) {
+                        followCurrentRef.current = true;
+                        completeCurrentSet();
+                      } else {
+                        // Only a warm-up logs from here; a later working
+                        // set waits its turn as the current one.
+                        if (openWarmup) toggleSetDone(exercise.id, set.id);
+                        focusNextReps(set.id);
+                      }
+                    }}
+                    onWeightValueTap={isWeighted ? openPlateMath : undefined}
+                  />
+                )}
+                {isCurrent ? (
+                  <button
+                    type="button"
+                    onClick={completeCurrentSet}
+                    className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-primary text-[14.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  >
+                    <Check size={16} strokeWidth={2.5} />
+                    Complete set
+                  </button>
+                ) : null}
+                {isCurrent ? restBlock : null}
+                {editing ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 pl-9">
+                    <button
+                      type="button"
+                      onClick={() => setEditingSetId(null)}
+                      className="relative inline-flex min-h-9 items-center rounded-full bg-foreground px-3.5 text-[12.5px] font-semibold text-background transition after:absolute after:-inset-1 after:content-[''] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingSetId(null);
+                        toggleSetDone(exercise.id, set.id);
+                      }}
+                      className={quietActionClass}
+                    >
+                      Mark not done
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+
+        {current === null && (
+          <>
+            {next !== null ? (
+              <button
+                type="button"
+                onClick={() => {
+                  // The next exercise's "Complete set" lands where this
+                  // button is: a second tap must not log a set on it.
+                  noteCardMoved();
+                  setFocusPin(null);
+                  setEditingSetId(null);
+                  setVestEditing(null);
+                  pendingJumpRef.current = { setId: null };
+                }}
+                className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-primary px-4 py-2.5 text-center text-[14.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <span className="min-w-0 break-words">
+                  Continue to <span className="capitalize">{next.exercise.name}</span>
+                </span>
+                <ArrowRight size={16} strokeWidth={2.5} className="shrink-0" />
+              </button>
+            ) : (
+              <CTAButton
+                onClick={finishFromCard}
+                disabled={saving}
+                variant="accent"
+                fullWidth
+                className={cn("mt-3", finishHeld && "pointer-events-none")}
+              >
+                <Check size={16} strokeWidth={2.5} />
+                {saving ? "Saving…" : "Finish workout"}
+              </CTAButton>
+            )}
+            {restBlock}
+          </>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => addSet(exercise.id)}
+            className={quietActionClass}
+          >
+            <Plus size={14} />
+            Add set
+          </button>
+          {/* An action, never a status: offered only while there are
+              several sets left to tick ("Complete set" covers one). */}
+          {remaining.length >= 2 && (
+            <button
+              type="button"
+              onClick={() => completeRemainingSets(exercise.id)}
+              className={quietActionClass}
+            >
+              <CheckCheck size={14} />
+              Complete remaining sets
+            </button>
+          )}
+          {progress.complete && (
+            <p className="inline-flex min-h-9 items-center gap-1.5 px-1 text-xs font-medium text-fg-muted">
+              <Check size={13} strokeWidth={2.5} className="text-primary" />
+              All sets complete
+            </p>
+          )}
+          {/* Cardio extras as compact icon chips: added weight (vest /
+              pack) and live vitals (Pro). The chip grows a value only
+              once a vest weight is set. */}
+          {isCardio && (
+            <div className="ml-auto flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setVestEditing((cur) => (cur === exercise.id ? null : exercise.id))}
+                aria-label={
+                  exercise.addedWeight
+                    ? `Added weight: ${formatWeightForDisplay(exercise.addedWeight)} ${weightUnit}. Edit`
+                    : "Add vest or pack weight"
+                }
+                className={cn(
+                  "relative inline-flex h-9 min-w-9 items-center justify-center gap-1 whitespace-nowrap rounded-full border text-xs transition after:absolute after:-inset-1 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                  exercise.addedWeight
+                    ? "border-foreground/40 px-2.5 font-semibold text-fg"
+                    : "border-border text-fg-muted hover:border-primary/40 hover:text-fg",
+                )}
+              >
+                <Weight size={14} />
+                {exercise.addedWeight && (
+                  <span className="mono">
+                    {formatWeightForDisplay(exercise.addedWeight)} {weightUnit}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setVitalsFor(exercise.id)}
+                aria-label={`Live vitals for ${exercise.name} (Pro)`}
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary/[0.12] text-primary transition after:absolute after:-inset-1 after:content-[''] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <HeartPulse size={15} />
+              </button>
+            </div>
+          )}
+        </div>
+        {isCardio && vestEditing === exercise.id && (
+          <div className="mt-2.5 flex items-center gap-2 rounded-[12px] bg-foreground/[0.04] px-3 py-2.5">
+            <span className="text-[12.5px] font-medium text-fg-soft">Added weight</span>
+            <div className="relative ml-auto w-28">
+              <input
+                autoFocus
+                inputMode="decimal"
+                defaultValue={exercise.addedWeight ? formatWeightForDisplay(exercise.addedWeight) : ""}
+                onChange={(e) => setAddedWeight(exercise.id, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") setVestEditing(null);
+                }}
+                placeholder="0"
+                aria-label="Added weight for cardio (vest or pack)"
+                className="h-10 w-full rounded-lg border border-border bg-background px-3 pr-9 text-center text-[15px] font-semibold tabular-nums text-fg outline-none focus:border-primary/60"
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-[10px] uppercase tracking-wider text-fg-muted">
+                {weightUnit}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setVestEditing(null)}
+              className="inline-flex min-h-9 items-center rounded-full bg-foreground px-3 text-[12.5px] font-semibold text-background active:scale-[0.97]"
+            >
+              Done
+            </button>
+          </div>
+        )}
+      </>
+    );
+  };
+
   // ── Active logging screen ──
 
   return (
-    <div className="scoreboard-reveal relative min-h-screen w-full max-w-7xl mx-auto p-6 pb-[calc(4rem+var(--safe-bottom)+5rem)] md:p-10 md:pb-[calc(4rem+var(--safe-bottom)+5rem)] lg:p-12 lg:pb-[calc(4rem+var(--safe-bottom)+5rem)]">
+    <div
+      className={cn(
+        "scoreboard-reveal relative mx-auto min-h-screen w-full max-w-7xl p-6 md:p-10 lg:p-12",
+        SESSION_PAGE_CLEARANCE,
+      )}
+    >
       {/* Solid canvas: no grain, no blur — battery + arm's-length legibility. */}
       <div aria-hidden className="fixed inset-0 z-[-1] bg-background" />
+
+      {/* End of rest, for screen readers (see restAnnouncement). */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {restAnnouncement}
+      </p>
 
       {/* Live PR banner — quiet celebration the moment a record set lands */}
       {liveBanner && (
@@ -1325,8 +2062,12 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
 
       {/* Header: session name with the clock as a small detail beside it,
           Finish as a quiet secondary control, everything else behind ⋯.
-          The big number this screen is about is the NEXT SET, below. */}
-      <header className="relative mb-5 animate-reveal-up">
+          The big number this screen is about is the NEXT SET, below.
+          w-0 + min-w-full: the header takes the page's width but adds
+          nothing to it, so a long session name (one unbreakable line)
+          truncates instead of widening the page and pushing Finish and ⋯
+          off the screen. */}
+      <header className="relative mb-5 w-0 min-w-full animate-reveal-up">
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <p className="eyebrow flex items-center gap-2">
@@ -1380,374 +2121,121 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         </p>
       </header>
 
-      {/* NOW — the one set to do next, with its cells and one primary
-          button. The full list below stays for people who work from it. */}
-      {exercises.length > 0 && (
-        <section
-          className="relative mb-6 overflow-hidden rounded-[18px] border border-primary/35 bg-card p-4 animate-reveal-up md:p-5"
-          style={{ animationDelay: "60ms" }}
-        >
-          {current ? (
-            <>
-              <p className="eyebrow !text-primary">Now</p>
-              <div className="mt-1 flex items-baseline justify-between gap-3">
-                <h2 className="min-w-0 truncate text-[20px] font-semibold capitalize leading-tight tracking-tight text-fg">
-                  {current.exercise.name}
-                </h2>
-                <span className="mono shrink-0 text-[12px] font-medium text-fg-muted">
-                  Set {current.ordinal} of {current.workingTotal}
-                </span>
-              </div>
-              <p className="caption mt-1">{previousLine(current.exercise, current.set)}</p>
-              <div className="mt-3">
-                <SetInputRow
-                  key={current.set.id}
-                  idx={current.ordinal - 1}
-                  showLabels
-                  scoreboard
-                  hideDone
-                  effort={
-                    current.exercise.kind === "cardio" ? "cardio" : trackingFor(current.exercise)
-                  }
-                  reps={current.set.reps}
-                  weight={current.set.weight}
-                  done={false}
-                  unitsLabel={
-                    current.exercise.kind === "cardio" ? (isMetric ? "km" : "mi") : units
-                  }
-                  repsHint={hintFor(current.exercise, current.setIndex, "reps")}
-                  weightHint={hintFor(current.exercise, current.setIndex, "weight")}
-                  registerRepsRef={(el) => {
-                    nowRepsRef.current = el;
-                  }}
-                  registerWeightRef={(el) => {
-                    nowWeightRef.current = el;
-                  }}
-                  onRepsChange={(v) =>
-                    updateSetField(current.exercise.id, current.set.id, "reps", v)
-                  }
-                  onWeightChange={(v) =>
-                    updateSetField(current.exercise.id, current.set.id, "weight", v)
-                  }
-                  onRepsEnter={() => nowWeightRef.current?.focus()}
-                  onDoneTap={completeCurrentSet}
-                  onWeightEnter={() => {
-                    completeCurrentSet();
-                    // The block re-points to the next set on commit; keep
-                    // the keyboard flow going from its reps cell.
-                    requestAnimationFrame(() => nowRepsRef.current?.focus());
-                  }}
-                  onWeightValueTap={
-                    current.exercise.kind !== "cardio" && current.exercise.kind !== "bodyweight"
-                      ? openPlateMath
-                      : undefined
-                  }
-                />
-              </div>
-              <button
-                type="button"
-                onClick={completeCurrentSet}
-                className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-primary text-[14.5px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              >
-                <Check size={16} strokeWidth={2.5} />
-                Complete set
-              </button>
-            </>
-          ) : (
-            <>
-              <p className="eyebrow !text-primary">Now</p>
-              <h2 className="mt-1 text-[20px] font-semibold leading-tight tracking-tight text-fg">
-                All sets done
-              </h2>
-              <p className="caption mt-1">
-                Nice work. Finish to save it — or add a set below if you have more in you.
-              </p>
-              <CTAButton
-                onClick={() => void handleFinish()}
-                disabled={saving}
-                variant="accent"
-                fullWidth
-                className="mt-3"
-              >
-                <Check size={16} strokeWidth={2.5} />
-                {saving ? "Saving…" : "Finish workout"}
-              </CTAButton>
-            </>
-          )}
-        </section>
-      )}
-
       <div className="relative grid gap-6 xl:grid-cols-[1fr_340px]">
-        <section className="space-y-3">
-          {exercises.map((exercise, exerciseIndex) => {
-            const allDone =
-              exercise.sets.length > 0 && exercise.sets.every((set) => set.completed);
-            const tracking = trackingFor(exercise);
-            const isWeighted = exercise.kind !== "cardio" && exercise.kind !== "bodyweight";
-            // Working sets number 1..n; warm-up rows show a W chip instead.
-            let workingOrdinal = 0;
-            const ordinals = exercise.sets.map((set) =>
-              set.isWarmup ? 0 : workingOrdinal++,
-            );
-            const isCurrent = current?.exercise.id === exercise.id;
-            return (
-              <article
-                key={exercise.id}
-                ref={(el) => {
-                  exerciseCardRefs.current[exercise.id] = el;
-                }}
-                className={cn(
-                  "relative overflow-hidden rounded-lg border bg-card p-4 md:p-5 animate-reveal-up",
-                  isCurrent ? "border-primary/35" : "border-border",
-                )}
-                style={{ animationDelay: `${exerciseIndex * 60 + 100}ms` }}
-              >
-                {/* Header = the exercise name and one Done button. Nothing
-                    advisory lives up here any more (owner: "way too much
-                    info") — the category chip, prescription line, coaching
-                    hint, pinned note and warm-up ramp are gone; the reps⇄time
-                    flip survives as a long-press-free tap on the name for
-                    the few exercises that need it (planks). */}
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      exercise.kind !== "cardio" &&
-                      (tracking === "time" || TIMED_TOGGLE_HINT.test(exercise.name))
-                        ? setTracking(exercise.id, tracking === "time" ? "reps" : "time")
-                        : undefined
-                    }
-                    className="min-w-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md"
+        <div className="min-w-0 space-y-6">
+          {/* The focus card — the ONE place sets are logged. It shows the
+              focused exercise whole: logged sets folded to a line, the
+              current set open under the primary button, later sets quiet
+              but editable. Rest shows up in here too, right under that
+              button. */}
+          {exercises.length > 0 && (
+            <section
+              ref={focusCardRef}
+              aria-label={focus ? `Now: ${focus.name}` : "All sets done"}
+              className={cn(
+                "relative scroll-mt-[calc(var(--safe-top)+1rem)] overflow-hidden rounded-[18px] border border-primary/35 bg-card p-4 animate-reveal-up md:p-5",
+                cardSettling && "pointer-events-none",
+              )}
+              style={{ animationDelay: "60ms" }}
+            >
+              {focus ? (
+                renderFocus(focus)
+              ) : (
+                <>
+                  <p className="eyebrow !text-primary">Now</p>
+                  <h2 className="mt-1 text-[20px] font-semibold leading-tight tracking-tight text-fg">
+                    All sets done
+                  </h2>
+                  <p className="caption mt-1">
+                    Nice work. Finish to save it, or pick an exercise below to add more.
+                  </p>
+                  <CTAButton
+                    onClick={finishFromCard}
+                    disabled={saving}
+                    variant="accent"
+                    fullWidth
+                    className={cn("mt-3", finishHeld && "pointer-events-none")}
                   >
-                    <h2 className="truncate text-[17px] font-semibold capitalize leading-snug text-fg">
-                      {exercise.name}
-                    </h2>
-                    {exercise.kind === "cardio" ? (
-                      <p className="caption mt-0.5 !text-fg-muted">cardio · minutes</p>
-                    ) : (
-                      tracking === "time" && (
-                        <p className="caption mt-0.5 !text-fg-muted">timed · tap to switch to reps</p>
-                      )
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAllSetsDone(exercise.id, !allDone)}
-                    className={cn(
-                      "relative inline-flex shrink-0 items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition after:absolute after:-inset-1 after:content-[''] focus:outline-none focus:ring-2 focus:ring-ring/40",
-                      allDone
-                        ? "border border-foreground bg-foreground text-background"
-                        : "border border-border text-fg-muted hover:border-fg-soft hover:text-fg",
-                    )}
-                  >
-                    <Check size={14} />
-                    {allDone ? "Done" : "All done"}
-                  </button>
-                </div>
+                    <Check size={16} strokeWidth={2.5} />
+                    {saving ? "Saving…" : "Finish workout"}
+                  </CTAButton>
+                </>
+              )}
+            </section>
+          )}
 
-                <div className="space-y-1">
-                  {exercise.sets.map((set, setIndex) => (
-                    <SetInputRow
-                      key={set.id}
-                      idx={ordinals[setIndex]}
-                      showLabels={setIndex === 0}
-                      scoreboard
-                      effort={exercise.kind === "cardio" ? "cardio" : tracking}
-                      reps={set.reps}
-                      weight={set.weight}
-                      done={set.completed}
-                      unitsLabel={exercise.kind === "cardio" ? (isMetric ? "km" : "mi") : units}
-                      repsHint={hintFor(exercise, setIndex, "reps")}
-                      weightHint={hintFor(exercise, setIndex, "weight")}
-                      isWarmup={set.isWarmup === true}
-                      registerRepsRef={registerListRepsRef(set.id)}
-                      registerWeightRef={registerWeightRef(set.id)}
-                      onRepsChange={(v) => updateSetField(exercise.id, set.id, "reps", v)}
-                      onWeightChange={(v) => updateSetField(exercise.id, set.id, "weight", v)}
-                      onRepsEnter={() => focusWeight(set.id)}
-                      onDoneTap={() => toggleSetDone(exercise.id, set.id)}
-                      onWeightEnter={() => {
-                        const wasCompleted = set.completed;
-                        toggleSetDone(exercise.id, set.id);
-                        if (!wasCompleted) focusNextReps(set.id);
-                      }}
-                      onWeightValueTap={isWeighted ? openPlateMath : undefined}
-                    />
-                  ))}
-                </div>
-
-                <div className="mt-2.5 flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => addSet(exercise.id)}
-                    className="relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-3 py-2 text-xs text-fg-muted transition after:absolute after:-inset-1.5 after:content-[''] hover:border-primary/40 hover:text-fg"
-                  >
-                    <Plus size={14} />
-                    {exercise.kind === "cardio" ? "Set" : "Add set"}
-                  </button>
-                  {/* Cardio extras as compact icon chips: added weight
-                      (vest / pack) and live vitals (Pro). The chip grows a
-                      value only once a vest weight is set. */}
-                  {exercise.kind === "cardio" && (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setVestEditing((cur) => (cur === exercise.id ? null : exercise.id))}
-                        aria-label={
-                          exercise.addedWeight
-                            ? `Added weight: ${formatWeightForDisplay(exercise.addedWeight)} ${weightUnit}. Edit`
-                            : "Add vest or pack weight"
-                        }
-                        className={cn(
-                          "relative inline-flex h-9 min-w-9 items-center justify-center gap-1 whitespace-nowrap rounded-full border text-xs transition after:absolute after:-inset-1 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                          exercise.addedWeight
-                            ? "border-foreground/40 px-2.5 font-semibold text-fg"
-                            : "border-border text-fg-muted hover:border-primary/40 hover:text-fg",
-                        )}
-                      >
-                        <Weight size={14} />
-                        {exercise.addedWeight && (
-                          <span className="mono">
-                            {formatWeightForDisplay(exercise.addedWeight)} {weightUnit}
-                          </span>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setVitalsFor(exercise.id)}
-                        aria-label={`Live vitals for ${exercise.name} (Pro)`}
-                        className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary/[0.12] text-primary transition after:absolute after:-inset-1 after:content-[''] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                      >
-                        <HeartPulse size={15} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-                {exercise.kind === "cardio" && vestEditing === exercise.id && (
-                  <div className="mt-2.5 flex items-center gap-2 rounded-[12px] bg-foreground/[0.04] px-3 py-2.5">
-                    <span className="text-[12.5px] font-medium text-fg-soft">Added weight</span>
-                    <div className="relative ml-auto w-28">
-                      <input
-                        autoFocus
-                        inputMode="decimal"
-                        defaultValue={exercise.addedWeight ? formatWeightForDisplay(exercise.addedWeight) : ""}
-                        onChange={(e) => setAddedWeight(exercise.id, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") setVestEditing(null);
-                        }}
-                        placeholder="0"
-                        aria-label="Added weight for cardio (vest or pack)"
-                        className="h-10 w-full rounded-lg border border-border bg-background px-3 pr-9 text-center text-[15px] font-semibold tabular-nums text-fg outline-none focus:border-primary/60"
-                      />
-                      <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-[10px] uppercase tracking-wider text-fg-muted">
-                        {weightUnit}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setVestEditing(null)}
-                      className="inline-flex min-h-9 items-center rounded-full bg-foreground px-3 text-[12.5px] font-semibold text-background active:scale-[0.97]"
-                    >
-                      Done
-                    </button>
-                  </div>
-                )}
-              </article>
-            );
-          })}
-
-          {/* Session notes — phones/tablets never see the desktop sidebar,
-              so the notes field lives at the end of the flow here. */}
-          <label className="block rounded-lg border border-border bg-card p-4 md:p-5 xl:hidden">
-            <span className="eyebrow mb-3 block">Session notes</span>
-            <textarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              placeholder="How did this session feel?"
-              rows={3}
-              className="w-full resize-none rounded-md border border-border bg-secondary/50 p-3 text-sm outline-none transition focus:border-primary/60"
+          {exercises.length > 0 && (
+            <ExerciseList
+              items={exercises.map((exercise) => ({
+                id: exercise.id,
+                name: exercise.name,
+                progress: setsProgress(exercise),
+                focused: exercise.id === focusId,
+              }))}
+              onPick={pickExercise}
+              settling={cardSettling}
             />
-          </label>
+          )}
 
-          {/* Log-as-you-go: add any exercise mid-session (quick starts begin
-              empty; the planks case by hand). Voice adds these too. */}
-          <div className="rounded-lg border border-border bg-card p-4">
-            {exercises.length === 0 && (
-              <p className="mb-2 text-sm text-fg-soft">
-                Nothing planned — add an exercise, or tap the mic and say what
-                you did.
-              </p>
-            )}
-            <div className="flex items-center gap-2">
-              <input
-                ref={addExerciseInputRef}
-                value={newExerciseName}
-                onChange={(e) => setNewExerciseName(e.target.value)}
-                onFocus={() => setNewExerciseFocused(true)}
-                onBlur={() => setNewExerciseFocused(false)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") addExercise();
-                }}
-                placeholder="Add exercise — e.g. Planks"
-                aria-label="Add exercise"
-                className="h-11 w-full min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm font-medium text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+          <div className="space-y-3">
+            {/* Session notes — phones/tablets never see the desktop sidebar,
+                so the notes field lives at the end of the flow here. */}
+            <label className="block rounded-lg border border-border bg-card p-4 md:p-5 xl:hidden">
+              <span className="eyebrow mb-3 block">Session notes</span>
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="How did this session feel?"
+                rows={3}
+                className="w-full resize-none rounded-md border border-border bg-secondary/50 p-3 text-sm outline-none transition focus:border-primary/60"
               />
-              <button
-                type="button"
-                onClick={addExercise}
-                disabled={!newExerciseName.trim()}
-                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-40"
-              >
-                <Plus size={14} />
-                Add
-              </button>
+            </label>
+
+            {/* Log-as-you-go: add any exercise mid-session (quick starts begin
+                empty; the planks case by hand). Voice adds these too. */}
+            <div className="rounded-lg border border-border bg-card p-4">
+              {exercises.length === 0 && (
+                <p className="mb-2 text-sm text-fg-soft">
+                  Nothing planned — add an exercise, or tap the mic and say what
+                  you did.
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  ref={addExerciseInputRef}
+                  value={newExerciseName}
+                  onChange={(e) => setNewExerciseName(e.target.value)}
+                  onFocus={() => setNewExerciseFocused(true)}
+                  onBlur={() => setNewExerciseFocused(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addExercise();
+                  }}
+                  placeholder="Add exercise — e.g. Planks"
+                  aria-label="Add exercise"
+                  className="h-11 w-full min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm font-medium text-fg outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                />
+                <button
+                  type="button"
+                  onClick={addExercise}
+                  disabled={!newExerciseName.trim()}
+                  className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-40"
+                >
+                  <Plus size={14} />
+                  Add
+                </button>
+              </div>
+              {newExerciseFocused && (
+                <ExerciseNameSuggestions
+                  query={newExerciseName}
+                  onPick={(name) => setNewExerciseName(name)}
+                />
+              )}
             </div>
-            {newExerciseFocused && (
-              <ExerciseNameSuggestions
-                query={newExerciseName}
-                onPick={(name) => setNewExerciseName(name)}
-              />
-            )}
           </div>
-        </section>
+        </div>
 
         {/* Desktop sidebar */}
-        <aside className="hidden space-y-4 xl:sticky xl:top-6 xl:block xl:self-start">
-          {/* Rest timer */}
-          <div className="relative overflow-hidden rounded-lg border border-border bg-card p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <Timer size={15} className="text-primary" />
-              <span className="eyebrow !text-primary">Rest</span>
-            </div>
-            {restTimer.running || restPulse ? (
-              <div className="flex flex-col items-center gap-4">
-                <RestTimerRing
-                  remaining={restTimer.remaining}
-                  progress={restTimer.progress}
-                  size={112}
-                  strokeWidth={6}
-                  pulse={restPulse}
-                />
-                {restPulse && !restTimer.running ? (
-                  <p className="caption !text-primary">Rest complete — lift.</p>
-                ) : (
-                  <RestControls
-                    onExtend={() => restTimer.extend(30)}
-                    onSkip={restTimer.skip}
-                  />
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-4">
-                <RestTimerRing remaining={REST_SECONDS} progress={0} size={56} strokeWidth={4} className="opacity-40" />
-                <p className="caption leading-relaxed">
-                  Completing a set starts a 2:00 rest countdown.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Notes */}
+        <aside className="hidden xl:sticky xl:top-6 xl:block xl:self-start">
           <label className="block rounded-lg border border-border bg-card p-5">
             <span className="eyebrow mb-3 block">Session notes</span>
             <textarea
@@ -1761,86 +2249,27 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
         </aside>
       </div>
 
-      {/* Mobile / tablet: compact rest bar pinned above the session
-          toolbar. On tablets the toolbar floats (bottom-6, 4rem tall,
-          centered, z-40) — the bar sits in the same slot the receipt uses
-          above it, never underneath, so ring + countdown stay visible. */}
-      {(restTimer.running || restPulse) && (
-        <div className="fixed inset-x-4 z-30 bottom-[calc(4rem+var(--safe-bottom)+0.75rem)] md:inset-x-auto md:right-6 md:bottom-[6.25rem] md:w-96 xl:hidden">
-          <div
-            className={cn(
-              "flex items-center gap-4 rounded-lg border bg-card px-4 py-3 shadow-lg transition-colors",
-              restPulse ? "border-primary/60" : "border-border",
-            )}
-          >
-            <RestTimerRing
-              remaining={restTimer.remaining}
-              progress={restTimer.progress}
-              size={48}
-              strokeWidth={4}
-              pulse={restPulse}
-            />
-            <div className="min-w-0 flex-1">
-              <p className="eyebrow !text-[10px] !text-primary">Rest</p>
-              <p className="caption truncate">
-                {restPulse && !restTimer.running
-                  ? "Rest complete — lift."
-                  : "Next set when the ring closes"}
-              </p>
-            </div>
-            <RestControls
-              onExtend={() => restTimer.extend(30)}
-              onSkip={restTimer.skip}
-              compact
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Session toolbar — takes the tab bar's slot for the whole session
-          (same 4rem + safe-bottom footprint, so the rest bar and receipt
-          math above it hold). Minimize → Home, where the resume banner
-          brings you back; + → the add-exercise field; the mic in between.
-          Solid canvas, no blur: battery and arm's-length legibility. */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background pb-[var(--safe-bottom)] md:inset-x-auto md:bottom-6 md:left-1/2 md:w-[440px] md:-translate-x-1/2 md:rounded-full md:border md:pb-0">
-        <div className="flex h-16 items-center gap-2 px-3">
-          <button
-            type="button"
-            onClick={() => {
-              tapHaptic();
-              navigate("/dashboard");
-            }}
-            aria-label="Minimize workout"
-            className="flex h-full w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-[14px] text-fg-muted transition hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <ChevronDown size={20} />
-            <span className="text-[10px] font-semibold tracking-wide">Minimize</span>
-          </button>
-          <div className="flex min-w-0 flex-1 justify-center">
-            <VoiceLogControl
-              exercises={exercises}
-              units={units}
-              onApply={handleVoiceApply}
-              onUndo={handleVoiceUndo}
-              onEdit={handleVoiceEdit}
-              raised={restTimer.running || restPulse}
-              recentSetIds={recentSetIds}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              tapHaptic();
-              focusAddExercise();
-            }}
-            aria-label="Add exercise"
-            className="flex h-full w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-[14px] text-fg-muted transition hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <Plus size={20} />
-            <span className="text-[10px] font-semibold tracking-wide">Exercise</span>
-          </button>
-        </div>
-      </div>
+      {/* Minimize → Home, where the resume banner brings you back; the mic;
+          + → the add-exercise field. */}
+      <SessionBar
+        onMinimize={() => {
+          tapHaptic();
+          navigate("/dashboard");
+        }}
+        onAddExercise={() => {
+          tapHaptic();
+          focusAddExercise();
+        }}
+      >
+        <VoiceLogControl
+          exercises={exercises}
+          units={units}
+          onApply={handleVoiceApply}
+          onUndo={handleVoiceUndo}
+          onEdit={handleVoiceEdit}
+          recentSetIds={recentSetIds}
+        />
+      </SessionBar>
 
       {/* ⋯ — the rare actions. Discard lives here, never beside Finish. */}
       <Drawer open={menuOpen} onOpenChange={setMenuOpen}>
@@ -1850,6 +2279,26 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           </DrawerTitle>
           <DrawerDescription className="sr-only">More options for this session.</DrawerDescription>
           <div className="mt-3 space-y-2.5">
+            {focus !== null && removable !== null && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  removeSet(focus.id, removable.set.id);
+                }}
+                className="flex min-h-[64px] w-full items-center justify-between gap-3 rounded-[16px] border border-border bg-card px-5 text-left transition-transform duration-150 active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <span className="min-w-0">
+                  <span className="block text-[15px] font-semibold text-fg">
+                    {removeSetLabel(removable)}
+                  </span>
+                  <span className="mt-0.5 block break-words text-[12px] text-fg-muted">
+                    Takes it off <span className="capitalize">{focus.name}</span>. Logged sets stay.
+                  </span>
+                </span>
+                <Minus size={18} className="shrink-0 text-fg-muted" />
+              </button>
+            )}
             <button
               type="button"
               onClick={discardFromMenu}
@@ -2105,40 +2554,6 @@ const PRCelebrationOverlay = ({
         </CTAButton>
       </div>
     </div>
-  </div>
-);
-
-const RestControls = ({
-  onExtend,
-  onSkip,
-  compact = false,
-}: {
-  onExtend: () => void;
-  onSkip: () => void;
-  compact?: boolean;
-}) => (
-  <div className="flex shrink-0 items-center gap-2">
-    <button
-      type="button"
-      onClick={onExtend}
-      className={cn(
-        "mono rounded-full border border-border bg-secondary font-semibold text-fg-muted transition hover:border-primary/50 hover:text-primary active:bg-primary/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-        compact ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm",
-      )}
-    >
-      +30s
-    </button>
-    <button
-      type="button"
-      onClick={onSkip}
-      aria-label="Skip rest"
-      className={cn(
-        "flex items-center justify-center rounded-full border border-border bg-secondary text-fg-muted transition hover:border-primary/50 hover:text-primary active:bg-primary/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-        compact ? "h-8 w-8" : "h-9 w-9",
-      )}
-    >
-      <SkipForward size={compact ? 13 : 15} />
-    </button>
   </div>
 );
 

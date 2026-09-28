@@ -83,7 +83,10 @@ const MobileTabBar = () => {
     tapHaptic();
     setChooserOpen(false);
     persistActiveSession(buildBlankSession());
-    navigate(ACTIVE_ROUTE);
+    // Already on the session route (the recap, or "No active session"): the
+    // new workout takes that screen's place in history, so Back leaves the
+    // route instead of landing on a second copy of it.
+    navigate(ACTIVE_ROUTE, { replace: pathname === ACTIVE_ROUTE });
   };
 
   const planWorkout = (): void => {
@@ -92,12 +95,13 @@ const MobileTabBar = () => {
     navigate("/workouts?new=1");
   };
 
-  // Mid-workout the logger mounts its own session toolbar (voice, add
-  // exercise, minimize) in this slot — two bars stacked here was the "too
-  // many controls at the bottom" problem. Minimize brings people back to
-  // Home, where the resume banner is the way back in. Only a LIVE session
-  // hides the bar: the post-finish recap and the "no active session"
-  // screen on the same route keep their navigation.
+  // Mid-workout the logger floats its own session bar (minimize, voice,
+  // add exercise) above the home indicator, so the tab bar steps aside —
+  // two bars stacked at the bottom was the "too many controls" problem.
+  // Minimize brings people back to Home, where the resume banner is the
+  // way back in. Only a LIVE session hides the bar: the post-finish recap
+  // and the "no active session" screen on the same route keep their
+  // navigation.
   if (sessionLive && pathname === ACTIVE_ROUTE) return null;
 
   const left = tabs.slice(0, 2);

@@ -581,11 +581,12 @@
 
   /* Scoreboard reveal: the flip into workout mode.
      NO fill mode, and the last keyframe lands on transform:none — this
-     element is the logger's root, and its rest bar, PR banner and voice
-     pill are position:fixed. Any retained transform (even scale(1), which
-     `both` used to leave behind) makes this root their containing block,
-     so they scrolled away with the page instead of pinning to the
-     viewport. Once the reveal ends the root must hold no transform. */
+     element is the logger's root, and anything position:fixed inside it
+     (the PR banner) needs the viewport as its containing block. Any
+     retained transform (even scale(1), which `both` used to leave behind)
+     makes this root that block instead, so fixed children scroll away
+     with the page. Once the reveal ends the root must hold no transform.
+     The session bar and voice receipt portal to body and are unaffected. */
   .scoreboard-reveal {
     animation: liftos-scoreboard-reveal 380ms cubic-bezier(0.3, 0.7, 0.2, 1);
   }

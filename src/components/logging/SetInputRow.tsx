@@ -50,6 +50,10 @@ export type SetInputRowProps = {
   weightHint: number | null;
   /** Renders the quiet warm-up variant: W chip, muted values, no terracotta. */
   isWarmup?: boolean;
+  /** A bodyweight movement (pull-up, push-up): with nothing to suggest, the
+      weight cell reads "BW" instead of a dash — empty means bodyweight,
+      not missing. Added load is still typed straight into it. */
+  bodyweight?: boolean;
   registerRepsRef: (el: HTMLInputElement | null) => void;
   registerWeightRef: (el: HTMLInputElement | null) => void;
   registerDoneRef?: (el: HTMLButtonElement | null) => void;
@@ -71,11 +75,17 @@ export type SetInputRowProps = {
    */
   onWeightValueTap?: (weight: number) => void;
   /**
-   * Drop the done column — the logger's "Now" block renders the current
-   * set's cells under one primary "Complete set" button, so a second
-   * completion control on the same row would be noise.
+   * Drop the done column — the logger's focus card completes the current
+   * set with one primary "Complete set" button, and a re-opened set with a
+   * worded "Mark not done", so a ring on the same row would be a second
+   * control for the same thing.
    */
   hideDone?: boolean;
+  /**
+   * An upcoming set: every cell stays editable, the values just step back
+   * to the muted tier so the current set is the one that reads first.
+   */
+  quiet?: boolean;
 };
 
 /* Both grids spelled out in full so Tailwind's scanner sees them. */
@@ -94,6 +104,7 @@ export const SetInputRow = ({
   repsHint,
   weightHint,
   isWarmup = false,
+  bodyweight = false,
   registerRepsRef,
   registerWeightRef,
   registerDoneRef,
@@ -104,6 +115,7 @@ export const SetInputRow = ({
   onWeightEnter,
   onWeightValueTap,
   hideDone = false,
+  quiet = false,
 }: SetInputRowProps) => {
   const isTimed = effort !== "reps";
   const isCardio = effort === "cardio";
@@ -119,18 +131,24 @@ export const SetInputRow = ({
     isCardio ? formatCardioInput(n) : isTimed ? formatHoldInput(n) : String(n);
   const sanitizeEffort = isTimed ? sanitizeHold : sanitizeReps;
 
+  /** Select the freshly filled value so typing overwrites it. select()
+      also takes focus, so it is skipped once the cursor has moved on —
+      otherwise a quick Enter would be yanked back to this cell. */
+  const selectIfStillFocused = (el: HTMLInputElement): void => {
+    requestAnimationFrame(() => {
+      if (document.activeElement === el) el.select();
+    });
+  };
   const handleRepsClick = (e: MouseEvent<HTMLInputElement>) => {
     if (repsEmpty && repsHint !== null) {
       onRepsChange(formatEffortHint(repsHint));
-      const el = e.currentTarget;
-      requestAnimationFrame(() => el?.select());
+      selectIfStillFocused(e.currentTarget);
     }
   };
   const handleWeightClick = (e: MouseEvent<HTMLInputElement>) => {
     if (weightEmpty && weightHint !== null) {
       onWeightChange(String(weightHint));
-      const el = e.currentTarget;
-      requestAnimationFrame(() => el?.select());
+      selectIfStillFocused(e.currentTarget);
     }
   };
 
@@ -227,7 +245,8 @@ export const SetInputRow = ({
               : `Set ${idx + 1} ${isTimed ? "time" : "reps"}`
           }
           align="center"
-          muted={isWarmup}
+          muted={isWarmup || quiet}
+          compact={quiet}
           logged={logged}
         />
 
@@ -237,7 +256,7 @@ export const SetInputRow = ({
           scoreboard={scoreboard}
           value={weight}
           hint={weightHint}
-          emptyPlaceholder={isTimed && !isCardio ? "BW" : undefined}
+          emptyPlaceholder={(isTimed && !isCardio) || bodyweight ? "BW" : undefined}
           onChange={(v) => onWeightChange(sanitizeWeight(v))}
           onClickEmpty={handleWeightClick}
           onMouseDown={handleWeightMouseDown}
@@ -246,7 +265,8 @@ export const SetInputRow = ({
           ariaLabel={isWarmup ? "Warm-up set weight" : `Set ${idx + 1} weight`}
           align="center"
           suffix={unitsLabel}
-          muted={isWarmup}
+          muted={isWarmup || quiet}
+          compact={quiet}
           logged={logged}
         />
 
@@ -300,8 +320,10 @@ type NumericInputProps = {
   align: "center" | "left";
   suffix?: string;
   transparent?: boolean;
-  /** Warm-up rows: value renders in the muted tier instead of full ink. */
+  /** Warm-up and upcoming rows: value renders in the muted tier instead of full ink. */
   muted?: boolean;
+  /** Upcoming rows: a shorter, lighter cell with smaller numerals. */
+  compact?: boolean;
   /** Logged working set: raspberry-tinted cell, value steps back to soft. */
   logged?: boolean;
 };
@@ -325,6 +347,7 @@ const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
       suffix,
       transparent,
       muted,
+      compact,
       logged,
     },
     ref,
@@ -337,9 +360,12 @@ const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
     return (
       <div
         className={cn(
-          scoreboard ? "relative flex h-12 min-w-0 flex-1 items-center" : "relative flex h-11 min-w-0 flex-1 items-center",
+          scoreboard && !compact
+            ? "relative flex h-12 min-w-0 flex-1 items-center"
+            : "relative flex h-11 min-w-0 flex-1 items-center",
           !transparent && "rounded-[0.875rem] transition-colors",
-          !transparent && (logged ? "bg-primary/[0.08]" : "bg-secondary"),
+          !transparent &&
+            (logged ? "bg-primary/[0.08]" : compact ? "bg-secondary/50" : "bg-secondary"),
           isEmpty && hint !== null && "group/hint",
         )}
       >
@@ -364,9 +390,11 @@ const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
             // within the content box, so uneven padding shoved every value
             // (and the "—"/"BW" placeholder) 10px left of the cell's middle.
             scoreboard
-              ? suffix
-                ? "stat-scoreboard px-7 text-[22px]"
-                : "stat-scoreboard px-2 text-[22px]"
+              ? cn(
+                  "stat-scoreboard",
+                  suffix ? "px-7" : "px-2",
+                  compact ? "text-[18px]" : "text-[22px]",
+                )
               : suffix
                 ? "px-6 text-[15px]"
                 : "px-2 text-[15px]",

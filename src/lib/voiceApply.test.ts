@@ -1022,3 +1022,84 @@ describe("applyVoiceIntent — recency (recentSetIds) beats list order", () => {
     expect(result.summary[0]).toBe("Bicep Curl · corrected to 25 kg × 12 reps");
   });
 });
+
+describe("applyVoiceIntent — cardio is timed by kind", () => {
+  const blank = (id: string, over: Partial<VoiceLoggedExercise["sets"][number]> = {}) =>
+    set({ id, targetReps: null, targetWeight: null, ...over });
+
+  // The shape a hand-added (or seeded) cardio row has: kind, no tracking.
+  const treadmill = (rows: VoiceLoggedExercise["sets"]): VoiceLoggedExercise[] => [
+    { id: "t", name: "Treadmill", kind: "cardio", category: "", target: "", sets: rows },
+  ];
+
+  it("a spoken duration lands as m:ss on a cardio row with no tracking field", () => {
+    const result = applyVoiceIntent(treadmill([blank("t1")]), {
+      kind: "sets",
+      actions: [{ exercise: "Treadmill", sets: [{ seconds: 1230 }] }],
+    });
+    expect(result.exercises[0].sets[0]).toMatchObject({ reps: "20:30", completed: true });
+  });
+
+  it("a second duration still lands once a cardio row is already logged", () => {
+    // Without kind, a completed row blocks the flip to time and the spoken
+    // duration is dropped.
+    const result = applyVoiceIntent(
+      treadmill([blank("t1", { reps: "30", completed: true }), blank("t2")]),
+      { kind: "sets", actions: [{ exercise: "Treadmill", sets: [{ seconds: 600 }] }] },
+    );
+    expect(result.exercises[0].sets[0].reps).toBe("30");
+    expect(result.exercises[0].sets[1]).toMatchObject({ reps: "10:00", completed: true });
+    expect(result.empty).toBe(false);
+  });
+
+  it("corrects a cardio row as a duration even when it was saved with tracking reps", () => {
+    const exercises: VoiceLoggedExercise[] = [
+      {
+        id: "t",
+        name: "Treadmill",
+        kind: "cardio",
+        tracking: "reps",
+        category: "",
+        target: "",
+        sets: [blank("t1", { reps: "30", completed: true })],
+      },
+    ];
+    const result = applyVoiceIntent(
+      exercises,
+      { kind: "sets", actions: [{ exercise: "Treadmill", correct: true, sets: [{ seconds: 1500 }] }] },
+      { recentSetIds: ["t1"] },
+    );
+    expect(result.exercises[0].sets[0]).toMatchObject({ reps: "25:00", completed: true });
+    expect(result.summary[0]).toBe("Treadmill · corrected to 25:00 hold");
+  });
+
+  it("cardio named but not in the session is added as a timed row", () => {
+    const result = applyVoiceIntent(session(), {
+      kind: "sets",
+      actions: [{ exercise: "Treadmill", done: true, sets: [] }],
+    });
+    const added = result.exercises.at(-1)!;
+    expect(added).toMatchObject({ name: "Treadmill", kind: "cardio", tracking: "time" });
+    expect(result.addedExercises).toEqual(["Treadmill"]);
+  });
+
+  it("new cardio with a spoken duration is saved self-describing", () => {
+    const result = applyVoiceIntent(session(), {
+      kind: "sets",
+      actions: [{ exercise: "Stairmaster", isNew: true, sets: [{ seconds: 1230 }] }],
+    });
+    const added = result.exercises.at(-1)!;
+    expect(added).toMatchObject({ name: "Stairmaster", kind: "cardio", tracking: "time" });
+    expect(added.sets[0]).toMatchObject({ reps: "20:30", completed: true });
+  });
+
+  it("a lift added by name stays a reps exercise", () => {
+    const result = applyVoiceIntent(session(), {
+      kind: "sets",
+      actions: [{ exercise: "Goblet Squat", done: true, sets: [] }],
+    });
+    const added = result.exercises.at(-1)!;
+    expect(added.kind).toBe("weighted");
+    expect(added.tracking).toBeUndefined();
+  });
+});

@@ -50,6 +50,30 @@ describe("trackingFor", () => {
     expect(trackingFor({ name: "Bench Press", tracking: "time" })).toBe("time");
     expect(trackingFor({ name: "Plank" })).toBe("time");
   });
+
+  it("cardio is timed with no tracking set — the hand-added Treadmill", () => {
+    expect(trackingFor({ name: "Treadmill", kind: "cardio" })).toBe("time");
+    expect(trackingFor({ name: "Stairmaster", kind: "cardio" })).toBe("time");
+  });
+
+  it("cardio is timed even against an explicit reps — logs saved that way must repeat as cardio", () => {
+    expect(trackingFor({ name: "Treadmill", kind: "cardio", tracking: "reps" })).toBe("time");
+  });
+
+  it("kind only decides for cardio", () => {
+    expect(trackingFor({ name: "Bench Press", kind: "weighted" })).toBe("reps");
+    expect(trackingFor({ name: "Pull Up", kind: "bodyweight" })).toBe("reps");
+    expect(trackingFor({ name: "Plank", kind: "bodyweight" })).toBe("time");
+    expect(trackingFor({ name: "Plank", kind: "bodyweight", tracking: "reps" })).toBe("reps");
+    expect(trackingFor({ name: "Bench Press", kind: null })).toBe("reps");
+  });
+
+  it("a cardio NAME alone does not make a hold — the rule is keyed on kind", () => {
+    // Bare digits mean minutes for cardio and seconds for holds; adding
+    // cardio names to the timed-name list would read "30" as 30 seconds.
+    expect(inferTracking("Treadmill")).toBe("reps");
+    expect(trackingFor({ name: "Treadmill" })).toBe("reps");
+  });
 });
 
 describe("parseHoldSeconds", () => {

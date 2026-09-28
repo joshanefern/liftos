@@ -453,13 +453,15 @@ export const applyVoiceIntent = (
       // swallowed — the lifter fills in the numbers.
       const name = action.exercise.trim();
       if (!name) continue;
-      const timed = (action.tracking ?? inferTracking(name)) === "time";
+      const kind = inferKind(name);
+      // Cardio is timed by kind (see trackingFor) — the row says so itself.
+      const timed = kind === "cardio" || (action.tracking ?? inferTracking(name)) === "time";
       next = [
         ...next,
         {
           id: freshId("exercise"),
           name,
-          kind: inferKind(name),
+          kind,
           ...(timed ? { tracking: "time" as const } : {}),
           category: "",
           target: "",
@@ -479,7 +481,10 @@ export const applyVoiceIntent = (
       // reinterpretation rewrote history), and a blocked flip means timed
       // writes are unrepresentable — those spoken sets are skipped, not
       // wedged into a reps-parsed column as m:ss.
-      const alreadyTimed = (existing.tracking ?? "reps") === "time";
+      // Cardio counts as timed whatever its tracking field says (see
+      // trackingFor): its effort column holds a duration.
+      const alreadyTimed =
+        existing.kind === "cardio" || (existing.tracking ?? "reps") === "time";
       const wantsTimed =
         (action.tracking ?? existing.tracking ?? "reps") === "time" ||
         spokenSets.every((s) => sane(s.seconds, MAX_SECONDS) !== null && s.reps == null);
@@ -531,11 +536,12 @@ export const applyVoiceIntent = (
       spokenSets.every((s) => sane(s.seconds, MAX_SECONDS) !== null && s.reps == null);
     const name = action.exercise.trim();
     if (!name) continue;
+    const kind = inferKind(name);
     const newExercise: VoiceLoggedExercise = {
       id: freshId("exercise"),
       name,
-      kind: inferKind(name),
-      ...(timed ? { tracking: "time" as const } : {}),
+      kind,
+      ...(timed || kind === "cardio" ? { tracking: "time" as const } : {}),
       category: "",
       target: "",
       sets: spokenSets.map((spoken) => writeSet(emptySet(), spoken, timed)),

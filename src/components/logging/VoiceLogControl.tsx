@@ -15,12 +15,10 @@ import {
 import { interpretUtterance } from "@/lib/voice";
 import { chooseTranscript, longerOf } from "@/lib/voiceTranscript";
 import { tapHaptic, successHaptic } from "@/lib/haptics";
-import {
-  applyVoiceIntent,
-  type VoiceApplyResult,
-  type VoiceLoggedExercise,
-} from "@/lib/voiceApply";
+import type { VoiceApplyResult, VoiceIntent, VoiceLoggedExercise } from "@/lib/voiceApply";
+import { resolveVoiceFire, type AppliedVoiceLog } from "@/lib/voiceSupersede";
 import { cn } from "@/lib/utils";
+import { ABOVE_SESSION_BAR } from "@/components/logging/sessionBarLayout";
 
 /* ── Tap-to-speak voice logging.
    Tap the pill → live transcript streams into the receipt card. A pause
@@ -29,8 +27,8 @@ import { cn } from "@/lib/utils";
    always ends in a visible card — never a silent vanish. All row mutations
    run through lib/voiceApply — the model never touches state directly.
 
-   The pill renders INLINE (the logger seats it in its session toolbar);
-   only the receipt card is portalled, fixed above that toolbar. ── */
+   The pill renders INLINE (the logger seats it in its floating session
+   bar); only the receipt card is portalled, fixed above that bar. ── */
 
 type Props = {
   exercises: VoiceLoggedExercise[];
@@ -40,8 +38,6 @@ type Props = {
   /** "Edit" on the receipt: the card closes and the logger jumps to the
       first row the apply touched. */
   onEdit?: (result: VoiceApplyResult) => void;
-  /** The rest bar is up in the slot above the toolbar — lift the card over it. */
-  raised?: boolean;
   /** Set ids the lifter completed most recently, MOST RECENT FIRST, by any
       path — "that was 12" / "scratch that" rewrite the LAST logged set, and
       the rows carry no timestamps, so this is how lib/voiceApply finds it. */
@@ -50,9 +46,9 @@ type Props = {
 
 // Jarvis-style endpointing: a SHORT pause fires the log right away, but
 // the mic stays open for a grace window — speech that resumes inside it is
-// the same utterance ("3 sets of squats … [pause] … at 225"): the first
-// apply is undone and the merged sentence is re-interpreted. Fast when
-// you're done, forgiving when you're thinking.
+// the same utterance ("3 sets of squats … [pause] … at 225"): the merged
+// sentence is re-interpreted and, once understood, takes the first log's
+// place. Fast when you're done, forgiving when you're thinking.
 const SILENCE_FIRE_MS = 1700; // pause after speech → log it (mic stays open)
 const LATE_GRACE_MS = 6000; // more speech inside this window supersedes
 const EMPTY_CANCEL_MS = 8000; // heard nothing at all → quiet cancel
@@ -68,7 +64,8 @@ type Phase =
   | { at: "listening"; partial: string }
   | { at: "thinking"; transcript: string }
   | { at: "applied"; result: VoiceApplyResult }
-  | { at: "missed"; transcript: string };
+  /** `kept`: what was missed is an addition to a log that still stands. */
+  | { at: "missed"; transcript: string; kept?: boolean };
 
 /** Native start failures, named on screen — a dead tap taught us that any
     silent failure path reads as "voice is broken". */
@@ -146,7 +143,6 @@ export const VoiceLogControl = ({
   onApply,
   onUndo,
   onEdit,
-  raised = false,
   recentSetIds,
 }: Props) => {
   // DEV preview: `localStorage.liftos-voice-dev-phase = "applied"` mounts
@@ -184,11 +180,13 @@ export const VoiceLogControl = ({
   // Longest partial this session — the truth when iOS ends with a fragment.
   const longestTranscript = useRef("");
   // Fire bookkeeping: what was last interpreted, when, and which fire's
-  // result is currently applied (undoable) — the grace window supersedes it.
+  // result is currently applied (undoable) — the grace window supersedes
+  // it. The applied fire keeps the session before and after it, which is
+  // what a superseding sentence is worked out against.
   const firedTranscript = useRef("");
   const firedAt = useRef(0);
   const fireSeq = useRef(0);
-  const appliedFire = useRef<number | null>(null);
+  const appliedFire = useRef<(AppliedVoiceLog & { seq: number }) | null>(null);
   // The freshest exercises (and recency list) without re-binding handlers
   // every render — the watchdog's closure is the one that fires.
   const exercisesRef = useRef(exercises);
@@ -361,28 +359,27 @@ export const VoiceLogControl = ({
   };
 
   /** Interpret + apply one transcript. A fire that follows an applied one
-      inside the grace window undoes it first — the merged sentence is the
-      truth, never two half-logs. Stale results (a newer fire started) are
+      inside the grace window REPLACES it — the merged sentence is the
+      truth, never two half-logs — but only once it has been understood:
+      until then, and if it is not, the first log stands exactly as it was
+      (lib/voiceSupersede). Stale results (a newer fire started) are
       dropped. */
   const fire = async (transcript: string, gen = sessionGen.current): Promise<void> => {
     const seq = ++fireSeq.current;
     firedTranscript.current = transcript;
     firedAt.current = Date.now();
-    if (appliedFire.current !== null) {
-      voiceDiag(`fire #${seq}: superseding fire #${appliedFire.current} (undo)`);
-      onUndo();
-      appliedFire.current = null;
-    }
     setPhase({ at: "thinking", transcript });
+    let intent: VoiceIntent | null = null;
     try {
       // Hard ceiling so "Logging…" always resolves to a visible card even
       // when the edge function hangs.
-      const intent = await Promise.race([
+      intent = await Promise.race([
         interpretUtterance(
           transcript,
           exercisesRef.current.map((e) => ({
             name: e.name,
-            tracking: (e.tracking ?? "reps") as "reps" | "time",
+            // Cardio is timed by kind, with or without a tracking field.
+            tracking: e.kind === "cardio" ? "time" : ((e.tracking ?? "reps") as "reps" | "time"),
           })),
           units,
         ),
@@ -390,39 +387,50 @@ export const VoiceLogControl = ({
           window.setTimeout(() => reject(new Error("voice interpret timeout")), 15_000),
         ),
       ]);
-      if (gen !== sessionGen.current || seq !== fireSeq.current) return; // superseded
-      // Low-confidence interpretations don't auto-apply — a garbled
-      // half-sentence writing sets into the log is worse than a re-ask.
-      if ((intent.confidence ?? 1) < 0.5) {
-        setPhase({ at: "missed", transcript });
-        if (!activeRef.current) scheduleDismiss(6000);
-        return;
-      }
-      voiceDiag(`intent kind=${intent.kind} confidence=${intent.confidence ?? "?"} actions=${intent.actions?.length ?? 0}`);
-      // Receipt lines spell the lifter's unit ("kg" must never read "lb"),
-      // and corrections need to know which row was logged last. Passed as
-      // a variable, not a literal: an option key lib/voiceApply hasn't
-      // adopted yet is then harmless rather than a type error.
-      const applyOptions = { units, recentSetIds: recentSetIdsRef.current ?? [] };
-      const result = applyVoiceIntent(exercisesRef.current, intent, applyOptions);
-      if (result.empty) {
-        setPhase({ at: "missed", transcript });
-        if (!activeRef.current) scheduleDismiss(6000);
-        return;
-      }
-      onApply(result);
-      appliedFire.current = seq;
-      successHaptic();
-      setPhase({ at: "applied", result });
-      // While the mic is still open the card stays for the grace window;
-      // once closed it lives its usual 8s.
-      if (!activeRef.current) scheduleDismiss(8000);
     } catch (err) {
       voiceDiag(`interpret FAILED: ${err instanceof Error ? err.message : String(err)}`);
-      if (gen !== sessionGen.current || seq !== fireSeq.current) return;
-      setPhase({ at: "missed", transcript });
-      if (!activeRef.current) scheduleDismiss(6000);
     }
+    if (gen !== sessionGen.current || seq !== fireSeq.current) return; // superseded
+    if (intent) {
+      voiceDiag(`intent kind=${intent.kind} confidence=${intent.confidence ?? "?"} actions=${intent.actions?.length ?? 0}`);
+    }
+    const first = appliedFire.current;
+    let outcome: ReturnType<typeof resolveVoiceFire>;
+    try {
+      outcome = resolveVoiceFire({
+        now: exercisesRef.current,
+        intent,
+        first,
+        // Receipt lines spell the lifter's unit ("kg" must never read
+        // "lb"), and corrections need to know which row was logged last.
+        options: { units, recentSetIds: recentSetIdsRef.current ?? [] },
+      });
+    } catch (err) {
+      voiceDiag(`apply FAILED: ${err instanceof Error ? err.message : String(err)}`);
+      outcome = { at: "missed", firstLogKept: first !== null };
+    }
+    // Low-confidence, failed and empty interpretations don't apply — a
+    // garbled half-sentence writing sets into the log is worse than a
+    // re-ask, and it never costs the lifter the log they already saw.
+    if (outcome.at === "missed") {
+      if (first) voiceDiag(`fire #${seq}: not understood — fire #${first.seq} stands`);
+      setPhase({ at: "missed", transcript, kept: outcome.firstLogKept });
+      if (!activeRef.current) scheduleDismiss(6000);
+      return;
+    }
+    if (first && outcome.replacesFirst) {
+      voiceDiag(`fire #${seq}: superseding fire #${first.seq} (undo)`);
+      onUndo();
+    } else if (first) {
+      voiceDiag(`fire #${seq}: amending fire #${first.seq}`);
+    }
+    onApply(outcome.result);
+    appliedFire.current = { seq, before: outcome.base, after: outcome.result.exercises };
+    successHaptic();
+    setPhase({ at: "applied", result: outcome.result });
+    // While the mic is still open the card stays for the grace window;
+    // once closed it lives its usual 8s.
+    if (!activeRef.current) scheduleDismiss(8000);
   };
 
   const cancel = (): void => {
@@ -491,17 +499,15 @@ export const VoiceLogControl = ({
   return (
     <>
       {createPortal(
-        // Voice receipt — one card for every phase, fixed in the slot above
-        // the session toolbar (over the rest bar when that's up). A leading
-        // state mark, structured rows, and (after a log) Edit + Undo with a
-        // window that visibly drains. Never full-bleed.
+        // Voice receipt — one card for every phase, fixed just above the
+        // floating session bar. A leading state mark, structured rows, and
+        // (after a log) Edit + Undo with a window that visibly drains.
+        // Never full-bleed.
         phase.at !== "idle" ? (
           <div
             className={cn(
               "pointer-events-none fixed inset-x-5 z-40 flex justify-center",
-              raised
-                ? "bottom-[calc(4rem+var(--safe-bottom)+6rem)] md:bottom-[11.5rem]"
-                : "bottom-[calc(4rem+var(--safe-bottom)+0.75rem)] md:bottom-[6.25rem]",
+              ABOVE_SESSION_BAR,
             )}
           >
             <div
@@ -634,12 +640,18 @@ export const VoiceLogControl = ({
                     {phase.at === "missed" && (
                       <>
                         <p className="text-[14px] font-semibold leading-5 text-fg">
-                          {phase.transcript ? "Didn’t catch that" : "Didn’t hear anything"}
+                          {phase.kept
+                            ? "Didn’t catch the last part"
+                            : phase.transcript
+                              ? "Didn’t catch that"
+                              : "Didn’t hear anything"}
                         </p>
                         <p className="mt-0.5 text-[12.5px] leading-[18px] text-fg-muted">
-                          {phase.transcript
-                            ? `“${phase.transcript}” — try “3 sets of 8 at 185 on bench” or “note: shoulder felt tight”.`
-                            : "Check the mic is on, then tap and try again."}
+                          {phase.kept
+                            ? `“${phase.transcript}” — what you logged first is unchanged. Say the change again.`
+                            : phase.transcript
+                              ? `“${phase.transcript}” — try “3 sets of 8 at 185 on bench” or “note: shoulder felt tight”.`
+                              : "Check the mic is on, then tap and try again."}
                         </p>
                       </>
                     )}
@@ -660,21 +672,26 @@ export const VoiceLogControl = ({
         document.body,
       )}
 
-      {/* The pill — tap to talk. Inline: the toolbar owns its position. */}
+      {/* The pill — tap to talk. Inline: the session bar owns its position.
+          Its width never follows the label, so the bar keeps its size when
+          the label changes: 10rem wherever that fits, and on a 320pt
+          screen whatever the bar has left after the two side buttons
+          (which keep their full targets) — with tighter padding there, so
+          the longer "Tap when done" still has room. */}
       <button
         type="button"
         onClick={() => (activeRef.current ? void finish() : void begin())}
         onContextMenu={(e) => e.preventDefault()}
         aria-label={listening ? "Stop and log" : "Log by voice"}
         className={cn(
-          "inline-flex min-h-12 w-full min-w-0 select-none items-center justify-center gap-2 rounded-full px-4 text-[14px] font-semibold transition-[transform,background-color] duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          "inline-flex h-12 w-40 min-w-0 shrink select-none items-center justify-center gap-2 whitespace-nowrap rounded-full px-3 text-[14px] font-semibold transition-[transform,background-color] duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-[359px]:gap-1.5 max-[359px]:px-2",
           listening
             ? "bg-primary text-primary-foreground"
-            : "border border-border bg-card text-fg active:scale-[0.98]",
+            : "border border-border bg-background text-fg active:scale-[0.98]",
         )}
       >
         <Mic size={16} className={listening ? "shrink-0 animate-pulse" : "shrink-0 text-primary"} />
-        <span className="truncate">{listening ? "Tap when done" : "Tap to speak"}</span>
+        <span>{listening ? "Tap when done" : "Tap to speak"}</span>
       </button>
     </>
   );

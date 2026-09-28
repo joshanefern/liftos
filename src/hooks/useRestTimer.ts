@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { Haptics } from "@capacitor/haptics";
 import { warnHaptic } from "@/lib/haptics";
+import { restoredRest, type RestWindow } from "@/lib/sessionResume";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const DEFAULT_REST_SECONDS = 120;
@@ -24,16 +25,25 @@ const buzzOnFinish = async (): Promise<void> => {
  * stay accurate — the interval only refreshes the display.
  *
  * `start()` while already running restarts the countdown from full.
+ * `resume(rest)` picks a countdown up part-way, from its end time.
  * `onFinish` fires once when the countdown reaches zero (not on skip).
+ *
+ * `initial` is a rest that was running when the screen was last unmounted
+ * (read once, on mount). Only one that is still running is taken up — an
+ * ended one would fire `onFinish` and the buzz the moment the screen opens.
  */
 export const useRestTimer = (
   defaultSeconds: number = DEFAULT_REST_SECONDS,
   onFinish?: () => void,
+  initial?: RestWindow | null,
 ) => {
+  const [restored] = useState(() => restoredRest(initial, Date.now()));
   /** Epoch ms when the current rest ends; null = not running. */
-  const [endsAt, setEndsAt] = useState<number | null>(null);
-  const [totalSeconds, setTotalSeconds] = useState(defaultSeconds);
-  const [remaining, setRemaining] = useState(defaultSeconds);
+  const [endsAt, setEndsAt] = useState<number | null>(restored?.endsAt ?? null);
+  const [totalSeconds, setTotalSeconds] = useState(restored?.totalSeconds ?? defaultSeconds);
+  const [remaining, setRemaining] = useState(() =>
+    restored ? Math.ceil((restored.endsAt - Date.now()) / 1000) : defaultSeconds,
+  );
   const onFinishRef = useRef(onFinish);
   onFinishRef.current = onFinish;
 
@@ -42,6 +52,12 @@ export const useRestTimer = (
     setRemaining(defaultSeconds);
     setEndsAt(Date.now() + defaultSeconds * 1000);
   }, [defaultSeconds]);
+
+  const resume = useCallback((rest: RestWindow) => {
+    setTotalSeconds(rest.totalSeconds);
+    setRemaining(Math.max(0, Math.ceil((rest.endsAt - Date.now()) / 1000)));
+    setEndsAt(rest.endsAt);
+  }, []);
 
   const extend = useCallback((seconds: number) => {
     setTotalSeconds((t) => t + seconds);
@@ -82,11 +98,15 @@ export const useRestTimer = (
 
   return {
     running: endsAt !== null,
+    /** Epoch ms when the rest ends (null = not running) — what a caller
+        saves to bring the countdown back later. */
+    endsAt,
     remaining,
     totalSeconds,
     /** 0..1 fraction of the rest period still left (for progress bars). */
     progress: totalSeconds > 0 ? remaining / totalSeconds : 0,
     start,
+    resume,
     extend,
     skip,
   };

@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-route
 import { Capacitor } from "@capacitor/core";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { createContext, lazy, Suspense, useContext, useEffect, useState } from "react";
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { UserProvider } from "@/context/UserContext";
 import { HealthKitAutoSync } from "@/hooks/useHealthKitAutoSync";
 import { ThemeProvider } from "@/context/ThemeContext";
@@ -16,6 +16,7 @@ import { WorkoutTemplatesProvider } from "@/hooks/useWorkoutTemplates";
 import AppSidebar from "@/components/AppSidebar";
 import MobileTabBar from "@/components/MobileTabBar";
 import { FitnessBackground } from "@/components/FitnessBackground";
+import { ACTIVE_WORKOUT_STORAGE_KEY } from "@/lib/startSession";
 import Landing from "@/pages/Landing";
 import RequireAuth from "@/components/RequireAuth";
 
@@ -42,7 +43,7 @@ const Terms = lazy(() => import("@/pages/Terms"));
 const BootSplash = () => (
   <div className="flex min-h-screen items-center justify-center bg-background">
     <p className="animate-pulse text-[13px] font-semibold tracking-[0.28em] text-foreground/80">
-      LIFT<span className="text-gold">OS</span>
+      LIFT<span className="text-primary">OS</span>
     </p>
   </div>
 );
@@ -78,8 +79,8 @@ const AppShell = ({ children }: { children: React.ReactNode }) => {
   // The live logging screen stays maximally quiet: not even the grain
   // texture (dark-gym legibility at arm's length, zero distraction). It
   // also skips the page-enter wrapper: the logger owns its own scoreboard
-  // reveal, and its voice pill / rest bar are position:fixed — a wrapper
-  // mid-transform would anchor them to itself instead of the viewport.
+  // reveal, and anything position:fixed inside it (the PR banner) would
+  // anchor to a wrapper mid-transform instead of the viewport.
   const isActiveWorkout = pathname === "/workouts/active";
   const page = <Suspense fallback={<BootSplash />}>{children}</Suspense>;
   return (
@@ -87,8 +88,11 @@ const AppShell = ({ children }: { children: React.ReactNode }) => {
       {!isActiveWorkout && <FitnessBackground />}
       <AppSidebar />
       <MobileTabBar />
+      {/* min-w-0: a flex item will not shrink below its content's width by
+          default, so one long unbroken line (a workout name) would lay the
+          whole page out wider than the phone instead of truncating. */}
       <main
-        className={`flex-1 transition-all duration-300 ease-out pt-safe pb-[calc(4rem+var(--safe-bottom))] md:pb-0 ${
+        className={`min-w-0 flex-1 transition-all duration-300 ease-out pt-safe pb-[calc(4rem+var(--safe-bottom))] md:pb-0 ${
           collapsed ? "md:ml-[68px]" : "md:ml-[220px]"
         }`}
       >
@@ -102,6 +106,54 @@ const AppShell = ({ children }: { children: React.ReactNode }) => {
       </main>
     </div>
   );
+};
+
+/** Start time of the session waiting in storage — what tells one session
+    from the next. Null when nothing is waiting. */
+const storedSessionStart = (): string | null => {
+  try {
+    const saved = window.localStorage.getItem(ACTIVE_WORKOUT_STORAGE_KEY);
+    if (!saved) return null;
+    const { startedAt } = JSON.parse(saved) as { startedAt?: unknown };
+    return typeof startedAt === "string" ? startedAt : null;
+  } catch {
+    return null; // storage unavailable or unreadable — treat as no session
+  }
+};
+
+/* /workouts/active is one route for every session. Starting a workout from
+   a screen that is already on it (Quick start from the recap, or from "No
+   active session") navigates to the path being shown, and React would keep
+   the old screen. The page is keyed on the stored session's start time, so
+   it remounts for a NEW session and for nothing else: a repeat navigation
+   mid-workout keeps the logger's state, and once Finish has cleared the
+   seed the key holds its last value.
+
+   The element is memoized per session because the page reads its seed from
+   storage as it renders. Rendered again under the recap, where the seed is
+   already cleared, it would find no session and swap the recap for "No
+   active session" — and anything that re-renders the routes does that
+   (collapsing the sidebar, a second history entry on this path). */
+const ActiveWorkoutRoute = () => {
+  useLocation(); // re-render on every navigation, this same path included
+  const stored = storedSessionStart();
+  const [sessionKey, setSessionKey] = useState(stored);
+  if (stored !== null && stored !== sessionKey) setSessionKey(stored);
+  // ScrollToTop follows the path, which did not change: without this a
+  // session started from a scrolled recap opens with its header off-screen.
+  // Only for a session that REPLACES one on screen — on first mount (opening
+  // or resuming a workout) ScrollToTop has already run, and this effect fires
+  // after the logger's own, so scrolling here would undo the scroll that
+  // keeps the current set clear of the session bar.
+  const replaced = useRef(false);
+  useEffect(() => {
+    if (!replaced.current) {
+      replaced.current = true;
+      return;
+    }
+    window.scrollTo(0, 0);
+  }, [sessionKey]);
+  return useMemo(() => <ActiveWorkout key={sessionKey ?? "none"} />, [sessionKey]);
 };
 
 /* WKWebView keeps the window's scroll offset across route swaps, so a page
@@ -151,7 +203,7 @@ const App = () => {
               />
               <Route
                 path="/workouts/active"
-                element={<RequireAuth><AppShell><ActiveWorkout /></AppShell></RequireAuth>}
+                element={<RequireAuth><AppShell><ActiveWorkoutRoute /></AppShell></RequireAuth>}
               />
               <Route
                 path="/workouts/review/:id"

@@ -38,7 +38,9 @@ const effortSeconds = (s: DoneSetLike, cardio: boolean): number => {
   if (typeof s.reps === "string") {
     return (cardio ? parseCardioSeconds(s.reps) : parseHoldSeconds(s.reps)) ?? 0;
   }
-  return Math.round(num(s.reps));
+  // A saved cardio row with a rep count and no duration was logged while
+  // cardio still saved as reps: that number is the minutes that were typed.
+  return Math.round(num(s.reps)) * (cardio ? 60 : 1);
 };
 
 let idCounter = 0;
