@@ -4,12 +4,24 @@ import { useUser } from "@/context/UserContext";
 import { starterPrograms } from "@/data/starterPrograms";
 import { useDayKey } from "@/hooks/useDayKey";
 import { useWorkoutLogs } from "@/hooks/useWorkoutLogs";
-import { TEMPLATE_LIMIT_ERROR, useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { MAX_TEMPLATES, TEMPLATE_LIMIT_ERROR, useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { templateLimitNotice } from "@/lib/templateLimit";
 import { extractWorkoutPlan, planToTemplateExercises } from "@/lib/coachPlan";
+import {
+  coachHistoryState,
+  coachStarters,
+  countRecentLogs,
+  isVoiceHelpQuestion,
+  recentWorkoutsForCoach,
+  voiceLoggingAnswer,
+  type CoachStarter,
+} from "@/lib/coachStarters";
+import { speechSupported } from "@/lib/speech";
 import { toast } from "@/components/ui/use-toast";
 import { suggestNextWorkout } from "@/lib/suggestion";
 import {
   buildCoachContext,
+  coachContextWithoutHistory,
   COACH_TONES,
   CoachOfflineError,
   getCoachTone,
@@ -54,24 +66,13 @@ const compactNum = (n: number): string =>
     ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`
     : n.toLocaleString();
 
-/** Four ways into a blank chat. Each lands in the composer as a draft —
-    sent as-is or edited — so the first message never starts from nothing.
-    They're things a training partner actually gets asked, not questions
-    that need the user to already know what to say. */
-const STARTING_POINTS = [
-  "Adjust today's workout",
-  "I only have 30 minutes",
-  "Find a replacement for an exercise",
-  "Review my last week",
-] as const;
-
 /** Honest failure state — user-facing, with a retry. The deploy hint is
     developer noise and only renders in dev builds. */
 const OfflineNotice = ({ onRetry }: { onRetry?: () => void }) => (
   <div className="w-full rule-hairline pt-4 animate-fade-in">
     <div className="mb-2 flex items-center gap-2.5">
       <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border">
-        <CloudOff size={11} className="text-gold" />
+        <CloudOff size={11} className="text-primary" />
       </div>
       <span className="eyebrow !text-[10px]">
         Coach unavailable
@@ -92,8 +93,8 @@ const OfflineNotice = ({ onRetry }: { onRetry?: () => void }) => (
     )}
     {import.meta.env.DEV && (
       <p className="mt-2 text-xs leading-5 text-fg-muted">
-        Dev: deploy the <span className="mono text-gold">coach</span> Edge
-        Function and set <span className="mono text-gold">ANTHROPIC_API_KEY</span>.
+        Dev: deploy the <span className="mono text-primary">coach</span> Edge
+        Function and set <span className="mono text-primary">ANTHROPIC_API_KEY</span>.
       </p>
     )}
   </div>
@@ -101,8 +102,18 @@ const OfflineNotice = ({ onRetry }: { onRetry?: () => void }) => (
 
 const Coach = () => {
   const { profile } = useUser();
-  const { logs } = useWorkoutLogs();
-  const { templates, save: saveTemplate } = useWorkoutTemplates();
+  const {
+    logs,
+    loading: logsLoading,
+    loadFailed: logsLoadFailed,
+    reload: reloadLogs,
+  } = useWorkoutLogs();
+  const {
+    templates,
+    save: saveTemplate,
+    loading: templatesLoading,
+    loadFailed: templatesLoadFailed,
+  } = useWorkoutTemplates();
   // Coach replies that read as a workout ("Bench 3×8 @ 185"…) grow a
   // one-tap save into My Workouts. Keyed by message index for this chat.
   const [savedPlanAt, setSavedPlanAt] = useState<Set<number>>(new Set());
@@ -112,7 +123,7 @@ const Coach = () => {
     const plan = extractWorkoutPlan(content);
     if (plan.length < 2) return;
     setSavingPlanAt(index);
-    const name = `Coach plan · ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+    const name = `Coach workout · ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
     try {
       await saveTemplate({ id: null, name, exercises: planToTemplateExercises(plan, name) });
       setSavedPlanAt((current) => new Set(current).add(index));
@@ -120,11 +131,8 @@ const Coach = () => {
     } catch (err) {
       toast(
         err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR
-          ? {
-              title: "Workout limit reached",
-              description: "You have 7 saved workouts — the max. Delete one in Workouts to make room.",
-            }
-          : { title: "Could not save the plan", variant: "destructive" },
+          ? { ...templateLimitNotice(MAX_TEMPLATES), variant: "destructive" }
+          : { title: "Could not save workout", variant: "destructive" },
       );
     } finally {
       setSavingPlanAt(null);
@@ -197,16 +205,65 @@ const Coach = () => {
     [logs, templates, profile, dayKey],
   );
 
+  // recent_workouts rides along with the computed stats: those are totals,
+  // and a review of "my last week" or "my last workout" needs the workouts
+  // themselves. The coach function passes every context field to the model.
   const context = useMemo(
-    () => buildCoachContext(logs, profile, hrDetailSessions, suggestion),
-    [logs, profile, hrDetailSessions, suggestion],
+    () =>
+      ({
+        ...buildCoachContext(logs, profile, hrDetailSessions, suggestion),
+        recent_workouts: recentWorkoutsForCoach(logs, units),
+      }) as ReturnType<typeof buildCoachContext>,
+    [logs, profile, hrDetailSessions, suggestion, units],
   );
+
+  /* ── Starting points follow the data. An empty list is a new account
+       only once its load has finished and succeeded — until then the chips
+       wait, so a returning lifter never sees a first-day set flash by, and
+       a failed load is never read as "nothing logged". Workouts already
+       held stay usable through a reload and through a failed one
+       (coachHistoryState). ── */
+  const { logsKnown, noHistory, logsUnavailable, startersKnown } = coachHistoryState({
+    logs: logs.length,
+    logsLoading,
+    logsLoadFailed,
+    savedWorkouts: templates.length,
+    savedLoading: templatesLoading,
+    savedLoadFailed: templatesLoadFailed,
+  });
+  const starters = useMemo<CoachStarter[]>(
+    () =>
+      startersKnown
+        ? coachStarters({
+            totalLogs: logs.length,
+            logsLast7Days: countRecentLogs(logs),
+            savedWorkouts: templates.length,
+            hasWorkoutToday: suggestion.kind !== "rest",
+          })
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [startersKnown, logs, templates.length, suggestion.kind, dayKey],
+  );
+
+  // A retry can take several seconds to fail (the client backs off and
+  // tries again on its own), so the button holds a busy state and ignores
+  // taps until the attempt settles.
+  const [reloadingLogs, setReloadingLogs] = useState(false);
+  const retryLogs = async (): Promise<void> => {
+    if (reloadingLogs) return;
+    setReloadingLogs(true);
+    try {
+      await reloadLogs();
+    } finally {
+      setReloadingLogs(false);
+    }
+  };
 
   useEffect(() => {
     if (started) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, started, offline]);
 
-  // A starting-point chip drafts, never sends: the sentence lands in the
+  // A training chip drafts, never sends: the sentence lands in the
   // composer with the caret at its end. focus() runs inside the tap so iOS
   // raises the keyboard; the height fix waits a frame for React to commit
   // the new value.
@@ -223,8 +280,28 @@ const Coach = () => {
     });
   };
 
+  // How voice logging works is a question about this app, which the coach
+  // model has never seen — it would invent an answer. The reply is written
+  // here and no request is made.
+  const answerVoiceHelp = (question: string): void => {
+    if (streaming) return;
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: question },
+      { role: "assistant", content: voiceLoggingAnswer({ available: speechSupported() }) },
+    ]);
+    setStarted(true);
+    setOffline(false);
+    setInput("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+  };
+
   const sendPrompt = async (prompt: string) => {
     if (streaming) return;
+    if (isVoiceHelpQuestion(prompt)) {
+      answerVoiceHelp(prompt);
+      return;
+    }
     const history: ChatMessage[] = [...messages, { role: "user", content: prompt }];
     setMessages([...history, { role: "assistant", content: "" }]);
     setStarted(true);
@@ -234,7 +311,10 @@ const Coach = () => {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     try {
-      const full = await streamCoach(history, context, (delta) => {
+      // Figures computed from a history that is not in hand are all zeros,
+      // and the model would read them as "nothing logged".
+      const sent = logsKnown ? context : coachContextWithoutHistory(context);
+      const full = await streamCoach(history, sent, (delta) => {
         setMessages((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
@@ -295,37 +375,68 @@ const Coach = () => {
   /* ── What the coach sees — collapsed to one quiet row of chips.
        w-0 + min-w-full zeroes the row's intrinsic width so long chips
        scroll inside the strip instead of stretching the page; `safe
-       center` keeps it centered whenever it fits. ── */
-  const contextStrip = (
-    <div className="mb-3 flex justify-center">
+       center` keeps it centered whenever it fits. With nothing logged
+       there are no statistics to show, only zeros — one sentence says
+       where the coach stands instead. The same goes for a week with no
+       workout in it yet, and for a history that maps to no muscle. A
+       history that could not be loaded says so and offers the retry. ── */
+  const contextStrip = logsUnavailable ? (
+    <div className="mb-3 animate-fade-in">
+      <p className="text-[12.5px] leading-5 text-fg-muted">
+        Your workouts could not be loaded. Check your connection, then try again.
+      </p>
+      <button
+        type="button"
+        onClick={() => void retryLogs()}
+        disabled={reloadingLogs}
+        aria-busy={reloadingLogs}
+        className="mt-4 inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-[13px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-60"
+      >
+        {reloadingLogs ? "Trying again…" : "Try again"}
+      </button>
+    </div>
+  ) : !logsKnown ? null : noHistory ? (
+    <p className="mb-3 text-[12.5px] leading-5 text-fg-muted animate-fade-in">
+      {profile?.goal
+        ? "No workouts logged yet. I'll start from your goals."
+        : "No workouts logged yet. Tell me what you want to train for."}
+    </p>
+  ) : (
+    <div className="mb-3 flex justify-center animate-fade-in">
       <div className="flex w-0 min-w-full flex-nowrap gap-2 overflow-x-auto [justify-content:safe_center]">
         <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-3 py-1.5 text-[11px] text-fg-soft">
-          <BarChart3 size={11} className="text-gold" />
-          <span className="mono">{context.week_stats.sessions}</span>
-          <span className="text-fg-muted">
-            session{context.week_stats.sessions === 1 ? "" : "s"} ·
-          </span>
-          <span className="mono">{compactNum(context.week_stats.total_volume)}</span>
-          <span className="text-fg-muted">
-            {units}
-            <span className="hidden md:inline"> this week</span>
-          </span>
-        </span>
-        <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-3 py-1.5 text-[11px] text-fg-soft">
-          <Activity size={11} className="text-gold" />
-          {context.muscles_behind.length > 0 ? (
+          <BarChart3 size={11} className="text-primary" />
+          {context.week_stats.sessions === 0 ? (
+            <span className="text-fg-muted">no workouts yet this week</span>
+          ) : (
             <>
-              <span className="mono">{context.muscles_behind.length}</span>
+              <span className="mono">{context.week_stats.sessions}</span>
               <span className="text-fg-muted">
-                muscle{context.muscles_behind.length === 1 ? "" : "s"} behind
+                session{context.week_stats.sessions === 1 ? "" : "s"} ·
+              </span>
+              <span className="mono">{compactNum(context.week_stats.total_volume)}</span>
+              <span className="text-fg-muted">
+                {units}
+                <span className="hidden md:inline"> this week</span>
               </span>
             </>
-          ) : context.week_stats.sessions === 0 && context.top_lifts.length === 0 ? (
-            <span className="text-fg-muted">no training data yet</span>
-          ) : (
-            <span className="text-fg-muted">all muscles current</span>
           )}
         </span>
+        {(context.muscles_behind.length > 0 || context.days_since_muscle.length > 0) && (
+          <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-3 py-1.5 text-[11px] text-fg-soft">
+            <Activity size={11} className="text-primary" />
+            {context.muscles_behind.length > 0 ? (
+              <>
+                <span className="mono">{context.muscles_behind.length}</span>
+                <span className="text-fg-muted">
+                  muscle{context.muscles_behind.length === 1 ? "" : "s"} behind
+                </span>
+              </>
+            ) : (
+              <span className="text-fg-muted">all muscles current</span>
+            )}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -351,7 +462,7 @@ const Coach = () => {
       />
       <div className="mt-2 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <Sparkles size={13} className="text-gold" />
+          <Sparkles size={13} className="text-primary" />
           <span className="text-[11px] tracking-wide text-fg-muted">
             LiftOS Coach
           </span>
@@ -430,9 +541,15 @@ const Coach = () => {
         </div>
       </header>
 
-      {/* ── Body: greeting when empty, thread once started ── */}
+      {/* ── Body: greeting when empty, thread once started. The greeting
+          hangs from the top rather than centering in the space the dock
+          leaves: the chips and the line under the heading arrive after the
+          workouts load, and a centered heading jumps when they do. The
+          offset is about where centering puts it on a phone once four
+          chips are in: half the page, less the header, that dock and the
+          greeting itself. ── */}
       {!started ? (
-        <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 md:px-10">
+        <div className="flex flex-1 flex-col items-center overflow-y-auto px-6 pt-[max(1rem,calc((100dvh-4rem-var(--safe-bottom)-var(--safe-top))/2-16rem))] md:px-10 md:pt-[max(2rem,calc(50dvh-12.5rem))]">
           <div className="w-full max-w-2xl text-center animate-reveal-up">
             <p className="eyebrow mb-3">AI Coach</p>
             <h1 className="text-4xl font-extralight tracking-[-0.04em] text-fg md:text-5xl">
@@ -495,24 +612,26 @@ const Coach = () => {
       {/* ── Bottom dock — chips (fresh chat) + composer, always pinned ── */}
       <div className="shrink-0 px-6 pb-3 pt-2 md:px-10 md:pb-6 lg:px-12">
         <div className="mx-auto w-full max-w-4xl">
-          {!started && (
-            <div className="mb-3 flex flex-wrap justify-center gap-2">
-              {STARTING_POINTS.map((text) => (
+          {!started && starters.length > 0 && (
+            <div className="mb-3 flex flex-wrap justify-center gap-2 animate-fade-in">
+              {starters.map((starter) => (
                 <button
-                  key={text}
+                  key={starter.id}
                   type="button"
                   disabled={streaming}
-                  onClick={() => draftStartingPoint(text)}
+                  onClick={() =>
+                    starter.action === "local"
+                      ? answerVoiceHelp(starter.label)
+                      : draftStartingPoint(starter.label)
+                  }
                   className="min-h-11 rounded-full border border-border bg-card px-4 py-2 text-[13px] font-medium text-fg-soft transition hover:border-primary/50 hover:text-fg active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {text}
+                  {starter.label}
                 </button>
               ))}
             </div>
           )}
-          {composer(
-            started ? "Message LiftOS Coach..." : "Ask about your training — grounded in your real numbers",
-          )}
+          {composer(started ? "Message LiftOS Coach…" : "Ask about your training…")}
           {started && (
             <p className="mt-2 text-center text-[11px] text-fg-faint">
               LiftOS Coach can make mistakes. Verify important training
@@ -548,7 +667,7 @@ const Coach = () => {
               onClick={startNewChat}
               className="mx-5 mb-2 flex min-h-11 items-center gap-2.5 rounded-[12px] border border-border px-4 text-sm font-semibold text-fg transition hover:border-primary/40 active:scale-[0.99]"
             >
-              <SquarePen size={15} className="text-gold" />
+              <SquarePen size={15} className="text-primary" />
               New chat
             </button>
             <div className="flex-1 overflow-y-auto px-5 pb-6">

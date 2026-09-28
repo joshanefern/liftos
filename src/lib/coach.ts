@@ -3,12 +3,12 @@ import type { UserProfile } from "@/context/UserContext";
 import { localDayKey } from "@/hooks/useDayKey";
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
 import { detectSets } from "@/lib/capture";
+import { weekStreak } from "@/lib/consistency";
 import { getMuscleActivation, lookupMuscles, type Muscle } from "@/lib/muscleMap";
 import { supabase } from "@/lib/supabase";
 import {
   getConsistency,
   getMonthStats,
-  getStreak,
   getTopLifts,
   getVolumeTrend,
   getWeekStats,
@@ -60,8 +60,19 @@ export type CoachContext = {
   };
   week_stats: { sessions: number; total_volume: number; days_trained: number };
   month_stats: { sessions: number; total_volume: number; avg_sets: number };
-  streak_days: number;
-  consistency_pct: number;
+  /** Weeks in a row with at least one workout — the streak the Calendar
+      shows. Never days: a day streak reads 0 on every day off. */
+  streak_weeks: number;
+  /** Workouts logged against the weekly plan over `window_days` — the last
+      four weeks, or the account's whole history while it is younger. Null
+      without a weekly plan or a first workout: nothing to grade. The model
+      is given only the keys, so each one says what it counts. */
+  consistency_vs_plan: {
+    window_days: number;
+    workouts_done: number;
+    workouts_planned: number;
+    pct: number;
+  } | null;
   volume_trend_8w: { week: string; volume: number }[];
   top_lifts: { name: string; weight: number; reps: number }[];
   muscles_trained_last_7d: { primary: Muscle[]; secondary: Muscle[] };
@@ -170,6 +181,7 @@ export const buildCoachContext = (
 ): CoachContext => {
   const weekStats = getWeekStats(logs);
   const monthStats = getMonthStats(logs);
+  const consistency = getConsistency(logs, profile?.frequency ?? null);
   const activation = getMuscleActivation(logs, 7);
   const daysSince = getDaysSincePerMuscle(logs);
 
@@ -199,8 +211,13 @@ export const buildCoachContext = (
       total_volume: monthStats.volume,
       avg_sets: monthStats.avgSets,
     },
-    streak_days: getStreak(logs),
-    consistency_pct: getConsistency(logs, profile?.frequency ?? null),
+    streak_weeks: weekStreak(logs),
+    consistency_vs_plan: consistency && {
+      window_days: consistency.days,
+      workouts_done: consistency.done,
+      workouts_planned: consistency.planned,
+      pct: consistency.pct,
+    },
     volume_trend_8w: getVolumeTrend(logs),
     top_lifts: getTopLifts(logs),
     muscles_trained_last_7d: {
@@ -231,6 +248,29 @@ export const buildCoachContext = (
         : null,
   };
 };
+
+/** What a request carries while the workout history cannot be read — the
+    load is still running, or it failed with nothing held. Every computed
+    field would read zero, and a zero says "nothing logged". The history is
+    left out and one line says why; the key and its text are all the model
+    is told, so both are written to be read. */
+export type CoachContextWithoutHistory = {
+  profile: CoachContext["profile"];
+  workout_history: string;
+  today_readiness: CoachContext["today_readiness"];
+};
+
+export const WORKOUT_HISTORY_UNAVAILABLE =
+  "Unavailable: the athlete's logged workouts could not be loaded on this device just now. " +
+  "This is a loading problem, not an empty history. Do not say they have no workouts, " +
+  "sessions, streak or records. Say you cannot see their workouts at the moment, and answer " +
+  "from the profile and from what they tell you.";
+
+export const coachContextWithoutHistory = (context: CoachContext): CoachContextWithoutHistory => ({
+  profile: context.profile,
+  workout_history: WORKOUT_HISTORY_UNAVAILABLE,
+  today_readiness: context.today_readiness,
+});
 
 /* ── Coach tone — a per-device preference, sent with every request. The
    edge function turns it into a different voice for the same grounded
@@ -289,7 +329,7 @@ const authHeaders = async (): Promise<HeadersInit> => {
  */
 export const streamCoach = async (
   messages: ChatMessage[],
-  context: CoachContext,
+  context: CoachContext | CoachContextWithoutHistory,
   onDelta: (delta: string) => void,
 ): Promise<string> => {
   let res: Response;

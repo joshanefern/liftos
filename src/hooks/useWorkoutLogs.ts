@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { useUser } from "@/context/UserContext";
 import type { WorkoutExercise } from "@/data/liftosMock";
-import { createContext, createElement, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, createElement, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 export type WorkoutLogSource = "manual" | "review";
 
@@ -43,7 +43,12 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
 
-  const load = useCallback(async () => {
+  // One load at a time. "Try again" lives on several screens, each with its
+  // own busy flag — leaving mid-retry and tapping the next screen's button
+  // joins the request already running instead of stacking a second one.
+  const inFlight = useRef<Promise<void> | null>(null);
+
+  const fetchAll = useCallback(async () => {
     // Page through EVERYTHING: all-time PRs and trends computed over a
     // "newest 200" window silently regress records once history outgrows
     // it. Pages of 500, with a 10k-log sanity ceiling (~50 years of daily
@@ -76,6 +81,15 @@ export const WorkoutLogsProvider = ({ children }: { children: React.ReactNode })
     setLoadFailed(false);
     setLoading(false);
   }, []);
+
+  const load = useCallback((): Promise<void> => {
+    if (inFlight.current) return inFlight.current;
+    const run = fetchAll().finally(() => {
+      inFlight.current = null;
+    });
+    inFlight.current = run;
+    return run;
+  }, [fetchAll]);
 
   useEffect(() => {
     if (!user) {

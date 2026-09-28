@@ -6,7 +6,7 @@ export const MAX_TEMPLATES = 7;
 export const TEMPLATE_LIMIT_ERROR = "TEMPLATE_LIMIT";
 import { useUser } from "@/context/UserContext";
 import type { WorkoutExercise } from "@/data/liftosMock";
-import { createContext, createElement, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, createElement, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 export type SupabaseTemplate = {
   id: string;
@@ -22,6 +22,7 @@ type WorkoutTemplatesContextValue = {
   loadFailed: boolean;
   save: (template: { id: string | null; name: string; exercises: WorkoutExercise[] }) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  reload: () => Promise<void>;
 };
 
 const WorkoutTemplatesContext = createContext<WorkoutTemplatesContextValue | null>(null);
@@ -32,7 +33,10 @@ export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNo
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
 
-  const load = useCallback(async () => {
+  // One load at a time — see the same guard in useWorkoutLogs.
+  const inFlight = useRef<Promise<void> | null>(null);
+
+  const fetchAll = useCallback(async () => {
     const { data } = await supabase
       .from("workout_templates")
       .select("id, name, exercises, created_at")
@@ -43,6 +47,15 @@ export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNo
     setLoadFailed(!data);
     setLoading(false);
   }, []);
+
+  const load = useCallback((): Promise<void> => {
+    if (inFlight.current) return inFlight.current;
+    const run = fetchAll().finally(() => {
+      inFlight.current = null;
+    });
+    inFlight.current = run;
+    return run;
+  }, [fetchAll]);
 
   useEffect(() => {
     if (!user) {
@@ -94,7 +107,7 @@ export const WorkoutTemplatesProvider = ({ children }: { children: React.ReactNo
 
   return createElement(
     WorkoutTemplatesContext.Provider,
-    { value: { templates, loading, loadFailed, save, remove } },
+    { value: { templates, loading, loadFailed, save, remove, reload: load } },
     children,
   );
 };

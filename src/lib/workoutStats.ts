@@ -1,5 +1,7 @@
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
+import { firstWorkoutTime } from "@/lib/consistency";
 import { detectSessionPRs } from "@/lib/prs";
+import { trainingDaysPerWeek } from "@/lib/trainingDays";
 
 // Mon=0, Sun=6
 const dayIndex = (date: Date) => (date.getDay() + 6) % 7;
@@ -40,16 +42,12 @@ export const getWeekStats = (logs: WorkoutLog[]): WeekStats => {
   };
 };
 
-/** Planned training days per week from the onboarding answer — "3–4 days"
-    → 3, "7 days" → 7, "4" → 4. A range reads at its LOW end: that's the
-    commitment the user actually made, so "2 of 3" never nags someone who
-    said "3–4" for a fourth day. null when the answer is missing or has no
+/** Planned workouts per week from the onboarding answer — "4 days" → 4,
+    and for accounts that still hold a range, "3–4 days" → 3 (the low end;
+    see trainingDaysPerWeek). null when the answer is missing or has no
     number, and the caller falls back to a plain session count. */
-export const plannedSessionsPerWeek = (frequency: string | null | undefined): number | null => {
-  const n = parseInt(frequency?.match(/\d+/)?.[0] ?? "", 10);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return Math.min(n, 7);
-};
+export const plannedSessionsPerWeek = (frequency: string | null | undefined): number | null =>
+  trainingDaysPerWeek(frequency);
 
 /** Lifts that beat a PREVIOUS best in a session this calendar month, one
     per lift per session. First-ever performances are excluded on purpose —
@@ -162,35 +160,51 @@ export const getWeeklyVolumeTarget = (logs: WorkoutLog[]): number => {
   return Math.round(Math.max(avgWeekly * 1.1, 5000) / 500) * 500;
 };
 
-export const getStreak = (logs: WorkoutLog[]): number => {
-  if (logs.length === 0) return 0;
-  const workedDays = new Set(
-    logs.map((l) => localMidnight(new Date(l.finished_at)).getTime()),
-  );
-  const today = localMidnight(new Date());
-  let streak = 0;
-  const cursor = new Date(today);
-  while (workedDays.has(cursor.getTime())) {
-    streak++;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  if (streak === 0) {
-    cursor.setDate(cursor.getDate() - 1); // yesterday
-    while (workedDays.has(cursor.getTime())) {
-      streak++;
-      cursor.setDate(cursor.getDate() - 1);
-    }
-  }
-  return streak;
+const CONSISTENCY_WINDOW_DAYS = 28;
+
+export type PlanConsistency = {
+  /** Days the figure covers: 28, or fewer while the account is younger
+      than that. */
+  days: number;
+  /** Workouts logged in those days. */
+  done: number;
+  /** Workouts the weekly plan asks for over the same days, as a whole
+      number. */
+  planned: number;
+  /** Rounded % of `planned`, capped at 100. */
+  pct: number;
 };
 
-export const getConsistency = (logs: WorkoutLog[], frequencyStr: string | null): number => {
-  const target = parseInt(frequencyStr?.match(/\d+/)?.[0] ?? "0") * 4;
-  if (!target) return 0;
-  const fourWeeksAgo = new Date();
-  fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
-  const actual = logs.filter((l) => new Date(l.finished_at) >= fourWeeksAgo).length;
-  return Math.min(Math.round((actual / target) * 100), 100);
+/** Workouts logged against the weekly plan over the last four weeks, today
+    included — or over the account's own history while it is younger than
+    that, so a lifter one week in is graded on one week and not on three
+    they did not have. Null when there is nothing to grade: no weekly plan,
+    or no workout logged yet.
+
+    The planned count is rounded the way plannedWorkoutsInMonth rounds it,
+    so a young account reads the same figure here and on the Calendar. */
+export const getConsistency = (
+  logs: WorkoutLog[],
+  frequencyStr: string | null,
+  now: number = Date.now(),
+): PlanConsistency | null => {
+  const weekly = plannedSessionsPerWeek(frequencyStr);
+  if (weekly === null) return null;
+  const first = firstWorkoutTime(logs, now);
+  if (first === null) return null;
+
+  const today = localMidnight(new Date(now));
+  const windowOpens = new Date(today);
+  windowOpens.setDate(windowOpens.getDate() - (CONSISTENCY_WINDOW_DAYS - 1));
+  const from = Math.max(windowOpens.getTime(), localMidnight(new Date(first)).getTime());
+  // Rounded: a span that crosses a clock change is an hour short or long.
+  const days = Math.round((today.getTime() - from) / 864e5) + 1;
+  const planned = Math.max(1, Math.round((weekly * days) / 7));
+  const done = logs.filter((l) => {
+    const t = Date.parse(l.finished_at);
+    return Number.isFinite(t) && t >= from && t <= now;
+  }).length;
+  return { days, done, planned, pct: Math.min(Math.round((done / planned) * 100), 100) };
 };
 
 export type SessionPoint = {

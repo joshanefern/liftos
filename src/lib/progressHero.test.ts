@@ -59,6 +59,7 @@ describe("buildProgressHero", () => {
 
   it("prefers volume for a Hypertrophy goal", () => {
     const logs = [
+      makeLog(70, "Row", 100, { volume: 4000 }),
       makeLog(40, "Row", 100, { volume: 4000 }),
       makeLog(35, "Row", 100, { volume: 4000 }),
       makeLog(10, "Row", 100, { volume: 5000 }),
@@ -69,6 +70,18 @@ describe("buildProgressHero", () => {
     expect(hero!.label).toBe("more volume");
     expect(hero!.value).toBe("+25%");
     expect(hero!.eyebrow).toBe("Building muscle");
+  });
+
+  it("never headlines a volume jump for an account younger than both windows", () => {
+    // Six weeks of identical training. The earlier window holds two of the
+    // six sessions, so volume would read "+100%" for a lifter who changed
+    // nothing; the hero falls through to what is true.
+    const logs = [38, 31, 24, 17, 10, 3].map((d) => makeLog(d, "Row", 100, { volume: 5000 }));
+    const hero = buildProgressHero(logs, "Hypertrophy", "lb", NOW);
+    expect(hero).not.toBeNull();
+    expect(hero!.label).not.toBe("more volume");
+    expect(hero!.label).toBe("workouts this month");
+    expect(hero!.value).toBe("4");
   });
 
   it("leads with consistency for Fat Loss, even when strength is up", () => {

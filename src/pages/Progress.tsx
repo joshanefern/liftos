@@ -8,7 +8,14 @@ import { formatHold, inferTracking } from "@/lib/exerciseTracking";
 import { allTimePRs, bestWeight, type WeightRecord } from "@/lib/prs";
 import { fetchBodyMass, type BodyMassSample } from "@/lib/healthkit";
 import { buildCoachContext, streamCoach } from "@/lib/coach";
-import { compactVolume, CONSISTENCY_WEEKS, volumeComparison, weeksTrained } from "@/lib/consistency";
+import {
+  compactVolume,
+  CONSISTENCY_EMPTY_COPY,
+  CONSISTENCY_WEEKS,
+  describeConsistency,
+  volumeComparison,
+  weeksTrained,
+} from "@/lib/consistency";
 import { buildProgressHero } from "@/lib/progressHero";
 import {
   cacheInsight,
@@ -44,7 +51,23 @@ const CARD_CLASS =
 const Progress = () => {
   const navigate = useNavigate();
   const { profile } = useUser();
-  const { logs, reload } = useWorkoutLogs();
+  const { logs, reload, loading: logsLoading, loadFailed: logsLoadFailed } = useWorkoutLogs();
+  // An empty list is a new account only once the load has finished and
+  // succeeded — while it runs, or after it failed, nothing is known yet.
+  const noHistory = !logsLoading && !logsLoadFailed && logs.length === 0;
+  // A retry can take several seconds to fail (the client backs off and
+  // tries again on its own), so the button holds a busy state and ignores
+  // taps until the attempt settles.
+  const [reloadingLogs, setReloadingLogs] = useState(false);
+  const retryLogs = async (): Promise<void> => {
+    if (reloadingLogs) return;
+    setReloadingLogs(true);
+    try {
+      await reload();
+    } finally {
+      setReloadingLogs(false);
+    }
+  };
   const units = profile?.units ?? "lb";
   const [showAllRecords, setShowAllRecords] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -76,9 +99,15 @@ const Progress = () => {
   // signed %. A newer cardio-only log doesn't blank it.
   const improvement = useMemo(() => sessionImprovement(logs), [logs]);
   // Consistency sits beside it: weeks with at least one workout, out of
-  // the last eight — the number that stays honest through a plateau.
-  // Sunday-start weeks, the same rows the Calendar grid draws.
-  const consistency = useMemo(() => weeksTrained(logs, CONSISTENCY_WEEKS), [logs]);
+  // the last eight — the number that stays honest through a plateau. An
+  // account younger than eight weeks is measured against its own weeks
+  // only. Sunday-start weeks, the same rows the Calendar grid draws, and
+  // the same open-week rule as the Calendar's streak: a week that has
+  // only just opened is not yet a week missed.
+  const consistency = useMemo(
+    () => describeConsistency(weeksTrained(logs, CONSISTENCY_WEEKS)),
+    [logs],
+  );
   // Aggregate volume is deliberately the last card: more weight moved is
   // not the same as stronger lifts, so it reads below the per-lift records.
   const volume = useMemo(() => volumeComparison(logs), [logs]);
@@ -234,7 +263,23 @@ const Progress = () => {
           <>
             <p className="heading-lg max-w-sm">Your imported workouts need names.</p>
           </>
-        ) : (
+        ) : logsLoadFailed ? (
+          <>
+            <p className="heading-lg max-w-sm">Your workouts could not be loaded.</p>
+            <p className="body-md mt-3 max-w-sm text-fg-muted">
+              Check your connection, then try again.
+            </p>
+            <button
+              type="button"
+              onClick={() => void retryLogs()}
+              disabled={reloadingLogs}
+              aria-busy={reloadingLogs}
+              className="mt-6 inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-[13px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-60"
+            >
+              {reloadingLogs ? "Trying again…" : "Try again"}
+            </button>
+          </>
+        ) : noHistory ? (
           /* Nothing logged yet: a bare "0" read as broken. Show what this
              page becomes — ghost rows for the three numbers it will hold,
              each saying in plain words what unlocks it — and the one door
@@ -249,10 +294,7 @@ const Progress = () => {
               {[
                 { label: "vs last workout", value: "Available after two comparable workouts." },
                 { label: "Records", value: "Starts with your first logged lift." },
-                {
-                  label: "Consistency",
-                  value: `0 of the last ${CONSISTENCY_WEEKS} weeks trained`,
-                },
+                { label: "Consistency", value: CONSISTENCY_EMPTY_COPY },
               ].map((row, i) => (
                 <div
                   key={row.label}
@@ -269,14 +311,15 @@ const Progress = () => {
               Log your first workout
             </CTAButton>
           </>
-        )}
+        ) : null}
       </section>
 
       {/* ── Card 1 · IMPROVEMENT + CONSISTENCY — two tiles, one number
           each. Improvement is the latest lifting workout vs the previous
           time the same lifts were trained, signed and honest; until two
           comparable workouts exist it says so instead of vanishing.
-          Consistency is weeks trained out of the last eight. ── */}
+          Consistency is weeks trained out of the last eight, or out of the
+          account's own weeks while it is younger than that. ── */}
       {logs.length > 0 && (
         <section
           className="mt-10 grid grid-cols-2 gap-3 animate-reveal-up"
@@ -286,15 +329,20 @@ const Progress = () => {
             <p className="eyebrow">Improvement</p>
             {improvement ? (
               <>
+                {/* Matching the last workout is holding a level, not a
+                    zero — it reads as a word, never as "0%". */}
                 <p
                   className={`mt-2 stat-scoreboard text-[34px] leading-10 tabular-nums ${
                     improvement.pct > 0 ? "text-primary" : "text-fg"
                   }`}
                 >
-                  {improvement.pct > 0 ? "+" : ""}
-                  {improvement.pct}%
+                  {improvement.pct === 0
+                    ? "Even"
+                    : `${improvement.pct > 0 ? "+" : ""}${improvement.pct}%`}
                 </p>
-                <p className="caption mt-0.5">vs last workout</p>
+                <p className="caption mt-0.5">
+                  {improvement.pct === 0 ? "with last workout" : "vs last workout"}
+                </p>
               </>
             ) : (
               <p className="mt-2 text-[13px] leading-5 text-fg-muted">
@@ -304,12 +352,16 @@ const Progress = () => {
           </div>
           <div className={CARD_CLASS}>
             <p className="eyebrow">Consistency</p>
-            <p className="mt-2 stat-scoreboard text-[34px] leading-10 tabular-nums text-fg">
-              {consistency.trained}
-            </p>
-            <p className="caption mt-0.5">
-              of the last {consistency.weeks} weeks trained
-            </p>
+            {consistency.value !== null ? (
+              <>
+                <p className="mt-2 stat-scoreboard text-[34px] leading-10 tabular-nums text-fg">
+                  {consistency.value}
+                </p>
+                <p className="caption mt-0.5">{consistency.caption}</p>
+              </>
+            ) : (
+              <p className="mt-2 text-[13px] leading-5 text-fg-muted">{consistency.caption}</p>
+            )}
           </div>
         </section>
       )}

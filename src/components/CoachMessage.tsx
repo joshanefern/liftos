@@ -27,7 +27,7 @@ const CoachMessage = ({ role, content, streaming = false }: CoachMessageProps) =
   return (
     <div className="w-full animate-fade-in">
       <div className="mb-2 flex items-center gap-2.5">
-        <Sparkles size={12} className="shrink-0 text-gold" />
+        <Sparkles size={12} className="shrink-0 text-primary" />
         <span className="eyebrow !text-[10px]">
           LiftOS Coach
         </span>

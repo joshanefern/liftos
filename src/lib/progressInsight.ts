@@ -22,7 +22,7 @@ export const INSIGHT_PROMPT =
   "next: the single best next move. label at most 4 words; prompt is one sentence " +
   "I could send my coach to act on it. JSON only.";
 
-const KEY = "liftos-progress-insight-v4";
+const KEY = "liftos-progress-insight-v5";
 
 type CachedInsight = { day: string; logCount: number; raw: string };
 

@@ -1,5 +1,6 @@
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
 import type { BodyMassSample } from "@/lib/healthkit";
+import { historyCovers } from "@/lib/consistency";
 import { getLiftTrends } from "@/lib/strengthTrend";
 
 /* ── The Progress hero: one positively-framed overall number, angled at the
@@ -63,12 +64,15 @@ const strongerOverall = (
   };
 };
 
-/** Last 4 weeks of volume vs the 4 before. Null unless both exist and it's up. */
+/** Last 4 weeks of volume vs the 4 before. Null unless both exist, it's up,
+    and the account was already training for the whole earlier window — a
+    six-week-old account would otherwise headline a jump it never made. */
 const volumeUp = (
   logs: WorkoutLog[],
   units: string,
   now: number,
 ): Omit<ProgressHeroStat, "eyebrow"> | null => {
+  if (!historyCovers(logs, 56, now)) return null;
   const recent = logs.filter((l) => finishedWithin(l, 28, now));
   const prior = logs.filter((l) => !finishedWithin(l, 28, now) && finishedWithin(l, 56, now));
   const recentVol = recent.reduce((sum, l) => sum + (l.total_volume || 0), 0);

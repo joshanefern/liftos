@@ -50,9 +50,11 @@ describe("planToTemplateExercises", () => {
   it("builds builder-shaped template exercises", () => {
     const [exercise] = planToTemplateExercises(
       [{ name: "Bench Press", sets: 3, reps: 8, weight: 185 }],
-      "Coach plan",
+      "Coach workout · Sep 27",
     );
     expect(exercise.name).toBe("Bench Press");
+    // The workout's name is what the builder shows as each exercise's category.
+    expect(exercise.category).toBe("Coach workout · Sep 27");
     expect(exercise.target).toBe("3 × 8 @ 185");
     expect(exercise.sets).toHaveLength(3);
     expect(exercise.sets[0]).toMatchObject({ reps: 8, weight: 185 });

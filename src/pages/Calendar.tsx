@@ -9,10 +9,17 @@ import {
 import { useUser } from "@/context/UserContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useWorkoutLogs, type WorkoutLog } from "@/hooks/useWorkoutLogs";
+import {
+  firstWorkoutTime,
+  monthVolumeDelta,
+  plannedWorkoutsInMonth,
+  weekStreak,
+} from "@/lib/consistency";
 import { formatHold } from "@/lib/exerciseTracking";
-import { getLogsByDay, getStreak } from "@/lib/workoutStats";
+import { getLogsByDay, plannedSessionsPerWeek } from "@/lib/workoutStats";
 import { sessionToTemplateExercises } from "@/lib/sessionToTemplate";
-import { TEMPLATE_LIMIT_ERROR, useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { MAX_TEMPLATES, TEMPLATE_LIMIT_ERROR, useWorkoutTemplates } from "@/hooks/useWorkoutTemplates";
+import { templateLimitNotice } from "@/lib/templateLimit";
 import { toast } from "@/components/ui/use-toast";
 import { ChevronLeft, ChevronRight, Dumbbell } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -20,10 +27,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 /* Sunday-start weeks (US convention). */
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-/* Ceiling for the planned-workouts %, so a month far over plan stays a
-   readable three digits instead of a five-digit number. */
-const HIT_RATE_CAP = 999;
 
 const localMidnight = (date: Date) => {
   const d = new Date(date);
@@ -116,9 +119,29 @@ const HitRateDonut = ({ pct, muted }: { pct: number; muted: boolean }) => {
 
 const Calendar = () => {
   const { profile } = useUser();
-  const { logs } = useWorkoutLogs();
+  const {
+    logs,
+    loading: logsLoading,
+    loadFailed: logsLoadFailed,
+    reload: reloadLogs,
+  } = useWorkoutLogs();
   const { save: saveTemplate } = useWorkoutTemplates();
   const [savedLogIds, setSavedLogIds] = useState<Set<string>>(new Set());
+
+  // Leaving this page and coming back does not load the workouts again —
+  // only this does. A retry can take several seconds to fail (the client
+  // backs off and tries again on its own), so the button holds a busy
+  // state and ignores taps until the attempt settles.
+  const [reloadingLogs, setReloadingLogs] = useState(false);
+  const retryLogs = async (): Promise<void> => {
+    if (reloadingLogs) return;
+    setReloadingLogs(true);
+    try {
+      await reloadLogs();
+    } finally {
+      setReloadingLogs(false);
+    }
+  };
 
   // "Save it later, into workouts" — any logged workout can become a
   // saved workout with its achieved numbers as the targets.
@@ -136,7 +159,7 @@ const Calendar = () => {
     } catch (err) {
       toast(
         err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR
-          ? { title: "Workout limit reached", description: "You have 7 saved workouts — the max. Delete one in Workouts to make room." }
+          ? { ...templateLimitNotice(MAX_TEMPLATES), variant: "destructive" }
           : { title: "Could not save workout", variant: "destructive" },
       );
     }
@@ -181,7 +204,9 @@ const Calendar = () => {
 
   const cells = useMemo(() => buildCalendarCells(view.year, view.month), [view.year, view.month]);
   const logsByDay = useMemo(() => getLogsByDay(logs), [logs]);
-  const streak = useMemo(() => getStreak(logs), [logs]);
+  // Weeks, on the grid's own Sunday-start rows: a day off inside a kept
+  // plan is not a broken streak.
+  const streak = useMemo(() => weekStreak(logs), [logs]);
   const { prDays, prsByLog } = useMemo(() => computePrs(logs), [logs]);
 
   const monthLogs = useMemo(
@@ -192,14 +217,6 @@ const Calendar = () => {
       }),
     [logs, view.year, view.month],
   );
-
-  const prevMonthLogs = useMemo(() => {
-    const prev = new Date(view.year, view.month - 1, 1);
-    return logs.filter((l) => {
-      const d = new Date(l.finished_at);
-      return d.getFullYear() === prev.getFullYear() && d.getMonth() === prev.getMonth();
-    });
-  }, [logs, view.year, view.month]);
 
   /* Per-day volume within the displayed month, for subtle indicator scaling. */
   const dayVolumes = useMemo(() => {
@@ -212,21 +229,27 @@ const Calendar = () => {
   }, [monthLogs]);
   const maxDayVol = Math.max(0, ...Object.values(dayVolumes));
 
-  /* ── Real hit rate: workouts logged vs frequency target × weeks elapsed.
-     One denominator feeds both the % and its "N of about M" caption — the
-     caption shows a whole number of planned workouts, so the % divides by
-     that same whole number or the two contradict each other ("3 of about
-     3" reading 86%). Capped so a wildly-over-plan month can't print a
-     five-digit percentage. ── */
-  const weeklyTarget = parseInt(profile?.frequency?.match(/\d+/)?.[0] ?? "") || 3;
-  const daysInViewMonth = new Date(view.year, view.month + 1, 0).getDate();
-  const daysConsidered = isCurrentMonth ? now.getDate() : daysInViewMonth;
-  const expectedWorkouts = (weeklyTarget * daysConsidered) / 7;
-  const plannedSoFar = Math.max(1, Math.round(expectedWorkouts));
+  /* ── History starts with the first logged workout. Before that day there
+     is nothing to mark, count or grade: the grid draws no dot, and the
+     planned-workouts rate leaves those days out of its denominator. An
+     empty list while the load is still running (or after it failed) is
+     not a new account, so nothing below calls it one. ── */
   const hasAnyData = logs.length > 0;
-  const hitRate = hasAnyData
-    ? Math.min(HIT_RATE_CAP, Math.round((monthLogs.length / plannedSoFar) * 100))
-    : null;
+  const noHistory = !logsLoading && !logsLoadFailed && !hasAnyData;
+  const historyUnknown = !hasAnyData && !noHistory;
+  const firstWorkoutAt = useMemo(() => firstWorkoutTime(logs), [logs]);
+  const firstWorkoutDay = firstWorkoutAt !== null ? localMidnight(new Date(firstWorkoutAt)) : null;
+  const firstWorkoutKey = firstWorkoutDay?.getTime() ?? null;
+  const monthEndKey = new Date(view.year, view.month + 1, 0).getTime();
+  const beforeHistory = firstWorkoutKey !== null && monthEndKey < firstWorkoutKey;
+
+  /* The weekly plan is the lifter's own onboarding answer. Without one
+     there is no plan to grade against, and the row is not shown. */
+  const weeklyTarget = plannedSessionsPerWeek(profile?.frequency);
+  const planned = useMemo(
+    () => plannedWorkoutsInMonth(logs, view.year, view.month, weeklyTarget),
+    [logs, view.year, view.month, weeklyTarget],
+  );
 
   const monthVolume = monthLogs.reduce((s, l) => s + l.total_volume, 0);
 
@@ -242,13 +265,14 @@ const Calendar = () => {
       weekCounts[ws.getTime()] = (weekCounts[ws.getTime()] ?? 0) + 1;
     }
     const bestWeek = Object.values(weekCounts).reduce((m, n) => Math.max(m, n), 0);
-    const prevVol = prevMonthLogs.reduce((s, l) => s + l.total_volume, 0);
-    const deltaPct = prevVol > 0 ? Math.round(((monthVolume - prevVol) / prevVol) * 100) : null;
+    // Only against a month the account was already training through, and
+    // never "behind" while this one is still open (monthVolumeDelta).
+    const deltaPct = monthVolumeDelta(logs, view.year, view.month);
     const prevMonthName = new Date(view.year, view.month - 1, 1).toLocaleDateString("en-US", {
       month: "long",
     });
     return { bestWeek, deltaPct, prevMonthName };
-  }, [monthLogs, prevMonthLogs, monthVolume, view.year, view.month]);
+  }, [logs, monthLogs, view.year, view.month]);
 
   /* ── Selected-day detail ── */
   const selectedKey = selected ? localMidnight(selected).getTime() : null;
@@ -260,24 +284,47 @@ const Calendar = () => {
   /* Stat rows under the grid. Each label says what its number counts in
      plain words — the "x of about y planned" context is visible, not hidden
      in a title attribute iOS never shows. ("Green days" — distinct days
-     with a workout — duplicated the workout count above and is gone.) */
+     with a workout — duplicated the workout count above and is gone.) A
+     row with nothing to measure yet shows a dash and says what starts it;
+     it never prints a zero for time the account did not have. */
   const stripStats = [
-    {
-      label: "Planned workouts completed",
-      value: hitRate !== null ? `${hitRate}%` : "–",
-      detail:
-        hitRate !== null
-          ? `${monthLogs.length} of about ${plannedSoFar} planned${isCurrentMonth ? " so far" : ""}`
-          : `Based on ${weeklyTarget} a week`,
-      donut: true,
-    },
+    ...(weeklyTarget !== null && !beforeHistory
+      ? [
+          {
+            label: "Planned workouts completed",
+            value: planned ? `${planned.pct}%` : "–",
+            detail: planned
+              ? `${planned.done} of about ${planned.planned} planned${
+                  planned.sinceFirstWorkout
+                    ? " since your first workout"
+                    : isCurrentMonth
+                      ? " so far"
+                      : ""
+                }`
+              : `Based on ${weeklyTarget} a week`,
+            donut: true,
+          },
+        ]
+      : []),
     {
       label: "Streak",
-      value: hasAnyData ? String(streak) : "–",
-      detail: streak === 1 ? "day in a row" : "days in a row",
+      value: streak > 0 ? String(streak) : "–",
+      detail: !hasAnyData
+        ? "Starts with your first workout"
+        : streak === 0
+          ? "Starts again with your next workout"
+          : streak === 1
+            ? "week in a row"
+            : "weeks in a row",
       donut: false,
     },
   ];
+
+  const firstWorkoutLabel = firstWorkoutDay?.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    ...(firstWorkoutDay.getFullYear() === view.year ? {} : { year: "numeric" }),
+  });
 
   return (
     <div className="relative min-h-screen w-full max-w-7xl mx-auto p-6 md:p-10 lg:p-12">
@@ -345,6 +392,18 @@ const Calendar = () => {
             const isToday = cell.inMonth && key === todayKey;
             const isFuture = key > todayKey;
             const isPrDay = hasWorkouts && prDays.has(key);
+            // Only a day the account already had can be a day without a
+            // workout — never a future day, never one before the first log.
+            const isUnlogged =
+              cell.inMonth &&
+              !hasWorkouts &&
+              !isFuture &&
+              firstWorkoutKey !== null &&
+              key >= firstWorkoutKey;
+            const dateLabel = cell.date.toLocaleDateString("en-US", {
+              month: "long",
+              day: "numeric",
+            });
             const vol = dayVolumes[key] ?? 0;
             const ratio = maxDayVol > 0 ? vol / maxDayVol : 0;
             const dotSize = 7 + Math.round(ratio * 5); // 7–12px, subtle
@@ -371,8 +430,10 @@ const Calendar = () => {
                 onClick={() => setSelected(cell.date)}
                 aria-label={
                   hasWorkouts
-                    ? `${cell.date.toLocaleDateString("en-US", { month: "long", day: "numeric" })} — ${dayLogs.length} workout${dayLogs.length === 1 ? "" : "s"}, ${fmtVol(vol, units)}`
-                    : undefined
+                    ? `${dateLabel} — ${dayLogs.length} workout${dayLogs.length === 1 ? "" : "s"}, ${fmtVol(vol, units)}`
+                    : isUnlogged
+                      ? `${dateLabel} — no workout logged`
+                      : dateLabel
                 }
                 className={`relative flex h-12 flex-col items-center justify-center gap-1 rounded-[0.75rem] border transition-all duration-200 sm:h-16 md:h-20 md:rounded-[0.875rem] ${stateCls} ${
                   isToday ? "ring-1 ring-foreground" : ""
@@ -387,8 +448,8 @@ const Calendar = () => {
                       className="rounded-full bg-primary"
                       style={{ width: dotSize, height: dotSize }}
                     />
-                  ) : cell.inMonth && !isFuture ? (
-                    <span className="h-1 w-1 rounded-full bg-border" />
+                  ) : isUnlogged ? (
+                    <span className="h-1 w-1 rounded-full bg-muted-foreground" />
                   ) : null}
                 </span>
                 {isPrDay && <Spark className="absolute right-1.5 top-1.5 h-2 w-2 md:h-2.5 md:w-2.5" />}
@@ -404,8 +465,8 @@ const Calendar = () => {
             Workout · sized by volume
           </span>
           <span className="caption inline-flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-border" />
-            Rest
+            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+            No workout logged
           </span>
           <span className="caption inline-flex items-center gap-2">
             <Spark className="h-2 w-2" />
@@ -424,55 +485,93 @@ const Calendar = () => {
         className="mb-6 rule-hairline pt-5 animate-reveal-up"
         style={{ animationDelay: "160ms" }}
       >
+        {/* A count of zero is only printed for a month the account lived
+            through. With no history at all, or a month before the first
+            workout, the block says so in words. */}
         <div key={`count-${monthKey}`} className="animate-fade-in">
-          <p className="stat-xl">
-            {monthLogs.length}
-            <span className="ml-2 text-[13px] font-medium tracking-normal text-fg-muted">
-              workout{monthLogs.length === 1 ? "" : "s"} in {monthNameLong}
-            </span>
-          </p>
-          <p className="body-sm mt-2 max-w-md">
-            {insight ? (
-              <>
-                Best week: <span className="mono font-medium text-fg">{insight.bestWeek}</span> workout
-                {insight.bestWeek === 1 ? "" : "s"}
-                {insight.deltaPct !== null &&
-                  (insight.deltaPct === 0 ? (
-                    <> · volume even with {insight.prevMonthName}</>
-                  ) : (
-                    <>
-                      {" "}
-                      · volume {insight.deltaPct > 0 ? "up" : "down"}{" "}
-                      <span className="mono font-medium text-fg">{Math.abs(insight.deltaPct)}%</span> on{" "}
-                      {insight.prevMonthName}
-                    </>
-                  ))}
-              </>
-            ) : (
-              `Nothing logged in ${monthNameLong}${isCurrentMonth ? " yet — the grid fills in as you train" : ""}.`
-            )}
-          </p>
+          {noHistory ? (
+            <>
+              <p className="heading-md">No workouts logged yet</p>
+              <p className="body-sm mt-2 max-w-md">
+                Your history starts with your first workout.
+              </p>
+            </>
+          ) : beforeHistory ? (
+            <>
+              <p className="heading-md">Before your first workout</p>
+              <p className="body-sm mt-2 max-w-md">
+                Your history starts on {firstWorkoutLabel}.
+              </p>
+            </>
+          ) : hasAnyData ? (
+            <>
+              <p className="stat-xl">
+                {monthLogs.length}
+                <span className="ml-2 text-[13px] font-medium tracking-normal text-fg-muted">
+                  workout{monthLogs.length === 1 ? "" : "s"} in {monthNameLong}
+                </span>
+              </p>
+              <p className="body-sm mt-2 max-w-md">
+                {insight ? (
+                  <>
+                    Best week: <span className="mono font-medium text-fg">{insight.bestWeek}</span> workout
+                    {insight.bestWeek === 1 ? "" : "s"}
+                    {insight.deltaPct !== null &&
+                      (insight.deltaPct === 0 ? (
+                        <> · volume even with {insight.prevMonthName}</>
+                      ) : (
+                        <>
+                          {" "}
+                          · volume {insight.deltaPct > 0 ? "up" : "down"}{" "}
+                          <span className="mono font-medium text-fg">{Math.abs(insight.deltaPct)}%</span> on{" "}
+                          {insight.prevMonthName}
+                        </>
+                      ))}
+                  </>
+                ) : (
+                  `Nothing logged in ${monthNameLong}${isCurrentMonth ? " yet — the grid fills in as you train" : ""}.`
+                )}
+              </p>
+            </>
+          ) : logsLoadFailed ? (
+            <>
+              <p className="body-sm max-w-md">
+                Your workouts could not be loaded. Check your connection, then try again.
+              </p>
+              <button
+                type="button"
+                onClick={() => void retryLogs()}
+                disabled={reloadingLogs}
+                aria-busy={reloadingLogs}
+                className="mt-4 inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-[13px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] disabled:opacity-60"
+              >
+                {reloadingLogs ? "Trying again…" : "Try again"}
+              </button>
+            </>
+          ) : null}
         </div>
 
-        <div
-          key={`strip-${monthKey}`}
-          className="mt-5 divide-y divide-border border-y border-border animate-fade-in"
-        >
-          {stripStats.map((stat) => (
-            <div key={stat.label} className="flex items-center justify-between gap-4 py-3">
-              <div className="flex min-w-0 items-center gap-3">
-                {stat.donut && <HitRateDonut pct={hitRate ?? 0} muted={hitRate === null} />}
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-fg">{stat.label}</p>
-                  <p className="caption">{stat.detail}</p>
+        {!historyUnknown && (
+          <div
+            key={`strip-${monthKey}`}
+            className="mt-5 divide-y divide-border border-y border-border animate-fade-in"
+          >
+            {stripStats.map((stat) => (
+              <div key={stat.label} className="flex items-center justify-between gap-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  {stat.donut && <HitRateDonut pct={planned?.pct ?? 0} muted={planned === null} />}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-fg">{stat.label}</p>
+                    <p className="caption">{stat.detail}</p>
+                  </div>
                 </div>
+                <p className={`stat-md shrink-0 ${stat.value !== "–" ? "" : "text-fg-disabled"}`}>
+                  {stat.value}
+                </p>
               </div>
-              <p className={`stat-md shrink-0 ${stat.value !== "–" ? "" : "text-fg-disabled"}`}>
-                {stat.value}
-              </p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         <div className="mt-6">
           <CTAButton to="/workouts">
@@ -497,8 +596,16 @@ const Calendar = () => {
               just clipped and swipes did nothing. */}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-1 md:px-6 md:pt-6">
             <SheetHeader className="pr-10 text-left sm:text-left">
+              {/* A day with nothing on it is reachable by link (?day=),
+                  and a link can open before the workouts have loaded. */}
               <SheetTitle className="heading-md">
-                {selectedLogs.length} workout{selectedLogs.length === 1 ? "" : "s"} logged
+                {selectedLogs.length > 0
+                  ? `${selectedLogs.length} workout${selectedLogs.length === 1 ? "" : "s"} logged`
+                  : logsLoading
+                    ? "Loading workouts…"
+                    : logsLoadFailed
+                      ? "Workouts could not be loaded"
+                      : "No workout logged"}
               </SheetTitle>
               {/* The day identity lives on each card now; kept here for
                   screen readers only. */}
@@ -512,19 +619,33 @@ const Calendar = () => {
               </SheetDescription>
             </SheetHeader>
 
+            {selectedLogs.length === 0 && selected && !logsLoading && !logsLoadFailed && (
+              <p className="body-sm mt-2">
+                Nothing was logged on{" "}
+                {selected.toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                })}
+                .
+              </p>
+            )}
+
             {/* Day totals */}
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              {[
-                { label: "Volume", value: dayVol > 0 ? fmtVol(dayVol, units) : "–" },
-                { label: "Sets", value: daySets > 0 ? String(daySets) : "–" },
-                { label: "Minutes", value: dayMin > 0 ? String(dayMin) : "–" },
-              ].map((s) => (
-                <div key={s.label} className="rounded-lg border border-border p-3">
-                  <p className="eyebrow mb-1 !text-[9px]">{s.label}</p>
-                  <p className="stat-md truncate">{s.value}</p>
-                </div>
-              ))}
-            </div>
+            {selectedLogs.length > 0 && (
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {[
+                  { label: "Volume", value: dayVol > 0 ? fmtVol(dayVol, units) : "–" },
+                  { label: "Sets", value: daySets > 0 ? String(daySets) : "–" },
+                  { label: "Minutes", value: dayMin > 0 ? String(dayMin) : "–" },
+                ].map((s) => (
+                  <div key={s.label} className="rounded-lg border border-border p-3">
+                    <p className="eyebrow mb-1 !text-[9px]">{s.label}</p>
+                    <p className="stat-md truncate">{s.value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Workouts */}
             <div className="mt-5 space-y-3">

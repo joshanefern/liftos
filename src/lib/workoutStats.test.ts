@@ -3,6 +3,7 @@ import type { WorkoutExercise } from "@/data/liftosMock";
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
 import {
   countPRsThisMonth,
+  getConsistency,
   getTopLifts,
   getWeekObservation,
   getWeeklyVolumeTarget,
@@ -99,6 +100,15 @@ describe("plannedSessionsPerWeek", () => {
     expect(plannedSessionsPerWeek("3–4 days")).toBe(3);
     expect(plannedSessionsPerWeek("5–6 days")).toBe(5);
     expect(plannedSessionsPerWeek("7 days")).toBe(7);
+  });
+
+  it("reads an exact onboarding answer as itself", () => {
+    expect(plannedSessionsPerWeek("2 days")).toBe(2);
+    expect(plannedSessionsPerWeek("3 days")).toBe(3);
+    expect(plannedSessionsPerWeek("4 days")).toBe(4);
+    expect(plannedSessionsPerWeek("5 days")).toBe(5);
+    expect(plannedSessionsPerWeek("6 days")).toBe(6);
+    expect(plannedSessionsPerWeek("1 day")).toBe(1);
   });
 
   it("accepts a bare number and caps at seven", () => {
@@ -207,6 +217,105 @@ describe("getWeekObservation", () => {
       "Last week: 1 workout",
     );
     expect(getWeekObservation({ ...base, prevWeekSessions: 3 })).toBe("Last week: 3 workouts");
+  });
+});
+
+describe("getConsistency", () => {
+  // Sunday 27 Sep 2026, late afternoon — a day off for a Mon/Wed/Fri lifter.
+  const NOW = new Date(2026, 8, 27, 17, 0, 0).getTime();
+  const on = (month: number, day: number): WorkoutLog => {
+    const finished = new Date(2026, month, day, 18, 30, 0).toISOString();
+    return { ...log([]), id: `on-${month}-${day}`, finished_at: finished, created_at: finished };
+  };
+  // Eight workouts inside the last four weeks, on an account older than that.
+  const eight = [on(7, 1), ...[3, 6, 9, 12, 15, 18, 21, 24].map((day) => on(8, day))];
+
+  it("measures the last four weeks against an exact answer", () => {
+    // "4 days" → 16 planned; 8 logged → 50%.
+    expect(getConsistency(eight, "4 days", NOW)).toEqual({
+      days: 28,
+      done: 8,
+      planned: 16,
+      pct: 50,
+    });
+    // "2 days" → 8 planned; 8 logged → 100%.
+    expect(getConsistency(eight, "2 days", NOW)?.pct).toBe(100);
+    expect(getConsistency(eight, "6 days", NOW)?.pct).toBe(33);
+  });
+
+  it("measures a legacy range against its low end", () => {
+    // "3–4 days" → 3 a week → 12 planned; 8 logged → 67%.
+    expect(getConsistency(eight, "3–4 days", NOW)?.pct).toBe(67);
+    // "1–2 days" → 4 planned; capped at 100.
+    expect(getConsistency(eight, "1–2 days", NOW)).toMatchObject({ planned: 4, pct: 100 });
+    expect(getConsistency(eight, "5–6 days", NOW)?.pct).toBe(40);
+    // "7 days" → 28 planned.
+    expect(getConsistency(eight, "7 days", NOW)?.pct).toBe(29);
+  });
+
+  it("ignores workouts older than four weeks", () => {
+    // Sun 30 Aug is the 29th day back; Mon 31 Aug opens the window.
+    expect(getConsistency([on(7, 30), on(8, 25)], "4 days", NOW)).toMatchObject({
+      days: 28,
+      done: 1,
+      pct: 6,
+    });
+    expect(getConsistency([on(7, 1), on(7, 31), on(8, 25)], "4 days", NOW)?.done).toBe(2);
+  });
+
+  it("grades a one-week account on the week it has had", () => {
+    // First workout Mon 21 Sep: 7 days counted → about 4 planned, not 16.
+    expect(getConsistency([on(8, 21), on(8, 23), on(8, 25)], "4 days", NOW)).toEqual({
+      days: 7,
+      done: 3,
+      planned: 4,
+      pct: 75,
+    });
+    // Four of four is the plan kept, not a quarter of a month.
+    expect(
+      getConsistency([on(8, 21), on(8, 23), on(8, 24), on(8, 26)], "4 days", NOW),
+    ).toEqual({ days: 7, done: 4, planned: 4, pct: 100 });
+  });
+
+  it("reads a first workout today as the plan met", () => {
+    const today = { ...on(8, 27), finished_at: new Date(NOW - 3_600_000).toISOString() };
+    expect(getConsistency([today], "4 days", NOW)).toEqual({
+      days: 1,
+      done: 1,
+      planned: 1,
+      pct: 100,
+    });
+  });
+
+  it("agrees with the Calendar's planned count for a young account", () => {
+    // First workout Mon 14 Sep, read Wed 23 Sep: 10 days → about 6 planned
+    // (the same case consistency.test pins for plannedWorkoutsInMonth).
+    const wednesday = new Date(2026, 8, 23, 12, 0, 0).getTime();
+    expect(getConsistency([on(8, 14), on(8, 16), on(8, 21)], "4 days", wednesday)).toEqual({
+      days: 10,
+      done: 3,
+      planned: 6,
+      pct: 50,
+    });
+  });
+
+  it("uses the full four weeks from the day the history is that long", () => {
+    // Mon 31 Aug is 28 days counted; Tue 1 Sep is 27.
+    expect(getConsistency([on(7, 31)], "4 days", NOW)).toMatchObject({ days: 28, planned: 16 });
+    expect(getConsistency([on(8, 1)], "4 days", NOW)).toMatchObject({ days: 27, planned: 15 });
+  });
+
+  it("has nothing to grade when the plan is unknown", () => {
+    expect(getConsistency(eight, null, NOW)).toBeNull();
+    expect(getConsistency(eight, "", NOW)).toBeNull();
+    expect(getConsistency(eight, "whenever", NOW)).toBeNull();
+  });
+
+  it("has nothing to grade before the first workout", () => {
+    expect(getConsistency([], "4 days", NOW)).toBeNull();
+    const future = { ...on(8, 28), finished_at: new Date(NOW + 86_400_000).toISOString() };
+    const broken = { ...on(8, 20), finished_at: "not a date" };
+    expect(getConsistency([future, broken], "4 days", NOW)).toBeNull();
   });
 });
 
