@@ -2,12 +2,25 @@
 // Runs against the QA dev server (mock auth, no writes) at an iPhone
 // viewport, dark and light, and writes PNGs + a README index to
 // docs/screenshots/. Usage: THEME_KEY=<localStorage key> node scripts/screenshots.mjs
+//
+// Two accounts are captured: the QA fixture user as-is (no history — the
+// first-run experience), and a returning lifter (`returning: true`) whose
+// six weeks of history are served by scripts/screenshot-fixtures.mjs from
+// intercepted requests. Coach replies in the returning set are canned text
+// rendered through the real streaming path, not model output.
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
+import {
+  buildReturningFixture,
+  installFixtureRoutes,
+  sessionFromTemplate,
+  sessionSeed,
+  supabaseUrl,
+} from "./screenshot-fixtures.mjs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:8085";
 const THEME_KEY = process.env.THEME_KEY ?? "liftos-theme-v2";
-const OUT = "docs/screenshots";
+const OUT = process.env.OUT_DIR ?? "docs/screenshots";
 
 const SESSION = JSON.stringify({
   name: "Push Day",
@@ -27,23 +40,33 @@ const SHOTS = [
   { name: "create-account", path: "/create-account", authed: false },
   { name: "onboarding", path: "/onboarding", authed: false },
   { name: "home-first-run", path: "/dashboard", full: true },
-  { name: "home-split-intake", path: "/dashboard", actions: async (p) => {
-      await p.getByRole("button", { name: /use my existing routine/i }).click();
-      for (const d of ["Monday", "Wednesday", "Friday"]) await p.getByRole("button", { name: d, exact: true }).click();
+  // The sheet opens with the onboarding day count already selected.
+  { name: "home-weekly-plan", path: "/dashboard", actions: async (p) => {
+      await p.getByRole("button", { name: /build my weekly plan/i }).click();
     } },
   { name: "workouts-library", path: "/workouts", full: true },
   { name: "workout-builder", path: "/workouts?new=1" },
   { name: "workout-builder-ai", path: "/workouts?new=1", actions: async (p) => {
       await p.getByRole("button", { name: "Design with AI" }).click();
     } },
+  { name: "workout-builder-discard", path: "/workouts?new=1", actions: async (p) => {
+      await p.getByPlaceholder(/push day/i).fill("Upper Body");
+      await p.getByRole("button", { name: "Close" }).click();
+    } },
   { name: "active-session", path: "/workouts/active", full: true,
     seeds: { liftos_active_workout_session: SESSION, "liftos-voice-dev": "1" } },
   { name: "active-session-vest", path: "/workouts/active",
     seeds: { liftos_active_workout_session: SESSION },
-    actions: async (p) => { await p.getByRole("button", { name: /vest or pack weight/i }).click(); } },
+    actions: async (p) => {
+      await focusExercise(p, "Treadmill");
+      await p.getByRole("button", { name: /vest or pack weight/i }).click();
+    } },
   { name: "active-session-vitals", path: "/workouts/active",
     seeds: { liftos_active_workout_session: SESSION },
-    actions: async (p) => { await p.locator('button[aria-label^="Live vitals"]').click(); } },
+    actions: async (p) => {
+      await focusExercise(p, "Treadmill");
+      await p.locator('button[aria-label^="Live vitals"]').click();
+    } },
   { name: "active-session-voice-card", path: "/workouts/active",
     seeds: { liftos_active_workout_session: SESSION, "liftos-voice-dev": "1", "liftos-voice-dev-phase": "applied" } },
   { name: "tab-chooser", path: "/dashboard", actions: async (p) => {
@@ -53,7 +76,10 @@ const SHOTS = [
   { name: "calendar", path: "/calendar", full: true },
   { name: "coach", path: "/coach" },
   { name: "coach-starting-point", path: "/coach", actions: async (p) => {
-      await p.getByRole("button", { name: /only have 30 minutes/i }).click();
+      await p.getByRole("button", { name: /build my first workout/i }).click();
+    } },
+  { name: "coach-voice-answer", path: "/coach", full: true, actions: async (p) => {
+      await p.getByRole("button", { name: /how does voice logging work/i }).click();
     } },
   { name: "forgot-password", path: "/forgot-password", authed: false },
   { name: "onboarding-step-2", path: "/onboarding", authed: false, actions: async (p) => { await advance(p, 1); } },
@@ -75,7 +101,58 @@ const SHOTS = [
     actions: async (p) => { await p.getByRole("button", { name: /more session options/i }).click(); } },
   { name: "privacy", path: "/privacy", full: true },
   { name: "terms", path: "/terms", full: true },
+
+  // ── Returning lifter (fixture history) ──
+  { name: "returning-home", path: "/dashboard", full: true, returning: true },
+  { name: "returning-workouts-library", path: "/workouts", full: true, returning: true },
+  { name: "returning-active-session", path: "/workouts/active", full: true, returning: true,
+    session: "Push Day" },
+  // Finishing with new records opens the celebration first; Done reveals the recap.
+  { name: "returning-workout-records", path: "/workouts/active", returning: true,
+    session: "Push Day", actions: finishWorkout },
+  { name: "returning-workout-recap", path: "/workouts/active", full: true, returning: true,
+    session: "Push Day", actions: async (p) => {
+      await finishWorkout(p);
+      await p.getByRole("button", { name: /^done$/i }).click();
+      await p.waitForTimeout(1800);
+    } },
+  { name: "returning-progress", path: "/progress", full: true, returning: true },
+  { name: "returning-calendar", path: "/calendar", full: true, returning: true },
+  { name: "returning-calendar-day", path: "/calendar", returning: true, actions: async (p) => {
+      await p
+        .locator('button[aria-label*="workout" i]:not([disabled]):not([aria-label*="no workout" i])')
+        .last()
+        .click();
+    } },
+  { name: "returning-coach", path: "/coach", returning: true },
+  { name: "returning-coach-reply", path: "/coach", full: true, returning: true, actions: async (p) => {
+      const box = p.locator("textarea").first();
+      await box.fill("I only have 30 minutes today. What should I keep from Push Day?");
+      await box.press("Enter");
+      await p.getByText("Skip the pushdowns today", { exact: false }).waitFor({ timeout: 15_000 });
+    } },
 ];
+
+/** Point the session's focus card at another exercise via the list below it. */
+async function focusExercise(p, name) {
+  await p
+    .locator('section[aria-labelledby="session-exercise-list"]')
+    .getByRole("button", { name: new RegExp(name, "i") })
+    .click();
+  await p.waitForTimeout(500);
+}
+
+/** Log every set of the seeded session, then finish — lands on the recap. */
+async function finishWorkout(p) {
+  const complete = p.getByRole("button", { name: /^complete set$/i });
+  for (let i = 0; i < 40; i += 1) {
+    if (!(await complete.count())) break;
+    await complete.first().click();
+    await p.waitForTimeout(140);
+  }
+  await p.getByRole("button", { name: /finish workout/i }).first().click();
+  await p.waitForTimeout(1600);
+}
 
 /** Onboarding: pick the first choice on each step and continue N times. */
 async function advance(p, times) {
@@ -102,12 +179,22 @@ for (const theme of ["dark", "light"]) {
       hasTouch: true,
       colorScheme: theme,
     });
+    const seeds = { ...(shot.seeds ?? {}) };
+    if (shot.returning) {
+      const fixture = buildReturningFixture();
+      await installFixtureRoutes(context, fixture);
+      Object.assign(seeds, sessionSeed(supabaseUrl()));
+      if (shot.session) {
+        const template = fixture.templates.find((t) => t.name === shot.session);
+        seeds.liftos_active_workout_session = sessionFromTemplate(template);
+      }
+    }
     await context.addInitScript(({ key, theme, seeds }) => {
       try {
         localStorage.setItem(key, theme); // ThemeContext stores the raw preference
         for (const [k, v] of Object.entries(seeds ?? {})) localStorage.setItem(k, v);
       } catch {}
-    }, { key: THEME_KEY, theme, seeds: shot.seeds ?? {} });
+    }, { key: THEME_KEY, theme, seeds });
     const page = await context.newPage();
     try {
       await page.goto(`${BASE}${shot.path}`, { waitUntil: "networkidle" });
@@ -135,9 +222,17 @@ await browser.close();
 const byTheme = (t) => index.filter((i) => i.theme === t).map((i) => `- \`${i.file}\` — ${i.name} (\`${i.path}\`)`).join("\n");
 writeFileSync(`${OUT}/README.md`, `# LiftOS screenshots
 
-iPhone viewport (393×852 @2x), captured from the QA build (fixture account,
-no real data). Regenerate with \`node scripts/screenshots.mjs\` while the
-\`liftos-qa\` dev server is running.
+iPhone viewport (393×852 @2x), captured from the QA build. Regenerate with
+\`node scripts/screenshots.mjs\` while the \`liftos-qa\` dev server is running.
+
+Two accounts, neither real:
+- **New lifter** — the QA fixture user with no history (first-run screens).
+- **Returning lifter** (\`returning-*\`) — six weeks of Push / Pull / Legs
+  served from \`scripts/screenshot-fixtures.mjs\`. Every number on those
+  screens is computed by the app from that history. The Coach reply and the
+  Coach Insight bullets are canned text rendered through the app's real
+  streaming and markdown path — they show how a reply looks, they are not
+  model output.
 
 ## Dark
 ${byTheme("dark")}
