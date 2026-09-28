@@ -62,6 +62,7 @@ export const useDictation = (
   const longest = useRef("");
   const lastChangeAt = useRef(0);
   const startedAt = useRef(0);
+  const startRun = useRef(0);
   // The transcript last handed to the caller; only a changed one re-emits.
   const emitted = useRef("");
   // Bumped per tap-to-start so the caller can tell a new dictation from a
@@ -101,6 +102,10 @@ export const useDictation = (
   const finish = async (): Promise<void> => {
     if (!active.current) return;
     active.current = false;
+    // A second tap while start() is still opening the mic lands here: mark
+    // that run stale so it closes what it opens instead of leaving the mic
+    // live with no watchdog.
+    startRun.current += 1;
     let transcript = "";
     try {
       transcript = (await stopListening()).transcript.trim();
@@ -113,8 +118,18 @@ export const useDictation = (
     emit(transcript);
   };
 
+  /** Safe to call at any time, from any render's closure: it reads refs. */
   const cancel = (): void => {
+    // Nothing of this hook's is open or opening (start() holds `active`
+    // from its first line). The recognizer is one native session shared
+    // with the logger's voice pill, so a cancel with nothing to cancel
+    // stays off the bridge; only a leftover "blocked" message is cleared.
+    if (!active.current) {
+      setState((cur) => (cur.at === "idle" ? cur : { at: "idle" }));
+      return;
+    }
     active.current = false;
+    startRun.current += 1;
     teardownListeners();
     void cancelListening().catch(() => {});
     setState({ at: "idle" });
@@ -126,9 +141,17 @@ export const useDictation = (
       return;
     }
     active.current = true;
+    // start() awaits four times before the mic is open, and the builder can
+    // close during any of them. cancel() bumps startRun, so each await
+    // re-checks that this run is still the live one; what a stale run
+    // opened it closes itself, by its own handle, and never touches the
+    // refs a newer run may already own.
+    const run = (startRun.current += 1);
+    const stale = () => run !== startRun.current;
     setState({ at: "starting" });
     voiceDiag("dictation: begin");
     const granted = await ensureSpeechPermissions();
+    if (stale()) return;
     if (!granted) {
       active.current = false;
       setState({
@@ -144,7 +167,8 @@ export const useDictation = (
     startedAt.current = Date.now();
     lastChangeAt.current = Date.now();
     setState({ at: "listening", partial: "" });
-    partialRef.current = await onSpeechPartial((t) => {
+    const partial = await onSpeechPartial((t) => {
+      if (stale()) return;
       if (t !== last.current) {
         last.current = t;
         longest.current = longerOf(t, longest.current);
@@ -152,11 +176,21 @@ export const useDictation = (
       }
       setState((cur) => (cur.at === "listening" ? { at: "listening", partial: t } : cur));
     });
-    errorRef.current = await onSpeechError(() => {
-      if (!active.current) return;
+    if (stale()) {
+      partial.remove();
+      return;
+    }
+    partialRef.current = partial;
+    const failure = await onSpeechError(() => {
+      if (stale() || !active.current) return;
       if (last.current.trim().length >= 3) void finish();
       else cancel();
     });
+    if (stale()) {
+      failure.remove();
+      return;
+    }
+    errorRef.current = failure;
     watchdog.current = window.setInterval(() => {
       if (!active.current) return;
       const idle = Date.now() - lastChangeAt.current;
@@ -176,13 +210,19 @@ export const useDictation = (
       // latency; segment chaining covers Apple's per-task limit.
       await startListening(vocabularyRef.current.slice(0, 100), { preferServer: true });
     } catch (err) {
+      if (stale()) return;
       active.current = false;
       teardownListeners();
       setState({
         at: "blocked",
         reason: `Voice couldn’t start (${err instanceof Error ? err.message : String(err)}).`,
       });
+      return;
     }
+    // Cancelled while the recognizer was opening: the cancel ran before
+    // there was a session to close, so close the one that just opened —
+    // unless a newer run is already listening on it.
+    if (stale() && !active.current) void cancelListening().catch(() => {});
   };
 
   return { state, start, cancel, supported: speechSupported() };

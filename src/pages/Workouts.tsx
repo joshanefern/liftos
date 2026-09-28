@@ -21,15 +21,19 @@ import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PendingReviewsCard } from "@/components/review/PendingReviewsCard";
 import type { WorkoutExercise } from "@/data/liftosMock";
+import { DiscardWorkoutDialog } from "@/components/workouts/DiscardWorkoutDialog";
+import { reseatSheet } from "@/components/workouts/reseatSheet";
+import { useLeaveGuard } from "@/components/workouts/useLeaveGuard";
 import {
-  STARTER_DURATION_BUCKETS,
+  STARTER_ANY_DURATION,
+  STARTER_DURATION_CAPS,
   STARTER_EQUIPMENT_OPTIONS,
   recommendedStarter,
-  starterDurationBucket,
+  starterFitsIn,
   starterPrograms,
   starterRunsOn,
   starterSetsLabel,
-  type StarterDurationBucket,
+  type StarterDurationCap,
   type StarterEquipment,
   type StarterProgram,
 } from "@/data/starterPrograms";
@@ -54,20 +58,17 @@ import { reuseRowIds } from "@/lib/voicePlanRows";
 import { buildCoachContext, streamCoach } from "@/lib/coach";
 import { parseWeekPlan } from "@/lib/coachSetup";
 import { inferKind } from "@/lib/exerciseTracking";
+import { BLANK_DRAFT_ROW, hasUnsavedWork, snapshotDraft, type BuilderDraft, type DraftRow } from "@/lib/builderDraft";
+import { libraryIsFull, templateLimitNotice } from "@/lib/templateLimit";
 import { Check, ChevronDown, ChevronsRight, Dumbbell, Pencil, Plus, Trash2, X, Mic, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
-type ExerciseDraft = {
+/* The visible fields are DraftRow — mode "lift" = sets × reps × weight,
+   "cardio" = one duration block (stairmaster, bike, treadmill) logged in
+   minutes. */
+type ExerciseDraft = DraftRow & {
   id: string;
-  name: string;
-  /** "lift" = sets × reps × weight; "cardio" = one duration block
-      (stairmaster, bike, treadmill) logged in minutes. */
-  mode: "lift" | "cardio";
-  sets: string;
-  reps: string;
-  weight: string;
-  minutes: string;
   decideLater: boolean;
   /** The template exercise this draft came from, passed through VERBATIM on
       save while the row is untouched — the draft fields flatten pyramids,
@@ -80,14 +81,9 @@ type ExerciseDraft = {
 
 const createExerciseDraft = (overrides?: Partial<ExerciseDraft>): ExerciseDraft => ({
   id: `exercise-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  name: "",
-  mode: "lift",
-  sets: "3",
   // Targets are opt-in: blank reps/weight = decide while training, so the
   // fastest path is name → Save.
-  reps: "",
-  weight: "",
-  minutes: "",
+  ...BLANK_DRAFT_ROW,
   decideLater: false,
   dirty: false,
   ...overrides,
@@ -135,12 +131,24 @@ const createExerciseDraftFromTemplate = (exercise: WorkoutExercise): ExerciseDra
 };
 
 /* Toggle chip — the library filters and the AI panel's quick choices. 36px
-   tall with the ±4px hit-area trick, so the thumb gets 44pt. */
-const Chip = ({ pressed, onClick, children }: { pressed: boolean; onClick: () => void; children: ReactNode }) => (
+   tall with the ±4px hit-area trick, so the thumb gets 44pt. `spoken` is
+   the screen-reader name for a chip whose visible label drops its unit. */
+const Chip = ({
+  pressed,
+  onClick,
+  spoken,
+  children,
+}: {
+  pressed: boolean;
+  onClick: () => void;
+  spoken?: string;
+  children: ReactNode;
+}) => (
   <button
     type="button"
     onClick={onClick}
     aria-pressed={pressed}
+    aria-label={spoken}
     className={cn(
       "relative inline-flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-full border px-3 text-[12.5px] font-semibold transition after:absolute after:-inset-1 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
       pressed ? "border-foreground bg-foreground text-background" : "border-border bg-card text-fg-muted hover:text-fg",
@@ -208,10 +216,10 @@ type StarterProgramRowProps = {
   onStart: () => void;
 };
 
-/* One hairline index row per starter program. Collapsed it is the label and
+/* One hairline index row per starter workout. Collapsed it is the label and
    a chevron; tapping opens the preview — every exercise with its sets ×
    reps — and only there do Save and Start appear, so nobody starts a
-   program they haven't looked at. */
+   workout they haven't looked at. */
 const StarterProgramRow = ({
   program,
   recommended,
@@ -222,78 +230,102 @@ const StarterProgramRow = ({
   onToggle,
   onSave,
   onStart,
-}: StarterProgramRowProps) => (
-  <div className="border-b border-border">
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={expanded}
-      className="flex min-h-[60px] w-full items-center justify-between gap-3 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-    >
-      <div className="w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-semibold text-fg">{program.name}</p>
-          {recommended && (
-            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
-              Recommended
-            </span>
-          )}
-        </div>
-        <p className="caption truncate">
-          Program · {program.split} · {program.duration} min · {program.difficulty}
-        </p>
-      </div>
-      <ChevronDown
-        size={16}
-        className={cn("shrink-0 text-fg-muted transition-transform", expanded && "rotate-180")}
-      />
-    </button>
-    {expanded && (
-      <div className="pb-4">
-        <p className="body-sm">{program.description}</p>
-        <ul className="mt-3 divide-y divide-border rounded-[14px] border border-border bg-card">
-          {program.exercises.map((exercise) => (
-            <li key={exercise.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-              <span className="truncate text-sm text-fg">{exercise.name}</span>
-              <span className="mono shrink-0 text-xs tabular-nums text-fg-muted">
-                {starterSetsLabel(exercise)}
+}: StarterProgramRowProps) => {
+  // A preview opens downward, so its Save and Start land under the tab bar
+  // unless the page follows. "nearest" moves only as far as it takes to
+  // show them, and not at all when they are already clear of the bar.
+  // Only a tap does this. A row that comes back already open — a filter
+  // chip or the rail put it back on the page — must leave the page where
+  // the thumb is, so the first value compared against is the mount's own.
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const wasExpanded = useRef(expanded);
+  useEffect(() => {
+    const opened = expanded && !wasExpanded.current;
+    wasExpanded.current = expanded;
+    if (!opened) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    actionsRef.current?.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
+  }, [expanded]);
+
+  return (
+    <div className="border-b border-border">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex min-h-[60px] w-full items-center justify-between gap-3 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        <div className="w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-semibold text-fg">{program.name}</p>
+            {recommended && (
+              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
+                Recommended
               </span>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-3 flex items-center justify-end gap-1">
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saveDisabled}
-            className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-medium text-fg-muted transition hover:bg-secondary hover:text-fg focus:outline-none focus:ring-2 focus:ring-ring/40 disabled:cursor-default disabled:opacity-60"
-          >
-            {saved ? (
-              <>
-                <Check size={12} />
-                Saved
-              </>
-            ) : saving ? (
-              "Saving…"
-            ) : (
-              <>
-                <Plus size={12} />
-                Save to library
-              </>
             )}
-          </button>
-          <button
-            type="button"
-            onClick={onStart}
-            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/40"
-          >
-            Start
-          </button>
+          </div>
+          <p className="caption truncate">
+            Workout · {program.split} · {program.duration} min · {program.difficulty}
+          </p>
         </div>
-      </div>
-    )}
-  </div>
-);
+        <ChevronDown
+          size={16}
+          className={cn("shrink-0 text-fg-muted transition-transform", expanded && "rotate-180")}
+        />
+      </button>
+      {expanded && (
+        <div className="pb-4">
+          <p className="body-sm">{program.description}</p>
+          <ul className="mt-3 divide-y divide-border rounded-[14px] border border-border bg-card">
+            {program.exercises.map((exercise) => (
+              <li key={exercise.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                <span className="truncate text-sm text-fg">{exercise.name}</span>
+                <span className="mono shrink-0 text-xs tabular-nums text-fg-muted">
+                  {starterSetsLabel(exercise)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {/* The scroll margin is the tab bar's footprint (4rem + the home
+              indicator) plus breathing room, so "in view" means clear of the
+              bar and its center button, not merely inside the window. */}
+          <div
+            ref={actionsRef}
+            className="mt-3 flex scroll-mb-[calc(4rem+var(--safe-bottom)+1.5rem)] scroll-mt-[calc(var(--safe-top)+1rem)] items-center justify-end gap-1 md:scroll-mb-6"
+          >
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saveDisabled}
+              className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-medium text-fg-muted transition hover:bg-secondary hover:text-fg focus:outline-none focus:ring-2 focus:ring-ring/40 disabled:cursor-default disabled:opacity-60"
+            >
+              {saved ? (
+                <>
+                  <Check size={12} />
+                  Saved
+                </>
+              ) : saving ? (
+                "Saving…"
+              ) : (
+                <>
+                  <Plus size={12} />
+                  Save to library
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onStart}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              Start
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Workouts = () => {
   const navigate = useNavigate();
@@ -312,7 +344,8 @@ const Workouts = () => {
   // Starter library: which preview is open, and the two filter chips.
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
   const [equipmentFilter, setEquipmentFilter] = useState<StarterEquipment | null>(null);
-  const [durationFilter, setDurationFilter] = useState<StarterDurationBucket | null>(null);
+  // null = "Any", the resting state.
+  const [durationFilter, setDurationFilter] = useState<StarterDurationCap | null>(null);
 
   const { profile } = useUser();
   const units = profile?.units ?? "lb";
@@ -333,9 +366,9 @@ const Workouts = () => {
     const list = starterPrograms.filter(
       (program) =>
         (equipmentFilter === null || starterRunsOn(program, equipmentFilter)) &&
-        (durationFilter === null || starterDurationBucket(program.duration) === durationFilter),
+        starterFitsIn(program, durationFilter),
     );
-    // The recommended program leads — "start here" should need no scrolling.
+    // The recommended workout leads — "start here" should need no scrolling.
     if (!recommendedId) return list;
     return [...list.filter((p) => p.id === recommendedId), ...list.filter((p) => p.id !== recommendedId)];
   }, [equipmentFilter, durationFilter, recommendedId]);
@@ -353,24 +386,7 @@ const Workouts = () => {
     return () => { document.body.style.overflow = previousOverflow; };
   }, [builderOpen]);
 
-  const openBuilder = () => {
-    setEditingWorkoutId(null);
-    setWorkoutName("");
-    // One empty row ready to type into — no "add your first exercise" detour.
-    setExercises([createExerciseDraft()]);
-    setBuilderOpen(true);
-  };
-
-  // The + tab (and sidebar "New workout") land here as /workouts?new=1 —
-  // open the builder and strip the param so back/refresh don't re-open it.
   const [searchParams, setSearchParams] = useSearchParams();
-  useEffect(() => {
-    if (searchParams.get("new") === "1") {
-      openBuilder();
-      setSearchParams({}, { replace: true });
-    }
-     
-  }, [searchParams, setSearchParams]);
 
   // A session in progress — the way back in now that logging lives under
   // Workouts. Read per render: navigation re-mounts this page, and finishing
@@ -385,13 +401,6 @@ const Workouts = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-check on every route entry
   }, [searchParams]);
-
-  const editWorkout = (template: { id: string; name: string; exercises: WorkoutExercise[] }) => {
-    setEditingWorkoutId(template.id);
-    setWorkoutName(template.name);
-    setExercises(template.exercises.map(createExerciseDraftFromTemplate));
-    setBuilderOpen(true);
-  };
 
   const removeWorkout = async (id: string) => {
     try {
@@ -418,7 +427,7 @@ const Workouts = () => {
     navigate("/workouts/active");
   };
 
-  // Starter programs start without a templateId — see buildSessionFromStarter.
+  // Starter workouts start without a templateId — see buildSessionFromStarter.
   const startProgram = (program: StarterProgram) => {
     if (guardActive()) return;
     persistActiveSession(buildSessionFromStarter(program));
@@ -435,8 +444,8 @@ const Workouts = () => {
     } catch (err) {
       toast(
         err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR
-          ? { title: "Workout limit reached", description: "You have 7 saved workouts — the max. Delete one in Workouts to make room." }
-          : { title: "Could not save program", variant: "destructive" },
+          ? { ...templateLimitNotice(MAX_TEMPLATES), variant: "destructive" }
+          : { title: "Could not save workout", variant: "destructive" },
       );
     } finally {
       setSavingProgramId(null);
@@ -455,6 +464,12 @@ const Workouts = () => {
   const [pendingPlans, setPendingPlans] = useState(0);
   const dictating = pendingPlans > 0;
   const planSeq = useRef(0);
+  // Bumped every time the builder opens or closes. Speech, a plan or a
+  // design asked for under an older number belongs to a builder that is
+  // gone: it is dropped when it lands, so nothing closed or discarded can
+  // fill rows in — not even after the builder has been opened again.
+  const builderRun = useRef(0);
+  const dictationRun = useRef(0);
   const voiceSession = useRef(0);
   const voiceRowIds = useRef<Set<string>>(new Set());
   const nameFromVoice = useRef(false);
@@ -477,6 +492,22 @@ const Workouts = () => {
   const [aiBusy, setAiBusy] = useState(false);
   const aiRowIds = useRef<Set<string>>(new Set());
   const nameFromAi = useRef(false);
+  // The workout name as it stands NOW. A plan or a design lands seconds
+  // after it was asked for, inside the render it was asked in — a name
+  // typed during the wait exists only here. Every write goes through
+  // writeName so the two never part.
+  const liveName = useRef("");
+  const writeName = (name: string): void => {
+    liveName.current = name;
+    setWorkoutName(name);
+  };
+  // Typing in the name field takes the name back from dictation and the
+  // coach: neither replaces it again unless the lifter empties the field.
+  const typeName = (name: string): void => {
+    nameFromVoice.current = false;
+    nameFromAi.current = false;
+    writeName(name);
+  };
   const dictationTarget = useRef<"rows" | "ai">("rows");
   // Chips present when the AI mic opened — every partial transcript is
   // merged with THIS set (see mergeAskTranscript), not with whatever the
@@ -493,11 +524,16 @@ const Workouts = () => {
   const liveQueued = useRef<{ transcript: string; session: number } | null>(null);
   const interpretLatest = (transcript: string, session: number): void => {
     const seq = ++planSeq.current;
+    const run = builderRun.current;
     liveInFlight.current = true;
     setPendingPlans((n) => n + 1);
     voiceDiag(`builder: interpret #${seq} session ${session} (${transcript.length} chars)`);
     void interpretPlan(transcript, units)
       .then((plan) => {
+        if (run !== builderRun.current) {
+          voiceDiag(`builder: plan #${seq} landed after the builder closed → dropped`);
+          return;
+        }
         if (seq !== planSeq.current) {
           voiceDiag(`builder: plan #${seq} superseded → dropped`);
           return;
@@ -511,8 +547,8 @@ const Workouts = () => {
           voiceRowIds.current = new Set();
           nameFromVoice.current = false;
         }
-        if (plan.name && (!workoutName.trim() || nameFromVoice.current)) {
-          setWorkoutName(plan.name);
+        if (plan.name && (!liveName.current.trim() || nameFromVoice.current)) {
+          writeName(plan.name);
           nameFromVoice.current = true;
         }
         const previous = voiceRowIds.current;
@@ -541,7 +577,7 @@ const Workouts = () => {
       })
       .catch((err) => {
         voiceDiag(`builder: plan #${seq} FAILED ${err instanceof Error ? err.message : String(err)}`);
-        if (seq !== planSeq.current) return;
+        if (run !== builderRun.current || seq !== planSeq.current) return;
         toast(
           err instanceof Error && err.message === "plan-mode-not-deployed"
             ? {
@@ -553,7 +589,9 @@ const Workouts = () => {
         );
       })
       .finally(() => {
-        setPendingPlans((n) => n - 1);
+        // Closing the builder already zeroed these for its own requests.
+        if (run !== builderRun.current) return;
+        setPendingPlans((n) => Math.max(0, n - 1));
         liveInFlight.current = false;
         const next = liveQueued.current;
         if (next) {
@@ -574,6 +612,7 @@ Reply with NOTHING but this exact format:
   const designWorkout = async (): Promise<void> => {
     const ask = aiText.trim();
     if (!ask || aiBusy) return;
+    const run = builderRun.current;
     setAiBusy(true);
     voiceDiag(`builder: ai design (${ask.length} chars)`);
     try {
@@ -582,14 +621,18 @@ Reply with NOTHING but this exact format:
         buildCoachContext([], profile),
         () => {},
       );
+      if (run !== builderRun.current) {
+        voiceDiag("builder: ai design landed after the builder closed → dropped");
+        return;
+      }
       const [day] = parseWeekPlan(reply, 1);
       if (!day || day.exercises.length === 0) {
         toast({ title: "The coach couldn’t design that — add a bit more detail", variant: "destructive" });
         return;
       }
       voiceDiag(`builder: ai design → "${day.name}" ${day.exercises.length} exercises`);
-      if (!workoutName.trim() || nameFromAi.current) {
-        setWorkoutName(day.name);
+      if (!liveName.current.trim() || nameFromAi.current) {
+        writeName(day.name);
         nameFromAi.current = true;
       }
       // Designing again replaces the AI's rows; typed and dictated rows stay.
@@ -620,14 +663,18 @@ Reply with NOTHING but this exact format:
       toast({ title: `Designed “${day.name}”`, description: `${day.exercises.length} exercises — edit anything before saving.` });
     } catch (err) {
       voiceDiag(`builder: ai design FAILED ${err instanceof Error ? err.message : String(err)}`);
-      toast({ title: "Couldn’t reach the coach — try again", variant: "destructive" });
+      if (run === builderRun.current) {
+        toast({ title: "Couldn’t reach the coach — try again", variant: "destructive" });
+      }
     } finally {
-      setAiBusy(false);
+      if (run === builderRun.current) setAiBusy(false);
     }
   };
 
   const dictation = useDictation(
     (transcript, session) => {
+      // A last transcript can still arrive after the mic was told to stop.
+      if (dictationRun.current !== builderRun.current) return;
       // Speaking into the AI box: the words are the ask, not the plan. They
       // replace the typed part only — chips chosen before speaking stay.
       if (dictationTarget.current === "ai") {
@@ -644,6 +691,7 @@ Reply with NOTHING but this exact format:
   );
   const startDictation = (target: "rows" | "ai"): void => {
     dictationTarget.current = target;
+    dictationRun.current = builderRun.current;
     if (target === "ai") aiChips.current = askChipPhrases(aiText);
     void dictation.start();
   };
@@ -653,6 +701,159 @@ Reply with NOTHING but this exact format:
     setAiText(next);
     aiChips.current = askChipPhrases(next);
   };
+
+  // ── Opening and leaving the builder. People tap outside a sheet by
+  // accident; a builder holding work asks before it goes, whichever way
+  // they tried to leave, and one holding nothing just closes.
+  const [discardOpen, setDiscardOpen] = useState(false);
+  // Crossing the phone/desktop width (a rotation) re-mounts the builder in
+  // a new portal, later in the body than the question's: the question would
+  // be left underneath it, inert, with every way out already spent on it.
+  // So the question is withdrawn. The builder keeps its fields, and the
+  // next way out asks again with the question mounted last, on top.
+  useEffect(() => {
+    setDiscardOpen(false);
+  }, [isMobile]);
+  // Where the caret was when the question went up. The question has no
+  // trigger for Radix to hand focus back to, so "Keep editing" would leave
+  // it on the page body: typing goes nowhere, the phone keyboard is gone.
+  const returnFocusTo = useRef<HTMLElement | null>(null);
+  // A touch on the scrim takes the caret out of its field a moment BEFORE
+  // the question goes up, so by then nothing holds focus. The field that
+  // lost it to nothing is kept for that moment only — a keyboard put away
+  // a while ago is not brought back.
+  const droppedCaret = useRef<{ field: HTMLElement; at: number } | null>(null);
+  const builderOpenNow = useRef(false);
+  builderOpenNow.current = builderOpen;
+  // Runs when the question has finished leaving, for Keep editing and for
+  // Discard alike, so it looks at what is true by then.
+  const restoreFocus = (event: Event): void => {
+    const target = returnFocusTo.current;
+    returnFocusTo.current = null;
+    if (!target || !target.isConnected || !builderOpenNow.current) return;
+    // A field focused while the question was fading keeps the caret.
+    const now = document.activeElement;
+    const taken = now instanceof HTMLElement && now !== document.body && !now.closest('[role="alertdialog"]');
+    if (taken) return;
+    // Prevented, or Radix sends focus to a trigger that does not exist.
+    event.preventDefault();
+    target.focus({ preventScroll: true });
+  };
+  // What the builder showed when it opened — the yardstick for "unsaved".
+  const openedDraft = useRef<BuilderDraft>(snapshotDraft({ name: "", rows: [] }));
+  const builderSheetRef = useRef<HTMLDivElement>(null);
+  const heardWords = dictation.state.at === "listening" && dictation.state.partial.trim() !== "";
+  const unsaved =
+    builderOpen &&
+    hasUnsavedWork(
+      openedDraft.current,
+      { name: workoutName, rows: exercises, ask: aiText },
+      dictating || aiBusy || heardWords,
+    );
+
+  const leaveGuard = useLeaveGuard({
+    unsaved,
+    onBack: () => requestCloseBuilder("back"),
+  });
+
+  // The fields are reset here, on the way IN, and left alone on the way
+  // out: a closing sheet is still on screen for its exit animation, and
+  // blanking it mid-slide reads as a glitch.
+  const beginBuilder = (id: string | null, name: string, rows: ExerciseDraft[]): void => {
+    builderRun.current += 1;
+    openedDraft.current = snapshotDraft({ name, rows, ask: "" });
+    setEditingWorkoutId(id);
+    writeName(name);
+    setExercises(rows);
+    setAiOpen(false);
+    setAiText("");
+    aiChips.current = [];
+    voiceRowIds.current = new Set();
+    aiRowIds.current = new Set();
+    nameFromVoice.current = false;
+    nameFromAi.current = false;
+    setDiscardOpen(false);
+    setBuilderOpen(true);
+    leaveGuard.hold(true);
+  };
+
+  // A full library is said before a workout is built, not when it fails to
+  // save: the builder is modal, so making room from inside it means
+  // discarding what was just built. Edits take no room and stay allowed.
+  const libraryFull = libraryIsFull({ saved: templates.length, loading, max: MAX_TEMPLATES });
+  // A builder that opened before the library had loaded (a cold
+  // /workouts?new=1) gets its answer here, as a line above Save. Held as it
+  // was while a save is landing or the sheet is closing: the 7th workout's
+  // own save fills the library, and the line must not flash in the sheet
+  // that is sliding away.
+  const fullForThisBuilder = useRef(false);
+  if (builderOpen && !saving) fullForThisBuilder.current = editingWorkoutId === null && libraryFull;
+  const atCap = fullForThisBuilder.current;
+
+  // One empty row ready to type into — no "add your first exercise" detour.
+  const openBuilder = (): void => {
+    if (libraryFull) {
+      toast({ ...templateLimitNotice(MAX_TEMPLATES), variant: "destructive" });
+      return;
+    }
+    beginBuilder(null, "", [createExerciseDraft()]);
+  };
+
+  const editWorkout = (template: { id: string; name: string; exercises: WorkoutExercise[] }): void =>
+    beginBuilder(template.id, template.name, template.exercises.map(createExerciseDraftFromTemplate));
+
+  // Every way out ends here: saved, discarded, or closed with nothing to
+  // lose. `via` "back" means the browser already popped the builder's
+  // history entry, so there is nothing left to release.
+  const closeBuilder = (via: "back" | "sheet" = "sheet"): void => {
+    builderRun.current += 1;
+    liveQueued.current = null;
+    liveInFlight.current = false;
+    setPendingPlans(0);
+    setAiBusy(false);
+    // Not asked of dictation.state: a save awaits the network and then
+    // closes with the closure it started in, whose state is as old as the
+    // tap on Save. The hook reads its own refs and knows what is live now.
+    dictation.cancel();
+    setDiscardOpen(false);
+    setBuilderOpen(false);
+    if (via === "sheet") leaveGuard.release();
+  };
+
+  // Tap outside, X, Escape, swipe-down, the desktop dialog's close button
+  // and the browser's Back button all arrive here.
+  const requestCloseBuilder = (via: "back" | "sheet" = "sheet"): void => {
+    if (!unsaved) {
+      closeBuilder(via);
+      return;
+    }
+    // A swipe that vaul meant as a close has left the sheet part-way down.
+    reseatSheet(builderSheetRef.current);
+    if (via === "back") leaveGuard.hold();
+    // Back can arrive while the question is already up and holding focus;
+    // the caret to go back to is the one remembered when it went up.
+    const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!focused?.closest('[role="alertdialog"]')) {
+      const holding =
+        focused && focused !== document.body && focused.getAttribute("role") !== "dialog" ? focused : null;
+      const dropped = droppedCaret.current;
+      const justDropped = dropped && performance.now() - dropped.at < 1000 ? dropped.field : null;
+      returnFocusTo.current = holding ?? justDropped;
+    }
+    setDiscardOpen(true);
+  };
+
+  // The + tab (and sidebar "New workout") land here as /workouts?new=1 —
+  // strip the param so back/refresh don't re-open the builder, THEN open
+  // it: opening pushes the builder's own history entry, and the replace
+  // has to hit the ?new=1 entry underneath, not that one.
+  useEffect(() => {
+    if (searchParams.get("new") === "1") {
+      setSearchParams({}, { replace: true });
+      openBuilder();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openBuilder is re-created every render; only the param matters
+  }, [searchParams, setSearchParams]);
 
   const updateExercise = <K extends keyof ExerciseDraft>(id: string, key: K, value: ExerciseDraft[K]) => {
     setExercises((current) =>
@@ -670,7 +871,7 @@ Reply with NOTHING but this exact format:
   };
 
   const saveWorkout = async () => {
-    if (!canSave || saving) return;
+    if (!canSave || saving || atCap) return;
     setSaving(true);
 
     const exercisesToSave: WorkoutExercise[] = completedExercises.map((exercise) => {
@@ -733,12 +934,12 @@ Reply with NOTHING but this exact format:
 
     try {
       await save({ id: editingWorkoutId, name: workoutName.trim(), exercises: exercisesToSave });
-      setEditingWorkoutId(null);
-      setBuilderOpen(false);
+      // Saved work is not unsaved work: straight out, no question asked.
+      closeBuilder();
     } catch (err) {
       toast(
         err instanceof Error && err.message === TEMPLATE_LIMIT_ERROR
-          ? { title: "Workout limit reached", description: "You have 7 saved workouts — the max. Delete one in Workouts to make room." }
+          ? { ...templateLimitNotice(MAX_TEMPLATES), variant: "destructive" }
           : { title: "Could not save workout", variant: "destructive" },
       );
     } finally {
@@ -748,7 +949,14 @@ Reply with NOTHING but this exact format:
 
   // The builder's form, shared by the phone sheet and the desktop dialog.
   const builderBody = (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      onBlur={(event) => {
+        if (event.relatedTarget === null && event.target instanceof HTMLElement) {
+          droppedCaret.current = { field: event.target, at: performance.now() };
+        }
+      }}
+    >
       <div className="px-5 pb-1 md:px-6">
         {/* A label that stays once the placeholder is gone. */}
         <label
@@ -764,7 +972,7 @@ Reply with NOTHING but this exact format:
             // pan the sheet up under the status bar. Tap to name it instead.
             autoFocus={!isMobile}
             value={workoutName}
-            onChange={(event) => setWorkoutName(event.target.value)}
+            onChange={(event) => typeName(event.target.value)}
             placeholder="Push Day, Legs…"
             className="h-12 w-full min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-[15px] font-medium text-fg outline-none transition placeholder:font-normal focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
           />
@@ -773,7 +981,9 @@ Reply with NOTHING but this exact format:
             <button
               type="button"
               onClick={() => startDictation("rows")}
-              disabled={listeningTo === "ai"}
+              // Off while saving: words spoken into a workout that is
+              // already on its way out would build rows nobody sees.
+              disabled={saving || listeningTo === "ai"}
               aria-label={listeningTo === "rows" ? "Stop dictating" : "Dictate this workout"}
               className={cn(
                 "relative inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition after:absolute after:-inset-1 after:content-[''] disabled:opacity-40",
@@ -864,7 +1074,7 @@ Reply with NOTHING but this exact format:
                 <button
                   type="button"
                   onClick={() => startDictation("ai")}
-                  disabled={listeningTo === "rows"}
+                  disabled={saving || listeningTo === "rows"}
                   aria-label={listeningTo === "ai" ? "Stop speaking" : "Speak your request"}
                   className={cn(
                     "relative inline-flex h-[60px] w-12 shrink-0 items-center justify-center rounded-lg border transition after:absolute after:-inset-1 after:content-[''] disabled:opacity-40",
@@ -1053,7 +1263,12 @@ Reply with NOTHING but this exact format:
 
       {/* Save pinned to the sheet's bottom edge, clear of the home indicator. */}
       <div className="border-t border-border px-5 pb-[calc(var(--safe-bottom)+1rem)] pt-3 md:px-6 md:pb-4">
-        <CTAButton onClick={saveWorkout} disabled={!canSave || saving} fullWidth>
+        {atCap && (
+          <p role="status" className="caption mb-2.5">
+            {templateLimitNotice(MAX_TEMPLATES).description}
+          </p>
+        )}
+        <CTAButton onClick={saveWorkout} disabled={!canSave || saving || atCap} fullWidth>
           <Check size={15} />
           {saving ? "Saving…" : "Save workout"}
         </CTAButton>
@@ -1063,12 +1278,16 @@ Reply with NOTHING but this exact format:
 
   // The starter library — filters, then the rows — shared by the empty-
   // library screen and the collapsible rail under "Your workouts". The
-  // filters mean "what I have": dumbbells run every bodyweight program too.
+  // filters mean "what I have": dumbbells run every bodyweight workout too,
+  // and 45 minutes fit every shorter workout.
   const filtersActive = equipmentFilter !== null || durationFilter !== null;
   const starterLibrary = (
     <>
+      {/* Each group wraps on its own: at larger text sizes four time chips
+          are wider than a small phone, and a row that cannot wrap pushes
+          the whole page sideways. */}
       <div className="flex flex-wrap gap-x-4 gap-y-2 pb-3">
-        <div role="group" aria-label="Equipment you have" className="flex gap-1.5">
+        <div role="group" aria-label="Equipment you have" className="flex flex-wrap gap-1.5">
           {STARTER_EQUIPMENT_OPTIONS.map((option) => (
             <Chip
               key={option.id}
@@ -1079,16 +1298,24 @@ Reply with NOTHING but this exact format:
             </Chip>
           ))}
         </div>
-        <div role="group" aria-label="Time you have" className="flex gap-1.5">
-          {STARTER_DURATION_BUCKETS.map((bucket) => (
+        <div role="group" aria-label="Time you have, in minutes" className="flex flex-wrap gap-1.5">
+          {STARTER_DURATION_CAPS.map((cap) => (
             <Chip
-              key={bucket.id}
-              pressed={durationFilter === bucket.id}
-              onClick={() => setDurationFilter((current) => (current === bucket.id ? null : bucket.id))}
+              key={cap.id}
+              pressed={durationFilter === cap.id}
+              spoken={cap.spoken}
+              onClick={() => setDurationFilter((current) => (current === cap.id ? null : cap.id))}
             >
-              {bucket.label}
+              {cap.label}
             </Chip>
           ))}
+          <Chip
+            pressed={durationFilter === null}
+            spoken={STARTER_ANY_DURATION.spoken}
+            onClick={() => setDurationFilter(null)}
+          >
+            {STARTER_ANY_DURATION.label}
+          </Chip>
         </div>
       </div>
       <div className="border-t border-border md:grid md:grid-cols-2 md:gap-x-10">
@@ -1157,7 +1384,7 @@ Reply with NOTHING but this exact format:
       <div className="mb-10 animate-reveal-up">
         {!libraryLoading && templates.length === 0 && (
           <p className="body-sm mb-4 max-w-md">
-            No saved workouts yet — build your own or run a starter session below.
+            No saved workouts yet — build your own or try a starter workout below.
           </p>
         )}
         <div className="flex flex-wrap gap-2.5">
@@ -1247,7 +1474,7 @@ Reply with NOTHING but this exact format:
           </div>
         </section>
 
-        {/* Starter programs — compact rail once the user has their own templates */}
+        {/* Starter workouts — compact rail once the user has their own templates */}
         <section className="mt-10 animate-reveal-up">
           <div className="rule-heavy">
             <button
@@ -1257,8 +1484,8 @@ Reply with NOTHING but this exact format:
               className="flex w-full items-center justify-between gap-4 py-4 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               <div>
-                <p className="eyebrow !text-primary">Starter programs</p>
-                <p className="caption mt-1">Filter by gear and time, tap one to preview.</p>
+                <p className="eyebrow !text-primary">Starter workouts</p>
+                <p className="caption mt-1">Filter by gear and minutes, tap one to preview.</p>
               </div>
               <ChevronDown
                 size={16}
@@ -1270,11 +1497,11 @@ Reply with NOTHING but this exact format:
         </section>
         </>
       ) : (
-        /* Starter programs — the screen's content while the library is empty */
+        /* Starter workouts — the screen's content while the library is empty */
         <section className="animate-reveal-up">
           <div className="rule-heavy pb-3 pt-4">
-            <p className="eyebrow !text-primary">Starter programs</p>
-            <p className="caption mt-1">Filter by gear and time, tap one to preview.</p>
+            <p className="eyebrow !text-primary">Starter workouts</p>
+            <p className="caption mt-1">Filter by gear and minutes, tap one to preview.</p>
           </div>
           {starterLibrary}
         </section>
@@ -1345,13 +1572,16 @@ Reply with NOTHING but this exact format:
       {isMobile ? (
         <Drawer
           open={builderOpen}
-          onOpenChange={setBuilderOpen}
+          onOpenChange={(open) => {
+            if (!open) requestCloseBuilder();
+          }}
           shouldScaleBackground={false}
           repositionInputs={false}
         >
           {/* hideClose: the X lives in the title row here. p-0 takes over
               the safe-area padding — the Save footer clears the indicator. */}
           <DrawerContent
+            ref={builderSheetRef}
             hideClose
             className="flex h-[calc(100dvh-var(--safe-top)-12px)] max-h-[calc(100dvh-var(--safe-top)-12px)] flex-col bg-background p-0"
           >
@@ -1361,7 +1591,7 @@ Reply with NOTHING but this exact format:
               </DrawerTitle>
               <button
                 type="button"
-                onClick={() => setBuilderOpen(false)}
+                onClick={() => requestCloseBuilder()}
                 aria-label="Close"
                 className="relative -mr-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.06] text-fg-soft transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-foreground/[0.1] hover:text-fg active:bg-foreground/[0.12] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
@@ -1372,7 +1602,12 @@ Reply with NOTHING but this exact format:
           </DrawerContent>
         </Drawer>
       ) : (
-        <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
+        <Dialog
+          open={builderOpen}
+          onOpenChange={(open) => {
+            if (!open) requestCloseBuilder();
+          }}
+        >
           <DialogContent className="grid h-[min(85dvh,680px)] max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[560px] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-[18px] border border-border bg-background p-0 sm:w-[calc(100vw-2rem)]">
             <div className="px-5 pb-1 pt-6 md:px-6">
               <DialogHeader className="pr-9">
@@ -1389,6 +1624,19 @@ Reply with NOTHING but this exact format:
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Shares z-50 with the builder. It mounts while the builder is
+          already open, so its portal is later in the body: it paints on
+          top and is the layer Radix lets answer. A builder re-mounted
+          underneath it would break that order — the isMobile effect beside
+          discardOpen closes the question whenever that happens. */}
+      <DiscardWorkoutDialog
+        open={discardOpen}
+        editing={editingWorkoutId !== null}
+        onKeep={() => setDiscardOpen(false)}
+        onDiscard={() => closeBuilder()}
+        onClosed={restoreFocus}
+      />
     </div>
   );
 };

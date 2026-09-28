@@ -44,21 +44,28 @@ export const equipmentFromProfile = (declared: string | null | undefined): Start
   return null;
 };
 
-/** Duration chips: ≤30 is a cap, 60+ is a floor, everything between rounds
-    to the nearer of 45 and 60 (40 and 50 read as "about 45", 55 as 60). */
-export type StarterDurationBucket = "30" | "45" | "60";
+/** Time chips are ceilings, "the minutes I have": each one shows every
+    workout that fits inside it, so a 40- or 55-minute workout has an
+    unambiguous home and a longer chip never hides a shorter workout. No
+    ceiling (null, the "Any" chip) is the resting state and shows everything
+    — including anything longer than the largest ceiling. */
+export type StarterDurationCap = 30 | 45 | 60;
 
-export const STARTER_DURATION_BUCKETS: { id: StarterDurationBucket; label: string }[] = [
-  { id: "30", label: "≤30 min" },
-  { id: "45", label: "45 min" },
-  { id: "60", label: "60+ min" },
+/** Labels carry no unit: with "min" the four chips are 379px wide and the
+    row at a 393px screen is 345px. `spoken` is the screen-reader name. */
+export const STARTER_DURATION_CAPS: { id: StarterDurationCap; label: string; spoken: string }[] = [
+  { id: 30, label: "Up to 30", spoken: "Up to 30 minutes" },
+  { id: 45, label: "Up to 45", spoken: "Up to 45 minutes" },
+  { id: 60, label: "Up to 60", spoken: "Up to 60 minutes" },
 ];
 
-export const starterDurationBucket = (minutes: number): StarterDurationBucket => {
-  if (minutes <= 30) return "30";
-  if (minutes >= 60) return "60";
-  return Math.abs(minutes - 45) <= Math.abs(minutes - 60) ? "45" : "60";
-};
+export const STARTER_ANY_DURATION = { label: "Any", spoken: "Any length" } as const;
+
+/** True when the workout fits in the time the lifter has. */
+export const starterFitsIn = (
+  program: Pick<StarterProgram, "duration">,
+  cap: StarterDurationCap | null,
+): boolean => cap === null || program.duration <= cap;
 
 /** "Push Pull Legs" (onboarding) and "Push / Pull / Legs" (starter) are the
     same split — compare letters only. Mirrors the suggestion engine. */
@@ -118,7 +125,7 @@ export const starterPrograms: StarterProgram[] = [
     duration: 45,
     difficulty: "Moderate",
     equipment: "gym", // dumbbells throughout, but Lat Pulldown needs a cable stack
-    description: "A friendly first program that trains everything in one visit and leaves you feeling capable, not crushed.",
+    description: "A friendly first workout that trains everything in one visit and leaves you feeling capable, not crushed.",
     exercises: [
       exercise("fbf-goblet-squat", "Goblet Squat", "Quads", "3 × 10 — sit deep, chest tall", 3, 10),
       exercise("fbf-db-bench", "Dumbbell Bench Press", "Chest", "3 × 10 — smooth and controlled", 3, 10),
@@ -136,7 +143,7 @@ export const starterPrograms: StarterProgram[] = [
     duration: 30,
     difficulty: "Moderate",
     equipment: "none",
-    description: "A complete first program that needs nothing but you and the floor — every muscle group trained at home.",
+    description: "A complete first workout that needs nothing but you and the floor — every muscle group trained at home.",
     exercises: [
       exercise("bwf-pushup", "Push-Up", "Chest", "3 × 10 — body in one line, chest to the floor", 3, 10, "bodyweight"),
       exercise("bwf-squat", "Bodyweight Squat", "Quads", "3 × 15 — sit deep, heels down", 3, 15, "bodyweight"),

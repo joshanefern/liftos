@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { lookupMuscles, type Muscle } from "@/lib/muscleMap";
 import {
-  STARTER_DURATION_BUCKETS,
+  STARTER_ANY_DURATION,
+  STARTER_DURATION_CAPS,
   STARTER_EQUIPMENT_OPTIONS,
   equipmentFromProfile,
   getStarterProgram,
   recommendedStarter,
-  starterDurationBucket,
+  starterFitsIn,
   starterPrograms,
   starterRunsOn,
   starterSetsLabel,
+  type StarterDurationCap,
 } from "./starterPrograms";
 
 describe("starterPrograms — muscle map coverage", () => {
@@ -116,29 +118,83 @@ describe("starterPrograms — library filters", () => {
     expect(equipmentFromProfile(null)).toBeNull();
     expect(equipmentFromProfile(undefined)).toBeNull();
   });
+});
 
-  it("buckets durations: ≤30 caps, 60+ floors, the middle rounds to the nearer chip", () => {
-    expect(starterDurationBucket(20)).toBe("30");
-    expect(starterDurationBucket(30)).toBe("30");
-    expect(starterDurationBucket(31)).toBe("45");
-    expect(starterDurationBucket(40)).toBe("45");
-    expect(starterDurationBucket(45)).toBe("45");
-    expect(starterDurationBucket(50)).toBe("45");
-    expect(starterDurationBucket(55)).toBe("60");
-    expect(starterDurationBucket(60)).toBe("60");
-    expect(starterDurationBucket(90)).toBe("60");
+describe("starterPrograms — time filter", () => {
+  const shownBy = (cap: StarterDurationCap | null): string[] =>
+    starterPrograms.filter((p) => starterFitsIn(p, cap)).map((p) => p.id);
+
+  it("a chip is a ceiling: the workout fits when it takes no longer", () => {
+    expect(starterFitsIn({ duration: 20 }, 30)).toBe(true);
+    expect(starterFitsIn({ duration: 30 }, 30)).toBe(true);
+    expect(starterFitsIn({ duration: 31 }, 30)).toBe(false);
+    expect(starterFitsIn({ duration: 40 }, 45)).toBe(true);
+    expect(starterFitsIn({ duration: 45 }, 45)).toBe(true);
+    expect(starterFitsIn({ duration: 50 }, 45)).toBe(false);
+    expect(starterFitsIn({ duration: 55 }, 60)).toBe(true);
+    expect(starterFitsIn({ duration: 60 }, 60)).toBe(true);
+    expect(starterFitsIn({ duration: 61 }, 60)).toBe(false);
   });
 
-  it("every shipped duration lands on a chip, and every chip has a program", () => {
-    const chips = new Set(STARTER_DURATION_BUCKETS.map((b) => b.id));
-    for (const program of starterPrograms) {
-      expect(chips.has(starterDurationBucket(program.duration)), program.id).toBe(true);
+  it("“Any” hides nothing, however long the workout", () => {
+    expect(starterFitsIn({ duration: 5 }, null)).toBe(true);
+    expect(starterFitsIn({ duration: 180 }, null)).toBe(true);
+    expect(shownBy(null)).toEqual(starterPrograms.map((p) => p.id));
+  });
+
+  it("each chip returns exactly the workouts that fit", () => {
+    expect(shownBy(30)).toEqual(["bodyweight-foundations"]);
+    expect(shownBy(45)).toEqual(["full-body-foundations", "bodyweight-foundations", "barbell-5x5"]);
+    expect(shownBy(60)).toEqual(starterPrograms.map((p) => p.id));
+  });
+
+  it("a longer chip never hides what a shorter one showed", () => {
+    const caps = STARTER_DURATION_CAPS.map((chip) => chip.id);
+    expect(caps).toEqual([...caps].sort((a, b) => a - b));
+    for (let i = 1; i < caps.length; i += 1) {
+      const longer = new Set(shownBy(caps[i]));
+      for (const id of shownBy(caps[i - 1])) {
+        expect(longer.has(id), `${id} missing from “up to ${caps[i]}”`).toBe(true);
+      }
     }
-    for (const chip of STARTER_DURATION_BUCKETS) {
-      expect(
-        starterPrograms.some((p) => starterDurationBucket(p.duration) === chip.id),
-        chip.label,
-      ).toBe(true);
+  });
+
+  it("no chip shows an empty list, and every workout is behind at least one chip", () => {
+    for (const chip of STARTER_DURATION_CAPS) {
+      expect(shownBy(chip.id).length, chip.label).toBeGreaterThan(0);
+    }
+    const reachable = new Set([null, ...STARTER_DURATION_CAPS.map((chip) => chip.id)].flatMap(shownBy));
+    for (const program of starterPrograms) {
+      expect(reachable.has(program.id), program.id).toBe(true);
+    }
+  });
+
+  it("the 40- and 55-minute workouts each have an unambiguous chip", () => {
+    expect(getStarterProgram("barbell-5x5")!.duration).toBe(40);
+    expect(shownBy(30)).not.toContain("barbell-5x5");
+    expect(shownBy(45)).toContain("barbell-5x5");
+    expect(getStarterProgram("ppl-push")!.duration).toBe(55);
+    expect(shownBy(45)).not.toContain("ppl-push");
+    expect(shownBy(60)).toContain("ppl-push");
+  });
+
+  it("chips read “Up to N”, carry a spoken unit, and never a “~”", () => {
+    for (const chip of STARTER_DURATION_CAPS) {
+      expect(chip.label).toBe(`Up to ${chip.id}`);
+      expect(chip.spoken).toBe(`Up to ${chip.id} minutes`);
+    }
+    expect(STARTER_ANY_DURATION.label).toBe("Any");
+    const copy = [...STARTER_DURATION_CAPS.flatMap((c) => [c.label, c.spoken]), ...Object.values(STARTER_ANY_DURATION)];
+    for (const text of copy) expect(text).not.toMatch(/[~≤+]/);
+  });
+});
+
+describe("starterPrograms — vocabulary", () => {
+  it("a single session is never called a program in what the lifter reads", () => {
+    for (const program of starterPrograms) {
+      for (const text of [program.name, program.focus, program.description]) {
+        expect(text, `${program.id}: “${text}”`).not.toMatch(/program/i);
+      }
     }
   });
 });
