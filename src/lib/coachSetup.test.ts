@@ -6,8 +6,10 @@ import {
   buildSplitPrompt,
   clearWeekBuildMarker,
   markWeekBuildStarted,
+  offersWeekPlan,
   parseWeekPlan,
   weekBuildInProgress,
+  weekPlanRoom,
 } from "./coachSetup";
 
 const REPLY = `Here's your week!
@@ -172,6 +174,43 @@ Romanian Deadlift: 3x8`;
     expect(prompt.indexOf("Must include")).toBeLessThan(prompt.indexOf("Avoid ("));
   });
 
+  it("states the exact number of training days the lifter confirmed", () => {
+    const four = buildSchedulePrompt(
+      null,
+      [
+        { day: "Monday", focus: "Upper" },
+        { day: "Tuesday", focus: "Lower" },
+        { day: "Thursday", focus: "Upper" },
+        { day: "Friday", focus: "Lower" },
+      ],
+      { mustHave: "", avoid: "" },
+    );
+    expect(four).toContain("exactly 4 training days");
+    expect(four).toContain("Reply with NOTHING but 4 sections, one per day above");
+
+    const one = buildSchedulePrompt(null, [{ day: "Monday", focus: "Full body" }], {
+      mustHave: "",
+      avoid: "",
+    });
+    expect(one).toContain("exactly 1 training day.");
+    expect(one).toContain("Reply with NOTHING but 1 section, one per day above");
+  });
+
+  it("counts the schedule, not the onboarding answer it started from", () => {
+    // Onboarding said 4 days; the lifter dropped to three in the sheet.
+    const prompt = buildSchedulePrompt(
+      { goal: null, experience: null, equipment: null, frequency: "4 days", split: null, units: "lb" } as never,
+      [
+        { day: "Monday", focus: "Push" },
+        { day: "Wednesday", focus: "Pull" },
+        { day: "Friday", focus: "Legs" },
+      ],
+      { mustHave: "", avoid: "" },
+    );
+    expect(prompt).toContain("exactly 3 training days");
+    expect(prompt).not.toContain("4 days");
+  });
+
   it("adds no note lines when both fields are blank", () => {
     const prompt = buildSchedulePrompt(null, [{ day: "Monday", focus: "Push" }], {
       mustHave: "   ",
@@ -272,5 +311,103 @@ describe("buildSplitPrompt", () => {
     expect(prompt).toContain("Hypertrophy");
     expect(prompt).toContain("3–4 days");
     expect(prompt).toContain("Push Pull Legs");
+  });
+
+  it("quotes a legacy range as answered and never claims an exact count", () => {
+    const prompt = buildSplitPrompt({
+      goal: "Strength",
+      experience: "Beginner",
+      equipment: "Home gym",
+      frequency: "5–6 days",
+      split: "Not Sure / Other",
+      units: "kg",
+    } as never);
+    expect(prompt).toContain("days per week: 5–6 days");
+    expect(prompt).not.toContain("exactly");
+    expect(prompt).toContain("Reply with NOTHING but one section per training day,");
+  });
+
+  it("states an exact answer as an exact number of workouts", () => {
+    const prompt = buildSplitPrompt({
+      goal: "Hypertrophy",
+      experience: "Beginner",
+      equipment: "Full gym",
+      frequency: "4 days",
+      split: "Upper Lower",
+      units: "lb",
+    } as never);
+    expect(prompt).toContain("training days per week: exactly 4");
+    expect(prompt).toContain("Reply with NOTHING but exactly 4 sections, one per training day,");
+    // The stored text itself is not echoed — "days per week: 4 days" reads
+    // like a typo to the model.
+    expect(prompt).not.toContain("4 days");
+  });
+
+  it("asks for no count when the answer is missing", () => {
+    const prompt = buildSplitPrompt({
+      goal: "Strength",
+      experience: "Beginner",
+      equipment: null,
+      frequency: null,
+      split: null,
+      units: "lb",
+    } as never);
+    expect(prompt).not.toContain("days per week");
+    expect(prompt).toContain("Reply with NOTHING but one section per training day,");
+    expect(buildSplitPrompt(null)).toContain("Build my first week of workouts.");
+  });
+
+  it("an exact-count reply still parses into that many workouts", () => {
+    const reply = ["Upper A", "Lower A", "Upper B", "Lower B"]
+      .map((name) => `## ${name}\nBench Press: 3x8\nSeated Row: 3x10`)
+      .join("\n\n");
+    expect(parseWeekPlan(reply)).toHaveLength(4);
+  });
+});
+
+describe("the plan sheet after the welcome", () => {
+  const LIMIT = 7;
+
+  it("room is what the library has left, never negative", () => {
+    expect(weekPlanRoom(0, LIMIT)).toBe(7);
+    expect(weekPlanRoom(1, LIMIT)).toBe(6);
+    expect(weekPlanRoom(7, LIMIT)).toBe(0);
+    expect(weekPlanRoom(9, LIMIT)).toBe(0);
+    expect(weekPlanRoom(-3, LIMIT)).toBe(7);
+  });
+
+  it("is still offered after one workout saved by hand", () => {
+    expect(offersWeekPlan({ savedNames: ["Upper A"], plannedDays: 4, limit: LIMIT })).toBe(true);
+  });
+
+  it("is offered for as long as the planned week fits beside what is saved", () => {
+    const saved = ["Upper A", "Lower A", "Upper B"];
+    expect(offersWeekPlan({ savedNames: saved, plannedDays: 4, limit: LIMIT })).toBe(true);
+    expect(offersWeekPlan({ savedNames: [...saved, "Lower B"], plannedDays: 4, limit: LIMIT })).toBe(
+      false,
+    );
+    expect(offersWeekPlan({ savedNames: ["Only one"], plannedDays: 6, limit: LIMIT })).toBe(true);
+    expect(offersWeekPlan({ savedNames: ["One", "Two"], plannedDays: 6, limit: LIMIT })).toBe(false);
+  });
+
+  it("is withdrawn once a plan from the sheet is in the library", () => {
+    const plan = ["Monday · Push", "Wednesday · Pull", "Friday · Legs"];
+    expect(offersWeekPlan({ savedNames: plan, plannedDays: 3, limit: LIMIT })).toBe(false);
+    expect(offersWeekPlan({ savedNames: ["Upper A", ...plan], plannedDays: 3, limit: LIMIT })).toBe(
+      false,
+    );
+    // A plan that only partly landed is still a plan: building again would
+    // put a second Monday beside the first.
+    expect(offersWeekPlan({ savedNames: ["Monday - Push"], plannedDays: 3, limit: LIMIT })).toBe(
+      false,
+    );
+  });
+
+  it("needs room for one workout when the training days were never answered", () => {
+    const six = ["A", "B", "C", "D", "E", "F"];
+    expect(offersWeekPlan({ savedNames: six, plannedDays: null, limit: LIMIT })).toBe(true);
+    expect(offersWeekPlan({ savedNames: [...six, "G"], plannedDays: null, limit: LIMIT })).toBe(
+      false,
+    );
   });
 });

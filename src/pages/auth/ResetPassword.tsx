@@ -9,7 +9,8 @@ import { Link, useNavigate } from "react-router-dom";
 
 /* Landing page for the Supabase recovery link. supabase-js consumes the
    token from the URL and establishes a recovery session; we let the user
-   set a new password and walk them straight back into the app. */
+   set a new password and walk them straight back into the app. Every state
+   uses the layout's minimal variant — recovery carries no product pitch. */
 const ResetPassword = () => {
   const navigate = useNavigate();
   const [checking, setChecking] = useState(true);
@@ -43,8 +44,8 @@ const ResetPassword = () => {
 
   if (checking) {
     return (
-      <AuthLayout eyebrow="Reset Access" title="One moment — verifying your reset link.">
-        <div className="space-y-3 py-6">
+      <AuthLayout variant="minimal">
+        <div className="space-y-3 py-6" role="status" aria-label="Checking your reset link">
           <div className="h-4 w-2/3 animate-pulse rounded-md bg-secondary" />
           <div className="h-4 w-1/2 animate-pulse rounded-md bg-secondary" />
         </div>
@@ -54,28 +55,31 @@ const ResetPassword = () => {
 
   if (!hasSession) {
     return (
-      <AuthLayout eyebrow="Reset Access" title="This reset link has expired or was already used.">
+      <AuthLayout variant="minimal">
         <p className="label-xs mb-2">Link invalid</p>
-        <h2 className="heading-md mb-3">Request a fresh link</h2>
+        <h1 className="heading-md mb-3">Request a fresh link</h1>
         <p className="mb-6 text-sm leading-relaxed text-fg-soft">
           Reset links are single-use and expire quickly. Request a new one and open it on this
           device.
         </p>
-        <CTAButton fullWidth onClick={() => navigate("/forgot-password")}>
+        <CTAButton variant="accent" fullWidth onClick={() => navigate("/forgot-password")}>
           <KeyRound size={16} />
           Send a new reset link
         </CTAButton>
-        <p className="mt-6 text-center text-sm text-fg-muted">
-          Remembered it? <Link to="/sign-in" className="text-gold hover:underline">Back to sign in</Link>
+        <p className="mt-3 text-center text-sm text-fg-muted">
+          Remembered it?{" "}
+          <Link to="/sign-in" className="inline-flex min-h-11 items-center text-primary hover:underline">
+            Back to sign in
+          </Link>
         </p>
       </AuthLayout>
     );
   }
 
   return (
-    <AuthLayout eyebrow="Reset Access" title="Choose a new password and get back under the bar.">
+    <AuthLayout variant="minimal">
       <p className="label-xs mb-1.5">Reset password</p>
-      <h2 className="heading-md mb-5">Set a new password</h2>
+      <h1 className="heading-md mb-5">Set a new password</h1>
       <form
         className="space-y-4"
         onSubmit={async (event) => {
@@ -128,7 +132,7 @@ const ResetPassword = () => {
             className="h-12 w-full rounded-[14px] border border-border bg-background px-3 text-sm text-fg placeholder:text-fg-faint outline-none focus:border-primary transition-colors"
           />
         </label>
-        <CTAButton type="submit" fullWidth disabled={saving}>
+        <CTAButton type="submit" variant="accent" fullWidth disabled={saving}>
           <ShieldCheck size={16} />
           {saving ? "Updating…" : "Update password"}
         </CTAButton>

@@ -3,6 +3,7 @@ import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
 import type { SupabaseTemplate } from "@/hooks/useWorkoutTemplates";
 import { getLastTrainedByMuscle, labelForMuscle } from "@/lib/muscleCoverage";
 import { lookupMuscles, type Muscle } from "@/lib/muscleMap";
+import { WEEKDAYS, leadingWeekday } from "@/lib/trainingDays";
 
 /* ── Suggestion engine v1 — deterministic answer to "what should I do
      right now?". Pure function of (logs, templates, starters, now) so the
@@ -34,15 +35,6 @@ const SPLIT_MATCH_BONUS = 2;
 // Rule h: outranks the 14-day staleness cap in both directions — a template
 // named for today must headline today, and never on any other day.
 const WEEKDAY_MATCH_BONUS = 20;
-const WEEKDAY_NAMES = [
-  "sunday",
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-];
 
 /** A log only counts as training if something was actually completed — the
     same convention getLastTrainedByMuscle uses. A session opened and
@@ -87,6 +79,14 @@ const eligibleStarters = (
 // Labels are conjugated as written: "Quads haven't", but "Chest hasn't".
 // Everything not listed here reads as plural ("Traps", "Glutes", "Abs", …).
 const SINGULAR_MUSCLES = new Set<Muscle>(["chest", "upper-back", "lower-back"]);
+
+/** The weekday a title opens with as a Date#getDay index (Sunday is 0), or
+    null. The score (rule h) and the tie-break both read titles through
+    this, so they can never disagree on what counts as a weekday title. */
+const weekdayIndex = (title: string): number | null => {
+  const day = leadingWeekday(title);
+  return day === null ? null : (WEEKDAYS.indexOf(day) + 1) % 7;
+};
 
 type Candidate = {
   kind: "template" | "starter";
@@ -247,13 +247,18 @@ export function suggestNextWorkout(args: {
   // Rule h: intake-built templates carry their weekday in the title
   // ("Monday · Push"). Today's named day outranks staleness; another day's
   // name never headlines. Titles without a weekday are untouched.
-  const todayName = WEEKDAY_NAMES[now.getDay()];
+  const today = now.getDay();
   const weekdayBonus = (candidate: Candidate): number => {
-    const match = /^(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i.exec(
-      candidate.title.trim(),
-    );
-    if (!match) return 0;
-    return match[1].toLowerCase() === todayName ? WEEKDAY_MATCH_BONUS : -WEEKDAY_MATCH_BONUS;
+    const weekday = weekdayIndex(candidate.title);
+    if (weekday === null) return 0;
+    return weekday === today ? WEEKDAY_MATCH_BONUS : -WEEKDAY_MATCH_BONUS;
+  };
+  // How many days until the candidate is due: its weekday counted forward
+  // from today, wrapping past Sunday. A title with no weekday is due any
+  // day, so it counts as today.
+  const daysUntilDue = (candidate: Candidate): number => {
+    const weekday = weekdayIndex(candidate.title);
+    return weekday === null ? 0 : (weekday - today + 7) % 7;
   };
 
   const lastTrained = getLastTrainedByMuscle(logs);
@@ -298,13 +303,18 @@ export function suggestNextWorkout(args: {
         stalest = { muscle, days: staleness[i] };
       }
     });
-    return { candidate, muscles, score, stalest };
+    return { candidate, muscles, score, stalest, due: daysUntilDue(candidate) };
   });
 
-  // Rule c (tie-break): alphabetical by title, for determinism.
+  // Rule c (tie-break): the soonest due, then alphabetical by title. A plan
+  // nobody has trained yet ties on every day that is not a plan day, and the
+  // alphabet would always answer "Friday" — the calendar answers with the
+  // next plan day instead. Both keys belong to the candidate alone, so the
+  // order never depends on how the templates arrived.
   scored.sort(
     (a, b) =>
       b.score - a.score ||
+      a.due - b.due ||
       (a.candidate.title < b.candidate.title ? -1 : a.candidate.title > b.candidate.title ? 1 : 0),
   );
 

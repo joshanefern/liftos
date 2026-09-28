@@ -7,14 +7,15 @@ import {
 } from "@/components/ui/drawer";
 import { ChevronDown, Sparkles } from "lucide-react";
 import type { IntakeNotes, ScheduleDay } from "@/lib/coachSetup";
+import { WEEKDAYS, spreadTrainingDays, type Weekday } from "@/lib/trainingDays";
 
-/* ── The experienced lifter's 30-second intake. They already know how they
-   train — we only ask WHEN (day chips) and WHAT each day hits (focus,
-   pre-filled from the standard split for that many days so most people
-   never touch it), plus two short optional lines: lifts the week must
-   include, and anything to avoid. ── */
-
-const WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+/* ── "Build my weekly plan": the experienced lifter's 30-second sheet. They
+   already know how they train — we only ask WHEN (day chips, preselected
+   from the number of days they gave in onboarding so they confirm instead
+   of re-entering it) and WHAT each day hits (focus, pre-filled from the
+   standard split for that many days so most people never touch it), plus
+   two short optional lines: lifts the week must include, and anything to
+   avoid. The coach then writes the workouts. ── */
 
 const FOCUSES = [
   "Push",
@@ -54,14 +55,39 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   building: boolean;
+  /** Training days per week from onboarding; null when never answered. */
+  plannedDays: number | null;
+  /** The most days the plan may have: the room left in the library, which
+      holds every day as a saved workout. Seven while it is empty. */
+  maxDays?: number;
   onBuild: (schedule: ScheduleDay[], notes: IntakeNotes) => void;
 };
 
 const FIELD_CLASS =
   "h-11 w-full rounded-[10px] border border-border bg-background px-3 text-sm text-fg outline-none transition placeholder:text-fg-muted focus:border-primary/60";
 
-export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Props) => {
-  const [selected, setSelected] = useState<string[]>([]);
+export const SplitIntakeSheet = ({
+  open,
+  onOpenChange,
+  building,
+  plannedDays,
+  maxDays = WEEKDAYS.length,
+  onBuild,
+}: Props) => {
+  const room = Math.max(0, Math.min(WEEKDAYS.length, Math.floor(maxDays)));
+  // null until the lifter touches a day chip: the selection then follows
+  // the onboarding number, which for a real account arrives with the
+  // profile after this sheet has already mounted. Their first tap takes
+  // over from there, and closing and reopening the sheet keeps it.
+  const [picked, setPicked] = useState<Weekday[] | null>(null);
+  const suggested = useMemo(
+    () => spreadTrainingDays(plannedDays === null ? null : Math.min(plannedDays, room)),
+    [plannedDays, room],
+  );
+  const selected = useMemo(() => (picked ?? suggested).slice(0, room), [picked, suggested, room]);
+  // Every day becomes a saved workout, so a day past the library's room
+  // could never be saved — it cannot be picked either.
+  const full = selected.length >= room;
   // Focus per day: only days the user explicitly changed; the rest follow
   // the default pattern for however many days are selected.
   const [manual, setManual] = useState<Record<string, string>>({});
@@ -86,7 +112,7 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
   }, [editing]);
 
   const schedule = useMemo((): ScheduleDay[] => {
-    const ordered = WEEK.filter((d) => selected.includes(d));
+    const ordered = WEEKDAYS.filter((d) => selected.includes(d));
     const pattern = defaultPattern(ordered.length);
     return ordered.map((day, i) => ({
       day,
@@ -94,17 +120,16 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
     }));
   }, [selected, manual]);
 
-  const toggleDay = (day: string): void => {
-    setSelected((current) => {
-      const removing = current.includes(day);
-      // A deselected day forfeits its manual pin — reselecting it later (in
-      // a possibly different day count) starts from the pattern again.
-      if (removing) {
-        setManual(({ [day]: _dropped, ...rest }) => rest);
-        setEditing((e) => (e === day ? null : e));
-      }
-      return removing ? current.filter((d) => d !== day) : [...current, day];
-    });
+  const toggleDay = (day: Weekday): void => {
+    const removing = selected.includes(day);
+    if (!removing && full) return;
+    // A deselected day forfeits its manual pin — reselecting it later (in
+    // a possibly different day count) starts from the pattern again.
+    if (removing) {
+      setManual(({ [day]: _dropped, ...rest }) => rest);
+      setEditing((e) => (e === day ? null : e));
+    }
+    setPicked(removing ? selected.filter((d) => d !== day) : [...selected, day]);
   };
 
   const chooseFocus = (day: string, option: string): void => {
@@ -120,26 +145,31 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
           to a one-line description and tight margins for the same reason —
           on a 375×667 phone every line here is a line the list loses. */}
       <DrawerContent className="px-6 pb-[calc(1.5rem+var(--safe-bottom))]">
-        <p className="eyebrow mt-2 shrink-0 pr-12 !text-primary">Your routine</p>
+        <p className="eyebrow mt-2 shrink-0 pr-12 !text-primary">Weekly plan</p>
         <DrawerTitle className="heading-md mt-1.5 shrink-0 text-fg">
-          Pick your days — the coach fills in the work.
+          Pick your days — the coach writes the week.
         </DrawerTitle>
         <DrawerDescription className="mt-1 shrink-0 text-[13px] leading-5 text-fg-muted">
-          Usual split prefilled — tap a focus to change it.
+          {room < WEEKDAYS.length
+            ? `Your library has room for ${room} more workout${room === 1 ? "" : "s"}.`
+            : suggested.length > 0
+              ? "Days and focus are prefilled — tap any to change."
+              : "Focus is prefilled for each day — tap one to change it."}
         </DrawerDescription>
 
         {/* Which days */}
         <div className="mt-3 flex shrink-0 justify-between gap-1.5">
-          {WEEK.map((day) => {
+          {WEEKDAYS.map((day) => {
             const active = selected.includes(day);
             return (
               <button
                 key={day}
                 type="button"
                 onClick={() => toggleDay(day)}
+                disabled={!active && full}
                 aria-pressed={active}
                 aria-label={day}
-                className={`relative flex h-10 w-10 items-center justify-center rounded-full text-[13px] font-semibold transition after:absolute after:-inset-1 after:content-[''] ${
+                className={`relative flex h-10 w-10 items-center justify-center rounded-full text-[13px] font-semibold transition after:absolute after:-inset-1 after:content-[''] disabled:opacity-40 ${
                   active
                     ? "bg-primary text-primary-foreground"
                     : "border border-border text-fg-muted"
@@ -254,9 +284,9 @@ export const SplitIntakeSheet = ({ open, onOpenChange, building, onBuild }: Prop
         >
           <Sparkles size={15} />
           {building
-            ? "Building your week…"
+            ? "Building your weekly plan…"
             : schedule.length > 0
-              ? `Build my ${schedule.length}-day week`
+              ? `Build my ${schedule.length}-day plan`
               : "Pick at least one day"}
         </button>
       </DrawerContent>

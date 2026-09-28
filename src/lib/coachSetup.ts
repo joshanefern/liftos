@@ -1,6 +1,7 @@
 import type { WorkoutExercise } from "@/data/liftosMock";
 import type { UserProfile } from "@/context/UserContext";
 import { extractWorkoutPlan, planToTemplateExercises } from "@/lib/coachPlan";
+import { exactTrainingDays, leadingWeekday } from "@/lib/trainingDays";
 
 /* ── First-run week builder: one coach call turns the onboarding answers
    (goal / experience / equipment / frequency / split) into a full week of
@@ -14,18 +15,29 @@ export type GeneratedDay = {
   exercises: WorkoutExercise[];
 };
 
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 /** The one-shot user message. The coach edge fn already carries the profile
-    in its context; this restates the ask and pins the output format. */
+    in its context; this restates the ask and pins the output format. An
+    exact frequency answer pins the number of workouts too; an account that
+    still holds a range ("3–4 days") quotes it as answered and leaves the
+    count inside that range to the coach. */
 export const buildSplitPrompt = (profile: UserProfile | null): string => {
+  const days = exactTrainingDays(profile?.frequency);
   const wants: string[] = [];
   if (profile?.goal) wants.push(`goal: ${profile.goal}`);
   if (profile?.experience) wants.push(`experience: ${profile.experience}`);
   if (profile?.equipment) wants.push(`equipment: ${profile.equipment}`);
-  if (profile?.frequency) wants.push(`days per week: ${profile.frequency}`);
+  if (days !== null) wants.push(`training days per week: exactly ${days}`);
+  else if (profile?.frequency) wants.push(`days per week: ${profile.frequency}`);
   if (profile?.split) wants.push(`preferred split: ${profile.split}`);
+  const sections =
+    days !== null
+      ? `exactly ${plural(days, "section")}, one per training day`
+      : "one section per training day";
   return `Build my first week of workouts${wants.length > 0 ? ` (${wants.join(", ")})` : ""}. If my split preference is "Not Sure / Other", pick the standard split for my frequency and experience.
 
-Reply with NOTHING but one section per training day, in EXACTLY this format:
+Reply with NOTHING but ${sections}, in EXACTLY this format:
 
 ## <Workout name, e.g. Push Day>
 <Exercise name>: <sets>x<reps>
@@ -54,7 +66,9 @@ const NOTE_LIMIT = 300;
 
 /** The experienced lifter's 30-second intake: they told us WHEN they train
     and WHAT each day hits — the coach only fills in the exercises. Day
-    headers double as template names ("Monday · Push"). */
+    headers double as template names ("Monday · Push"). The count stated is
+    the schedule's own: the days the lifter confirmed in the sheet outrank
+    the onboarding answer they started from. */
 export const buildSchedulePrompt = (
   profile: UserProfile | null,
   schedule: ScheduleDay[],
@@ -70,15 +84,42 @@ export const buildSchedulePrompt = (
   if (mustHave) extras.push(`Must include: ${mustHave}`);
   if (avoid) extras.push(`Avoid (injuries, missing equipment, movements to skip): ${avoid}`);
   const noteBlock = extras.length > 0 ? `\n${extras.join("\n")}` : "";
-  return `Write my training week. This is MY schedule — keep every day exactly as given${context.length > 0 ? ` (${context.join(", ")})` : ""}:
+  const count = schedule.length;
+  return `Write my training week: exactly ${plural(count, "training day")}. This is MY schedule — keep every day exactly as given${context.length > 0 ? ` (${context.join(", ")})` : ""}:
 ${schedule.map((s) => `- ${s.day}: ${s.focus}`).join("\n")}${noteBlock}
 
-Reply with NOTHING but one section per day above, in EXACTLY this format:
+Reply with NOTHING but ${plural(count, "section")}, one per day above, in EXACTLY this format:
 
 ## ${schedule[0] ? `${schedule[0].day} · ${schedule[0].focus}` : "Monday · Push"}
 <Exercise name>: <sets>x<reps>
 
 5-8 exercises per day matched to that day's focus. No weights. No intro, no outro, no extra days.`;
+};
+
+/* ── The plan sheet after the welcome. Saving one workout by hand ends the
+   first run, and the welcome hero was the only way into the sheet. Home
+   keeps that way open for as long as the offer can be kept in full. ── */
+
+/** How many more workouts the library can hold — the most days a plan
+    built now can have. */
+export const weekPlanRoom = (savedWorkouts: number, limit: number): number =>
+  Math.max(0, Math.floor(limit) - Math.max(0, Math.floor(savedWorkouts)));
+
+/** Whether the plan sheet is still worth offering to a lifter with saved
+    workouts. Not once a plan from the sheet is in the library (its days
+    open with their weekday), and not when the library has no room for the
+    week the lifter said they train: a plan cut short by the limit is worse
+    than no offer. The caller decides who is asked at all. */
+export const offersWeekPlan = (args: {
+  savedNames: string[];
+  /** Training days per week from onboarding; null when never answered. */
+  plannedDays: number | null;
+  /** The most workouts a library holds. */
+  limit: number;
+}): boolean => {
+  const { savedNames, plannedDays, limit } = args;
+  if (savedNames.some((name) => leadingWeekday(name) !== null)) return false;
+  return weekPlanRoom(savedNames.length, limit) >= Math.max(1, plannedDays ?? 1);
 };
 
 /* ── In-progress marker. A week build outlives the Home screen: leave

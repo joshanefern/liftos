@@ -613,3 +613,74 @@ describe("rule h — weekday-named templates follow the calendar", () => {
     expect(s.title).toBe("Pull Day");
   });
 });
+
+describe("rule h — off days fall to the next plan day, not the alphabet", () => {
+  // A plan built in the sheet, with nothing logged yet: every day scores the
+  // same, so only the calendar can order them. Sep 21 2026 is a Monday.
+  const onDay = (offset: number): Date => new Date(2026, 8, 21 + offset, 12, 0, 0);
+  const fourDay = [
+    template("t-mon", "Monday · Upper", ["Barbell Bench Press"]),
+    template("t-tue", "Tuesday · Lower", ["Back Squat"]),
+    template("t-thu", "Thursday · Upper", ["Barbell Row"]),
+    template("t-fri", "Friday · Lower", ["Romanian Deadlift"]),
+  ];
+  const pick = (templates: SupabaseTemplate[], now: Date): string =>
+    suggestNextWorkout({ logs: [], templates, starters: [], now }).title;
+
+  it("a 4-day plan names the next plan day on every day of the week", () => {
+    expect(pick(fourDay, onDay(0))).toBe("Monday · Upper");
+    expect(pick(fourDay, onDay(1))).toBe("Tuesday · Lower");
+    expect(pick(fourDay, onDay(2))).toBe("Thursday · Upper");
+    expect(pick(fourDay, onDay(3))).toBe("Thursday · Upper");
+    expect(pick(fourDay, onDay(4))).toBe("Friday · Lower");
+    expect(pick(fourDay, onDay(5))).toBe("Monday · Upper");
+    expect(pick(fourDay, onDay(6))).toBe("Monday · Upper");
+  });
+
+  it("a 3-day plan built on a Tuesday starts on Wednesday", () => {
+    const threeDay = [
+      template("t-mon", "Monday · Push", ["Barbell Bench Press"]),
+      template("t-wed", "Wednesday · Pull", ["Barbell Row"]),
+      template("t-fri", "Friday · Legs", ["Back Squat"]),
+    ];
+    expect(pick(threeDay, onDay(1))).toBe("Wednesday · Pull");
+    expect(pick(threeDay, onDay(5))).toBe("Monday · Push");
+  });
+
+  it("reads the weekday however the coach punctuated the title", () => {
+    const loose = [
+      template("t-fri", "Friday - Lower", ["Back Squat"]),
+      template("t-thu", "thursday: Upper", ["Barbell Row"]),
+    ];
+    expect(pick(loose, onDay(2))).toBe("thursday: Upper");
+  });
+
+  it("does not depend on the order the templates arrive in", () => {
+    const reversed = [...fourDay].reverse();
+    for (let offset = 0; offset < 7; offset += 1) {
+      expect(pick(reversed, onDay(offset))).toBe(pick(fourDay, onDay(offset)));
+    }
+  });
+
+  it("two workouts on the same weekday still break the tie by title", () => {
+    const doubled = [
+      template("t-pm", "Thursday · Upper PM", ["Barbell Row"]),
+      template("t-am", "Thursday · Upper AM", ["Barbell Bench Press"]),
+      template("t-fri", "Friday · Lower", ["Back Squat"]),
+    ];
+    expect(pick(doubled, onDay(2))).toBe("Thursday · Upper AM");
+  });
+
+  it("a workout with no weekday is due any day, so it outranks another day's on a tie", () => {
+    // None of these has a muscle the engine can map, so all three score 0
+    // and the order is the tie-break's alone — whichever way they arrive.
+    const mixed = [
+      template("t-fri", "Friday · Mobility", ["Foam Rolling Flow"]),
+      template("t-zone", "Zone Two", ["Easy Spin Session"]),
+      template("t-mon", "Monday · Mobility", ["Foam Rolling Flow"]),
+    ];
+    expect(pick(mixed, onDay(2))).toBe("Zone Two");
+    expect(pick([...mixed].reverse(), onDay(2))).toBe("Zone Two");
+    expect(pick([mixed[1], mixed[2], mixed[0]], onDay(2))).toBe("Zone Two");
+  });
+});

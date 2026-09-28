@@ -40,18 +40,39 @@ const MOCK_AUTH = import.meta.env.DEV && import.meta.env.VITE_MOCK_AUTH === "tru
 
 const mockUser = { id: "qa-mock-user", email: "qa@liftos.local", user_metadata: { first_name: "QA" } } as unknown as User;
 
-const mockProfile: UserProfile = {
+const baseMockProfile: UserProfile = {
   first_name: "QA",
   last_name: null,
   goal: "Lean hypertrophy",
   experience: "Intermediate",
   equipment: null,
-  frequency: "4",
+  frequency: "4 days",
   split: null,
   units: "lb",
   wearable_connected: false,
   healthkit_connected: false,
 };
+
+/* One fixture cannot show both first-run heroes or an account that still
+   holds a frequency range, so a QA browser may override fields for itself:
+   localStorage "liftos-qa-profile" holds a JSON object laid over the
+   fixture, e.g. {"experience":"Beginner","frequency":"3–4 days"}. Only
+   fields the profile already has are taken, and only under MOCK_AUTH. */
+const QA_PROFILE_KEY = "liftos-qa-profile";
+
+const readMockProfile = (): UserProfile => {
+  try {
+    const raw = window.localStorage.getItem(QA_PROFILE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return baseMockProfile;
+    const known = Object.entries(parsed).filter(([key]) => key in baseMockProfile);
+    return { ...baseMockProfile, ...Object.fromEntries(known) };
+  } catch {
+    return baseMockProfile;
+  }
+};
+
+const mockProfile: UserProfile = MOCK_AUTH ? readMockProfile() : baseMockProfile;
 
 export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(MOCK_AUTH ? mockUser : null);

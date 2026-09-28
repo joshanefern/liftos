@@ -24,18 +24,24 @@ import {
   buildSplitPrompt,
   clearWeekBuildMarker,
   markWeekBuildStarted,
+  offersWeekPlan,
   parseWeekPlan,
   weekBuildInProgress,
+  weekPlanRoom,
   type IntakeNotes,
   type ScheduleDay,
 } from "@/lib/coachSetup";
 import { SplitIntakeSheet } from "@/components/home/SplitIntakeSheet";
+import { homeStatBlock } from "@/components/home/statBlock";
+import { WorkoutRunningDialog } from "@/components/home/WorkoutRunningDialog";
 import { trackingFor } from "@/lib/exerciseTracking";
-import { ACTIVE_WORKOUT_STORAGE_KEY } from "@/lib/startSession";
 import {
+  ACTIVE_WORKOUT_STORAGE_KEY,
+  buildBlankSession,
   buildSessionFromStarter,
   buildSessionFromTemplate,
   persistActiveSession,
+  type ActiveSessionSeed,
 } from "@/lib/startSession";
 import { suggestNextWorkout, type Suggestion } from "@/lib/suggestion";
 import {
@@ -58,7 +64,6 @@ import {
 import { useDayKey } from "@/hooks/useDayKey";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { Switch } from "@/components/ui/switch";
-import type { ActiveSession } from "@/pages/ActiveWorkout";
 import { CalendarDays, ChevronsRight, RefreshCw, Sparkles } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -86,6 +91,8 @@ const fmtAgo = (iso: string | null): string => {
 const CARD_CLASS =
   "rounded-[13px] bg-card shadow-[0_4px_12px_rgba(16,22,35,0.08)] dark:shadow-[0_4px_14px_rgba(0,0,0,0.35)]";
 
+// Owner's pick for Home's section labels: warm champagne in both themes.
+// Deliberately not a shared token — text-fg-muted reads cold here.
 const CARD_LABEL =
   "text-[10px] font-semibold uppercase tracking-[0.14em] text-[hsl(35,25%,45%)] dark:text-[hsl(38,32%,72%)]";
 
@@ -99,11 +106,14 @@ const ROW_CLASS =
 /* ── Hero buttons. Primary is the app's raspberry-with-white everywhere,
    including on the ink panel (it reads fine on both the light panel's ink
    and the dark panel's porcelain — one button, both themes). Secondary is
-   the outlined style. ── */
+   the outlined style; tertiary is a plain text row, 44px tall so it is
+   still a full touch target. ── */
 const HERO_PRIMARY =
   "inline-flex min-h-[44px] items-center gap-2 rounded-full bg-primary px-5 py-3 text-[14px] font-semibold text-primary-foreground transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60";
 const HERO_SECONDARY =
   "inline-flex min-h-[44px] items-center gap-2 rounded-full border border-background/25 px-5 py-3 text-[14px] font-semibold text-background transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
+const HERO_TERTIARY =
+  "mt-2 inline-flex min-h-[44px] items-center gap-1.5 rounded-md text-left text-[13px] font-semibold text-background/70 transition hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
 const HERO_EYEBROW =
   "text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--primary-on-inverse))]";
 const HERO_TITLE =
@@ -197,10 +207,21 @@ const ShapeTiles = ({ shape }: { shape: SessionShape }) => (
   </div>
 );
 
+/* The running workout's seed, read at call time: a tap has to see what is
+   in storage now, not what a memo saw when the screen mounted. */
+const readActiveSeed = (): { name?: string; startedAt?: string } | null => {
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_WORKOUT_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as { name?: string; startedAt?: string }) : null;
+  } catch {
+    return null;
+  }
+};
+
 /* How a week build was asked for. "split": the beginner's one-shot from the
    onboarding answers — its day names carry no weekday ("Push Day"), so the
-   hero pins day one. "schedule": the intake's own days ("Monday · Push"),
-   which the suggestion engine's weekday rule reads. */
+   hero pins day one. "schedule": the plan sheet's own days ("Monday ·
+   Push"), which the suggestion engine's weekday rule reads. */
 type WeekBuildSource = "split" | "schedule";
 
 /* ── Hero ink panel + card index — the panel inverts with the theme
@@ -211,12 +232,18 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { profile, refreshProfile } = useUser();
-  const { logs, loading: logsLoading, loadFailed: logsLoadFailed } = useWorkoutLogs();
+  const {
+    logs,
+    loading: logsLoading,
+    loadFailed: logsLoadFailed,
+    reload: reloadLogs,
+  } = useWorkoutLogs();
   const {
     templates,
     loading: templatesLoading,
     loadFailed: templatesLoadFailed,
     save: saveTemplate,
+    reload: reloadTemplates,
   } = useWorkoutTemplates();
   const { pendingCount, pendingSessions } = usePendingReviews();
 
@@ -258,8 +285,9 @@ const Dashboard = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const records = useMemo(() => prStrip(logs), [logs, dayKey]);
 
-  // "2 of 3 planned workouts" — the plan is the onboarding frequency answer
-  // ("3–4 days" → 3). Unknown → the card shows a plain count instead.
+  // "2 of 4 planned workouts" — the plan is the onboarding frequency answer
+  // ("4 days" → 4; an older account's "3–4 days" → 3). Unknown → the card
+  // shows a plain count instead.
   const plannedPerWeek = plannedSessionsPerWeek(profile?.frequency);
   const weekObservation = useMemo(
     () =>
@@ -275,16 +303,8 @@ const Dashboard = () => {
 
   // A live session dwarfs everything else on a reopen — the banner above the
   // hero is the way back in. dayKey retriggers the read on refocus/midnight.
-  const activeSeed = useMemo(() => {
-    try {
-      const raw = window.localStorage.getItem(ACTIVE_WORKOUT_STORAGE_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw) as { name?: string; startedAt?: string };
-    } catch {
-      return null;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dayKey, logs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const activeSeed = useMemo(() => readActiveSeed(), [dayKey, logs]);
   const activeMinutes = activeSeed?.startedAt
     ? Math.max(0, Math.round((Date.now() - Date.parse(activeSeed.startedAt)) / 60_000))
     : null;
@@ -304,14 +324,34 @@ const Dashboard = () => {
   // Day", "Leg Day"), and with zero history every template scores the same
   // and the engine's tie-break is alphabetical ("Leg Day" first) — so that
   // path pins the coach's day one (`day`). The intake's days carry their
-  // weekday ("Monday · Push") and the engine's weekday rule already puts
-  // today's first, so `day: null` leaves the choice to the engine — and the
-  // "Your week" Start pill follows the same pick either way (planStartId).
-  // Resets on remount, when the engine takes over as usual.
-  const [firstPlan, setFirstPlan] = useState<{ day: string | null } | null>(null);
+  // weekday ("Monday · Push") and the engine reads it: today's plan day, or
+  // the next one on the calendar when today is not a plan day. So
+  // `day: null` leaves the choice to the engine, and the hero names the same
+  // workout after a reload as it did when the plan landed — the "Your week"
+  // Start pill follows the same pick either way (planStartId). Resets on
+  // remount, when the engine takes over as usual.
+  //
+  // Either way the pick comes from the plan that was just built (`names`):
+  // a workout saved by hand beforehand carries no weekday, so on an off day
+  // the engine ranks it first — and the hero would announce it as the first
+  // workout of a plan it is not part of.
+  const [firstPlan, setFirstPlan] = useState<{ day: string | null; names: string[] } | null>(
+    null,
+  );
   const firstPlanPick = useMemo<Suggestion | null>(() => {
     if (!firstPlan) return null;
-    if (firstPlan.day === null) return suggestion.kind === "template" ? suggestion : null;
+    if (firstPlan.day === null) {
+      if (suggestion.kind === "template" && firstPlan.names.includes(suggestion.title)) {
+        return suggestion;
+      }
+      const ofPlan = suggestNextWorkout({
+        logs,
+        templates: templates.filter((t) => firstPlan.names.includes(t.name)),
+        starters: starterPrograms,
+        profile,
+      });
+      return ofPlan.kind === "template" ? ofPlan : null;
+    }
     const template = templates.find((t) => t.name === firstPlan.day);
     if (!template) return null;
     return {
@@ -322,7 +362,7 @@ const Dashboard = () => {
       reason: "",
       muscles: [],
     };
-  }, [firstPlan, templates, suggestion]);
+  }, [firstPlan, templates, suggestion, logs, profile]);
   const showFirstWorkout = firstPlanPick !== null && logs.length === 0;
   const pick: Suggestion = showFirstWorkout && firstPlanPick ? firstPlanPick : suggestion;
 
@@ -423,17 +463,54 @@ const Dashboard = () => {
       logs.length === 0 &&
       templates.length === 0);
 
+  // What the card index opens with: a plan preview or one benefit line for
+  // an account with no history, the numbers for one with history, and a
+  // failed load said as a failed load — never a row of zeros.
+  const statBlock = homeStatBlock({
+    dataReady,
+    logsLoadFailed,
+    logCount: logs.length,
+    templateCount: templates.length,
+  });
   // No completed workouts yet, and we KNOW it (the logs query succeeded).
-  // Drives the stat block: a plan preview once templates exist, one benefit
-  // line before that — never a row of zeros.
-  const noHistory = dataReady && !logsLoadFailed && logs.length === 0;
+  const noHistory = statBlock === "plan" || statBlock === "first-workout";
 
-  // Beginners never see the intake — the coach decides everything from
-  // onboarding. Experienced lifters route through the intake sheet, which
-  // hands us their actual schedule.
+  // The hook's reload never raises `loading` again, and an offline request
+  // takes seconds to give up — the button carries the wait itself.
+  const [retryingLogs, setRetryingLogs] = useState(false);
+  const retryLogs = async (): Promise<void> => {
+    if (retryingLogs) return;
+    setRetryingLogs(true);
+    try {
+      // The saved workouts too, when they failed with the history: the hero
+      // names its pick from both, and would otherwise stay a guess.
+      await Promise.all([reloadLogs(), templatesLoadFailed ? reloadTemplates() : null]);
+    } finally {
+      setRetryingLogs(false);
+    }
+  };
+
+  // Beginners never see the plan sheet — the coach decides everything from
+  // onboarding. Experienced lifters route through it, and it hands us the
+  // days they confirmed.
   const [intakeOpen, setIntakeOpen] = useState(false);
   const isBeginner =
     !profile?.experience || profile.experience.toLowerCase().includes("beginner");
+
+  // Saving one workout by hand ends the first run, and the welcome hero was
+  // the only way into the plan sheet. Until the lifter has trained, the
+  // "Your week" card keeps that way open — while the sheet can still
+  // deliver the week they said they train (offersWeekPlan).
+  const planRoom = weekPlanRoom(templates.length, MAX_TEMPLATES);
+  const offerWeekPlan =
+    statBlock === "plan" &&
+    !isBeginner &&
+    !buildingWeek &&
+    offersWeekPlan({
+      savedNames: templates.map((t) => t.name),
+      plannedDays: plannedPerWeek,
+      limit: MAX_TEMPLATES,
+    });
 
   const runWeekBuild = async (prompt: string, source: WeekBuildSource): Promise<void> => {
     // Two guards: this mount's run (state), and any run holding the session
@@ -445,6 +522,7 @@ const Dashboard = () => {
     setBuildingWeek(true);
     let saved = 0;
     let firstSaved: string | null = null;
+    const savedNames: string[] = [];
     const newAccount = logs.length === 0;
     try {
       const reply = await streamCoach(
@@ -452,11 +530,14 @@ const Dashboard = () => {
         buildCoachContext(logs, profile),
         () => {},
       );
-      const days = parseWeekPlan(reply, MAX_TEMPLATES);
+      // Never more days than the library has room for: a day the coach
+      // added on its own must not read as part of the plan failing to save.
+      const days = parseWeekPlan(reply, Math.max(1, planRoom));
       if (days.length === 0) throw new Error("no_plan");
       for (const day of days) {
         await saveTemplate({ id: null, name: day.name, exercises: day.exercises });
         saved += 1;
+        savedNames.push(day.name);
         if (firstSaved === null) firstSaved = day.name;
       }
       toast({
@@ -475,7 +556,7 @@ const Dashboard = () => {
           ? "Your library hit its limit of saved workouts."
           : saved > 0
             ? "They're in My Workouts; ask the coach for the missing days any time."
-            : "The starter programs are ready to run today.",
+            : "The starter workouts are ready to run today.",
         variant: saved > 0 ? "default" : "destructive",
       });
       if (saved === 0) navigate("/workouts");
@@ -484,7 +565,7 @@ const Dashboard = () => {
       // — day one pinned for the split, the engine's weekday pick for the
       // schedule (see firstPlan).
       if (newAccount && firstSaved) {
-        setFirstPlan({ day: source === "split" ? firstSaved : null });
+        setFirstPlan({ day: source === "split" ? firstSaved : null, names: savedNames });
       }
       clearWeekBuildMarker();
       ownsBuild.current = false;
@@ -502,7 +583,9 @@ const Dashboard = () => {
   // loads succeeded: a failed load leaves the same empty arrays a new
   // account has, and consuming it then would lose the first-run experience
   // for the session — so it stays in history, the effect re-runs when the
-  // failure clears, and one quiet toast says what happened.
+  // failure clears. A failed history load is said by the card under the
+  // hero, which also retries it; the saved-workouts query has no retry on
+  // this screen, so one quiet toast covers it.
   const arrivedFromOnboarding =
     (location.state as { firstTime?: boolean } | null)?.firstTime === true;
   const autoBuildFired = useRef(false);
@@ -511,7 +594,7 @@ const Dashboard = () => {
     if (!arrivedFromOnboarding || autoBuildFired.current) return;
     if (!dataReady || profile === null) return;
     if (logsLoadFailed || templatesLoadFailed) {
-      if (!loadFailedToasted.current) {
+      if (!logsLoadFailed && !loadFailedToasted.current) {
         loadFailedToasted.current = true;
         toast({
           title: "Couldn't load your account yet",
@@ -540,40 +623,43 @@ const Dashboard = () => {
     void runWeekBuild(buildSchedulePrompt(profile, schedule, notes), "schedule");
   };
 
-  // One tap starts a saved workout pre-seeded. A live session outranks it —
-  // never silently overwrite its seed.
-  const startTemplate = (template: SupabaseTemplate): void => {
-    if (activeSeed) {
-      navigate("/workouts/active");
+  // One workout at a time. Every start on this screen goes through
+  // beginSession: with a workout already running it opens the dialog that
+  // says so, and the running workout's saved progress is never overwritten.
+  const [runningName, setRunningName] = useState<string | null>(null);
+  const [startBlocked, setStartBlocked] = useState(false);
+  const beginSession = (build: () => ActiveSessionSeed): void => {
+    const running = readActiveSeed();
+    if (running) {
+      setRunningName(running.name?.trim() || null);
+      setStartBlocked(true);
       return;
     }
-    persistActiveSession(buildSessionFromTemplate(template));
+    persistActiveSession(build());
     navigate("/workouts/active");
   };
 
-  // One tap starts the named session pre-seeded; rest-day picks, still-loading
-  // data, and any stale id fall back to the library, so the CTA never
-  // dead-ends.
+  const startTemplate = (template: SupabaseTemplate): void =>
+    beginSession(() => buildSessionFromTemplate(template));
+
+  // An empty workout — nothing planned, log as you go. "Quick start" is the
+  // app's one name for it (the Workouts page and the + button use it too).
+  const handleQuickStart = (): void => beginSession(() => buildBlankSession());
+
+  // One tap starts the named session pre-seeded. A pick with nothing to
+  // start — a rest day (its button reads "Browse workouts"), data still
+  // loading, a stale id — opens the library, so the CTA never dead-ends.
   const handleSuggestionStart = (): void => {
-    if (activeSeed) {
-      navigate("/workouts/active");
-      return;
-    }
-    if (!dataReady) {
-      navigate("/workouts");
-      return;
-    }
-    if (pick.kind === "template") {
+    if (dataReady && pick.kind === "template") {
       const template = templates.find((t) => t.id === pick.id);
       if (template) {
         startTemplate(template);
         return;
       }
-    } else if (pick.kind === "starter") {
+    } else if (dataReady && pick.kind === "starter") {
       const program = starterPrograms.find((p) => p.id === pick.id);
       if (program) {
-        persistActiveSession(buildSessionFromStarter(program));
-        navigate("/workouts/active");
+        beginSession(() => buildSessionFromStarter(program));
         return;
       }
     }
@@ -582,10 +668,11 @@ const Dashboard = () => {
 
   const { refresh: refreshCapturedSessions } = useCapturedSessions();
 
-  // The banner owns "Resume"; the hero CTA always reads as the pick. (It
-  // still routes into the live session when one exists — see
-  // handleSuggestionStart — so a seed is never silently overwritten.)
-  const ctaLabel = dataReady ? pick.ctaLabel : "Start a workout";
+  // The banner owns "Resume"; the hero CTA always reads as the pick, and
+  // does what it reads — with a workout running it stops at the dialog (see
+  // beginSession). While the pick loads there is nothing to start yet and
+  // the button opens the library, so it says that.
+  const ctaLabel = dataReady ? pick.ctaLabel : "Browse workouts";
 
   // The week's plan, in the order the coach wrote it (oldest save first),
   // for the no-history preview. "Start" sits on the hero's pick so the two
@@ -716,7 +803,7 @@ const Dashboard = () => {
               <>
                 <p className={HERO_EYEBROW}>{welcomeEyebrow}</p>
                 <h2 className={HERO_TITLE} aria-live="polite">
-                  {isBeginner ? "Building your first week…" : "Building your week…"}
+                  {isBeginner ? "Building your first week…" : "Building your weekly plan…"}
                 </h2>
                 <p className={HERO_BODY}>
                   The coach is writing your workouts around your goal — about 15 seconds.
@@ -728,8 +815,8 @@ const Dashboard = () => {
                 <p className={HERO_EYEBROW}>{welcomeEyebrow}</p>
                 <h2 className={HERO_TITLE}>New to the gym? Start here.</h2>
                 <p className={HERO_BODY}>
-                  One tap and the coach builds your first week around your goal — then walks
-                  you through every session.
+                  One tap and the coach builds your first week around your goal. Every workout
+                  lists its exercises, sets and reps.
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
@@ -758,18 +845,19 @@ const Dashboard = () => {
                 <button
                   type="button"
                   onClick={() => navigate("/workouts")}
-                  className="mt-3 min-h-[44px] text-left text-[12.5px] font-semibold text-background/55 transition hover:text-background/80"
+                  className={HERO_TERTIARY}
                 >
-                  I’ll start on my own →
+                  Browse workouts
+                  <ChevronsRight size={15} aria-hidden />
                 </button>
               </>
             ) : firstRun ? (
               <>
                 <p className={HERO_EYEBROW}>{welcomeEyebrow}</p>
-                <h2 className={HERO_TITLE}>Bring your routine, or just start.</h2>
+                <h2 className={HERO_TITLE}>Three ways to start.</h2>
                 <p className={HERO_BODY}>
-                  Tell the coach your days and what each one hits — it writes the week. Or
-                  start a workout right now.
+                  Have the coach build your weekly plan, add a workout from the routine you
+                  already follow, or quick start an empty workout and log as you go.
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
@@ -778,17 +866,20 @@ const Dashboard = () => {
                     className={HERO_PRIMARY}
                   >
                     <Sparkles size={15} />
-                    Use my existing routine
+                    Build my weekly plan
                   </button>
                   <button
                     type="button"
-                    onClick={handleSuggestionStart}
+                    onClick={() => navigate("/workouts?new=1")}
                     className={HERO_SECONDARY}
                   >
-                    Start a workout
-                    <ChevronsRight size={16} />
+                    Add a workout
                   </button>
                 </div>
+                <button type="button" onClick={handleQuickStart} className={HERO_TERTIARY}>
+                  Quick start
+                  <ChevronsRight size={15} aria-hidden />
+                </button>
               </>
             ) : showFirstWorkout ? (
               <>
@@ -805,7 +896,7 @@ const Dashboard = () => {
                     onClick={() => navigate("/workouts")}
                     className={HERO_SECONDARY}
                   >
-                    Adjust
+                    All workouts
                   </button>
                 </div>
               </>
@@ -889,7 +980,7 @@ const Dashboard = () => {
         {/* No history yet: the week's plan once it exists (names in the
             coach's order, Start on the pick), one line before that. Zeros
             tell a new user nothing. */}
-        {planRows.length > 0 ? (
+        {statBlock === "plan" ? (
           <div className={`${CARD_CLASS} px-4 pb-2 pt-3.5`}>
             <div className="flex items-center justify-between gap-3">
               <p className={CARD_LABEL}>Your week</p>
@@ -938,12 +1029,41 @@ const Dashboard = () => {
               <span>All workouts</span>
               <OpenPill />
             </Link>
+            {offerWeekPlan && (
+              <button
+                type="button"
+                onClick={() => setIntakeOpen(true)}
+                className="flex min-h-11 w-full items-center justify-between rounded-md text-left text-sm font-semibold text-fg transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <span className="flex items-center gap-2">
+                  <Sparkles size={15} className="text-primary" />
+                  Build my weekly plan
+                </span>
+                <OpenPill />
+              </button>
+            )}
           </div>
-        ) : noHistory && !templatesLoadFailed ? (
+        ) : statBlock === "first-workout" ? (
           <div className={`${CARD_CLASS} px-4 py-3.5`}>
             <p className="text-sm font-semibold text-fg">
               Finish one workout and your numbers start here.
             </p>
+          </div>
+        ) : statBlock === "load-failed" ? (
+          <div className={`${CARD_CLASS} px-4 pb-4 pt-3.5`}>
+            <p className="text-sm font-semibold text-fg">Your workouts could not be loaded.</p>
+            <p className="mt-1 text-[12px] leading-4 text-fg-muted">
+              Check your connection, then try again.
+            </p>
+            <button
+              type="button"
+              onClick={() => void retryLogs()}
+              disabled={retryingLogs}
+              aria-busy={retryingLogs}
+              className="mt-3 inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-[13px] font-semibold text-primary-foreground transition hover:opacity-90 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
+            >
+              {retryingLogs ? "Trying again…" : "Try again"}
+            </button>
           </div>
         ) : (
           <>
@@ -1107,7 +1227,16 @@ const Dashboard = () => {
         open={intakeOpen}
         onOpenChange={setIntakeOpen}
         building={buildingWeek}
+        plannedDays={plannedPerWeek}
+        maxDays={planRoom}
         onBuild={handleIntakeBuild}
+      />
+
+      <WorkoutRunningDialog
+        open={startBlocked}
+        onOpenChange={setStartBlocked}
+        runningName={runningName}
+        onResume={() => navigate("/workouts/active")}
       />
 
       <Drawer open={connectionsOpen} onOpenChange={setConnectionsOpen}>

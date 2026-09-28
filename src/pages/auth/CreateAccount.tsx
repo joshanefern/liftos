@@ -108,21 +108,21 @@ const CreateAccount = () => {
 
         {errors.form && <FieldError message={errors.form} />}
 
-        <CTAButton type="submit" fullWidth disabled={isSubmitting}>
+        <CTAButton type="submit" variant="accent" fullWidth disabled={isSubmitting}>
           <UserPlus size={16} />
           {isSubmitting ? "Creating account..." : "Continue"}
         </CTAButton>
 
         <p className="text-center text-xs leading-5 text-fg-muted">
           By creating an account you agree to the{" "}
-          <Link to="/terms" className="text-fg-soft transition-colors duration-200 hover:text-gold">Terms of Service</Link>{" "}
+          <Link to="/terms" className="text-fg-soft transition-colors duration-200 hover:text-primary">Terms of Service</Link>{" "}
           and{" "}
-          <Link to="/privacy" className="text-fg-soft transition-colors duration-200 hover:text-gold">Privacy Policy</Link>.
+          <Link to="/privacy" className="text-fg-soft transition-colors duration-200 hover:text-primary">Privacy Policy</Link>.
         </p>
       </form>
-      <p className="mt-5 text-center text-sm text-fg-muted">
+      <p className="mt-2 text-center text-sm text-fg-muted">
         Already have an account?{" "}
-        <Link to="/sign-in" className="text-gold hover:underline">Sign in</Link>
+        <Link to="/sign-in" className="inline-flex min-h-11 items-center text-primary hover:underline">Sign in</Link>
       </p>
     </AuthLayout>
   );

@@ -92,16 +92,16 @@ const SignIn = () => {
             <input type="checkbox" defaultChecked className="h-5 w-5 accent-[hsl(var(--primary))]" />
             Remember me
           </label>
-          <Link to="/forgot-password" className="inline-flex min-h-11 items-center text-gold hover:underline">Forgot?</Link>
+          <Link to="/forgot-password" className="inline-flex min-h-11 items-center text-primary hover:underline">Forgot?</Link>
         </div>
-        <CTAButton type="submit" fullWidth disabled={isSubmitting}>
+        <CTAButton type="submit" variant="accent" fullWidth disabled={isSubmitting}>
           <Mail size={16} />
           {isSubmitting ? "Signing in..." : "Sign in"}
         </CTAButton>
       </form>
       <p className="mt-5 text-center text-sm text-fg-muted">
         New to LiftOS?{" "}
-        <Link to="/create-account" className="inline-flex min-h-11 items-center text-gold hover:underline">Create account</Link>
+        <Link to="/create-account" className="inline-flex min-h-11 items-center text-primary hover:underline">Create account</Link>
       </p>
       {/* Native-plugin heartbeat — screenshot-readable diagnostics after the
           Speech plugin silently failed to register for weeks. Native only,
