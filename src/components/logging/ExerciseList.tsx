@@ -49,21 +49,21 @@ export const ExerciseList = ({ items, onPick, settling = false }: Props) => (
                 {progressLabel(item.progress)}
               </span>
             </span>
-            {item.focused && (
+            {/* One marker per row, in one right-aligned slot: "Now" on the
+                focused exercise, the check on a finished one. The focused
+                row shows "Now" even when finished — the card says so. */}
+            {item.focused ? (
               <span className="shrink-0 rounded-full bg-primary/[0.12] px-2 py-1 text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-primary">
                 Now
               </span>
-            )}
-            <span
-              aria-hidden
-              className={
-                item.progress.complete
-                  ? "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
-                  : "h-5 w-5 shrink-0"
-              }
-            >
-              {item.progress.complete && <Check size={12} strokeWidth={2.6} />}
-            </span>
+            ) : item.progress.complete ? (
+              <span
+                aria-hidden
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+              >
+                <Check size={12} strokeWidth={2.6} />
+              </span>
+            ) : null}
             {item.progress.complete && <span className="sr-only">Complete</span>}
           </button>
         </li>
