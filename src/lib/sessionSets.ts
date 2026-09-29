@@ -5,9 +5,9 @@
      could only be got rid of by logging a set that never happened.
 
      Rules:
-       open only   a logged set is never removed directly — it is marked
-                   not done first, so nothing that counted disappears in
-                   one tap.
+       open only   a logged set is never removed directly — it is
+                   un-marked first (a tap on its check), so nothing that
+                   counted disappears in one tap.
        last first  the row that goes is the LAST open one that can, the
                    mirror of where "Add set" puts a new one.
        never empty an exercise always keeps a working set. ── */

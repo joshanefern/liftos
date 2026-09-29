@@ -4,6 +4,7 @@ import {
   type VoiceIntent,
   type VoiceLoggedExercise,
 } from "./voiceApply";
+import { restsAfter, voiceLoggedSet } from "./sessionFocus";
 import { MIN_VOICE_CONFIDENCE, resolveVoiceFire, type AppliedVoiceLog } from "./voiceSupersede";
 
 const row = (id: string, over: Partial<VoiceLoggedExercise["sets"][number]> = {}) => ({
@@ -277,6 +278,35 @@ describe("resolveVoiceFire — a bare correction amends the log it follows", () 
     expect(done(outcome.result.exercises, "p1")).toMatchObject({ completed: true, reps: "12" });
   });
 
+  it("a voice-logged set un-marked by tap is no longer 'the last logged set'", () => {
+    // Voice logs Pull Up 10, the lifter logs Bench set 1 by hand, then taps
+    // the Pull Up check to un-mark it. The logger's recency list no longer
+    // carries it; the first log's rows still lead the list here.
+    const { first, now: loggedNow } = afterHandLog();
+    const now = loggedNow.map((e) =>
+      e.id === "e3" ? { ...e, sets: e.sets.map((s) => ({ ...s, completed: false })) } : e,
+    );
+    const scratched = resolveVoiceFire({
+      now,
+      intent: scratch,
+      first,
+      options: { recentSetIds: ["b1"] },
+    });
+    if (scratched.at !== "applied") throw new Error("expected applied");
+    expect(done(scratched.result.exercises, "b1")?.completed).toBe(false);
+    expect(done(scratched.result.exercises, "p1")).toMatchObject({ completed: false, reps: "10" });
+
+    const corrected = resolveVoiceFire({
+      now,
+      intent: twelve,
+      first,
+      options: { recentSetIds: ["b1"] },
+    });
+    if (corrected.at !== "applied") throw new Error("expected applied");
+    expect(done(corrected.result.exercises, "b1")).toMatchObject({ completed: true, reps: "12" });
+    expect(done(corrected.result.exercises, "p1")?.completed).toBe(false);
+  });
+
   it("with no earlier voice log, a bare correction uses the logger's own recency", () => {
     const { now } = afterHandLog();
     const outcome = resolveVoiceFire({
@@ -288,5 +318,63 @@ describe("resolveVoiceFire — a bare correction amends the log it follows", () 
     if (outcome.at !== "applied") throw new Error("expected applied");
     expect(done(outcome.result.exercises, "b1")?.completed).toBe(false);
     expect(done(outcome.result.exercises, "p1")?.completed).toBe(true);
+  });
+});
+
+describe("resolveVoiceFire — the rest after a replacing fire", () => {
+  // The logger takes the first log back (lib/voiceRevert) and applies the
+  // replacement in the same breath, before any render. What the
+  // replacement newly logged must be judged against the session with the
+  // first log taken back — the `base` it was worked out against — or a
+  // row it logs again reads as "already logged" and no rest follows.
+  const twice: VoiceIntent = {
+    kind: "sets",
+    confidence: 0.95,
+    actions: [{ exercise: "Bench Press", sets: [{ reps: 8, weight: 135 }, { reps: 8, weight: 135 }] }],
+  };
+  const firstOf = (intent: VoiceIntent): AppliedVoiceLog => {
+    const before = session();
+    return { before, after: applyVoiceIntent(before, intent).exercises };
+  };
+  const owner = (setId: string) => ({ exerciseId: "e1", setId });
+
+  it("'twice' then 'just once': set 1 is logged again, and a rest follows it", () => {
+    const first = firstOf(twice);
+    const outcome = resolveVoiceFire({ now: first.after, intent: bench(8, 135), first });
+    if (outcome.at !== "applied") throw new Error("expected applied");
+    expect(outcome.replacesFirst).toBe(true);
+    const { exercises, touched } = outcome.result;
+    expect(read(exercises)[0]).toBe("Bench Press: x8/135 ·-/- ·-/-");
+    // The rest from the first log was set 2's.
+    expect(voiceLoggedSet(outcome.base, exercises, touched, owner("b2"))).toEqual(owner("b1"));
+    expect(restsAfter(exercises, "e1")).toBe(true);
+  });
+
+  it("'three sets' then 'two sets': set 2 is the last logged, with set 3 still to come", () => {
+    const three: VoiceIntent = {
+      kind: "sets",
+      confidence: 0.95,
+      actions: [{ exercise: "Bench Press", sets: [0, 1, 2].map(() => ({ reps: 8, weight: 135 })) }],
+    };
+    const first = firstOf(three);
+    const outcome = resolveVoiceFire({ now: first.after, intent: twice, first });
+    if (outcome.at !== "applied") throw new Error("expected applied");
+    const { exercises, touched } = outcome.result;
+    expect(read(exercises)[0]).toBe("Bench Press: x8/135 x8/135 ·-/-");
+    // No rest was running: the first log finished the exercise.
+    expect(voiceLoggedSet(outcome.base, exercises, touched, null)).toEqual(owner("b2"));
+    expect(restsAfter(exercises, "e1")).toBe(true);
+  });
+
+  it("'bench 8' then 'at 135': the same set again — the running rest carries on", () => {
+    const first = firstOf({
+      kind: "sets",
+      confidence: 0.95,
+      actions: [{ exercise: "Bench Press", sets: [{ reps: 8 }] }],
+    });
+    const outcome = resolveVoiceFire({ now: first.after, intent: bench(8, 135), first });
+    if (outcome.at !== "applied") throw new Error("expected applied");
+    const { exercises, touched } = outcome.result;
+    expect(voiceLoggedSet(outcome.base, exercises, touched, owner("b1"))).toBeNull();
   });
 });

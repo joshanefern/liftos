@@ -160,6 +160,81 @@ export const upNextOf = <E extends FocusExercise>(
   return null;
 };
 
+// ── Rest ────────────────────────────────────────────────────────────────────
+//
+// A rest belongs to the exercise whose set started it: it is the pause
+// between that exercise's sets, and it ends with the exercise. So a rest
+// starts only after a set that leaves its exercise with a working set
+// still open (never after an exercise's last set), and a running rest
+// stops being owed the moment that stops being true — the exercise is
+// finished, or the set that started it is no longer logged.
+
+/** The set whose logging started the running rest. */
+export type RestOwner = { exerciseId: string; setId: string };
+
+/** Whether a set just logged on `exerciseId` is followed by a rest (when
+    the lifter has the rest timer on): only while that exercise still has
+    an open working set. */
+export const restsAfter = (exercises: FocusExercise[], exerciseId: string): boolean => {
+  const exercise = exercises.find((e) => e.id === exerciseId);
+  return exercise !== undefined && hasOpenSet(exercise);
+};
+
+/** Whether a running rest still has something to be a rest before. A
+    rest with no known owner (saved before rests had one) holds while
+    anything is left to log. */
+export const restHolds = (exercises: FocusExercise[], owner: RestOwner | null): boolean => {
+  if (owner === null) return exercises.some(hasOpenSet);
+  const exercise = exercises.find((e) => e.id === owner.exerciseId);
+  if (exercise === undefined || !hasOpenSet(exercise)) return false;
+  return exercise.sets.some((set) => set.id === owner.setId && set.completed);
+};
+
+/** The set a voice log counts as logging, for the rest — the one whose
+    logging ends the running rest and may start the next, exactly as a set
+    logged by hand does. Only a row the log newly completed counts: "that
+    was 12" rewrites a set already on the books, and the rest carries on
+    through it. The last such row wins.
+
+    `before` is the session the log was applied to. When the log REPLACES
+    an earlier one (speech resumed in the grace window), that is the
+    session with the earlier log taken back — so the rows the replacement
+    logs again are new, and a running rest follows the replacement. The
+    one exception: the replacement logging again the very set whose rest
+    is running ("bench 8" … "at 135") — that is the same pause, and it
+    carries on instead of restarting from full.
+
+    null: the log leaves the rest alone. */
+export const voiceLoggedSet = (
+  before: FocusExercise[],
+  after: FocusExercise[],
+  touched: RestOwner[],
+  running: RestOwner | null,
+): RestOwner | null => {
+  const loggedIn = (exercises: FocusExercise[]): Set<string> =>
+    new Set(exercises.flatMap((e) => e.sets.filter((s) => s.completed).map((s) => s.id)));
+  const was = loggedIn(before);
+  const now = loggedIn(after);
+  const last = [...touched].reverse().find((t) => now.has(t.setId) && !was.has(t.setId));
+  if (last === undefined) return null;
+  if (running !== null && running.setId === last.setId) return null;
+  return { exerciseId: last.exerciseId, setId: last.setId };
+};
+
+/** The set a rest is a pause before — what its "Next:" line names: the
+    owning exercise's current set. Without an owner, whatever is up next. */
+export const restNextOf = <E extends FocusExercise>(
+  exercises: E[],
+  owner: RestOwner | null,
+  pin: FocusPin | null,
+): UpNext<E> | null => {
+  if (owner === null) return upNextOf(exercises, pin);
+  const exercise = exercises.find((e) => e.id === owner.exerciseId);
+  if (exercise === undefined) return null;
+  const position = currentSetOf<E["sets"][number]>(exercise);
+  return position === null ? null : { exercise, ...position };
+};
+
 // ── Words ───────────────────────────────────────────────────────────────────
 
 /** "set 2 of 3" — the mid-sentence form. */
@@ -169,6 +244,13 @@ export const setPosition = (ordinal: number, total: number): string =>
 /** "Set 2 of 3" */
 export const setOfLabel = (ordinal: number, total: number): string =>
   `Set ${ordinal} of ${total}`;
+
+/** A logged set's check, for screen readers: "Set 2 logged — tap to
+    unmark" · "Warm-up set logged — tap to unmark". `ordinal` is 1-based
+    among working sets. The same words folded or open, so the one control
+    never reads as two. */
+export const unmarkLabel = (ordinal: number, isWarmup: boolean): string =>
+  `${isWarmup ? "Warm-up set" : `Set ${ordinal}`} logged — tap to unmark`;
 
 /** "1 of 3 sets" · "0 of 1 set" · "No sets" */
 export const progressLabel = ({ done, total }: Pick<SetsProgress, "done" | "total">): string => {

@@ -8,15 +8,21 @@ import {
   pinFor,
   progressLabel,
   resolveFocusId,
+  restHolds,
+  restNextOf,
+  restsAfter,
   rowStates,
   setOfLabel,
   setPosition,
   setSummary,
   setsProgress,
   settlePin,
+  unmarkLabel,
   upNextOf,
+  voiceLoggedSet,
   type FocusExercise,
   type FocusPin,
+  type RestOwner,
 } from "./sessionFocus";
 
 const set = (id: string, completed = false, isWarmup = false) => ({
@@ -262,10 +268,138 @@ describe("pinAfterLogging", () => {
   });
 });
 
+describe("rest", () => {
+  describe("restsAfter", () => {
+    it("rests between sets of the same exercise", () => {
+      expect(restsAfter(workout("xoo", "o"), "e1")).toBe(true);
+    });
+
+    it("never rests after an exercise's last set, even with more work elsewhere", () => {
+      expect(restsAfter(workout("xxx", "o"), "e1")).toBe(false);
+      expect(restsAfter(workout("xx"), "e1")).toBe(false);
+    });
+
+    it("rests after a warm-up while working sets are open, never for warm-ups alone", () => {
+      expect(restsAfter(workout("Wwoo"), "e1")).toBe(true);
+      expect(restsAfter(workout("Wwxx"), "e1")).toBe(false);
+    });
+
+    it("does not rest for an exercise that is gone", () => {
+      expect(restsAfter(workout("xo"), "gone")).toBe(false);
+    });
+  });
+
+  describe("restHolds", () => {
+    const owner: RestOwner = { exerciseId: "e1", setId: "e1-1" };
+
+    it("holds while its set is logged and the exercise has work left", () => {
+      expect(restHolds(workout("xoo"), owner)).toBe(true);
+    });
+
+    it("ends when the exercise is finished, however that happened", () => {
+      expect(restHolds(workout("xxx", "o"), owner)).toBe(false);
+    });
+
+    it("ends when the set that started it is un-marked", () => {
+      expect(restHolds(workout("ooo"), owner)).toBe(false);
+    });
+
+    it("keeps running when an older set is un-marked", () => {
+      const started: RestOwner = { exerciseId: "e1", setId: "e1-2" };
+      expect(restHolds(workout("oxo"), started)).toBe(true);
+    });
+
+    it("ends when the set or the exercise is gone", () => {
+      expect(restHolds(workout("xo"), { exerciseId: "e1", setId: "gone" })).toBe(false);
+      expect(restHolds(workout("xo"), { exerciseId: "gone", setId: "e1-1" })).toBe(false);
+    });
+
+    it("an ownerless rest (saved before rests had one) holds while anything is open", () => {
+      expect(restHolds(workout("xx", "o"), null)).toBe(true);
+      expect(restHolds(workout("xx", "x"), null)).toBe(false);
+    });
+  });
+
+  describe("voiceLoggedSet", () => {
+    const at = (exerciseId: string, n: number): RestOwner => ({
+      exerciseId,
+      setId: `${exerciseId}-${n}`,
+    });
+
+    it("is the last row the voice log newly completed", () => {
+      expect(voiceLoggedSet(workout("ooo"), workout("xxo"), [at("e1", 1), at("e1", 2)], null)).toEqual(
+        at("e1", 2),
+      );
+    });
+
+    it("a correction to a set already logged is not a new set", () => {
+      expect(voiceLoggedSet(workout("xoo"), workout("xoo"), [at("e1", 1)], at("e1", 1))).toBeNull();
+    });
+
+    it("a new set ends a rest another set started", () => {
+      expect(voiceLoggedSet(workout("xoo"), workout("xxo"), [at("e1", 2)], at("e1", 1))).toEqual(
+        at("e1", 2),
+      );
+    });
+
+    it("a replacing log counts against the session with the first log taken back", () => {
+      // "Bench 8 at 135 twice" logged sets 1 and 2 (rest from set 2);
+      // "… no, just once" takes both back and logs set 1 again. Against
+      // the reverted session set 1 is new, so a rest follows it.
+      const reverted = workout("ooo");
+      expect(voiceLoggedSet(reverted, workout("xoo"), [at("e1", 1)], at("e1", 2))).toEqual(at("e1", 1));
+      // Against the session as it stood before the take-back, it would not be.
+      expect(voiceLoggedSet(workout("xxo"), workout("xoo"), [at("e1", 1)], at("e1", 2))).toBeNull();
+    });
+
+    it("a replacement that logs again the set whose rest is running leaves that rest alone", () => {
+      // "Bench 8" … "at 135": the same set, the same pause.
+      expect(voiceLoggedSet(workout("ooo"), workout("xoo"), [at("e1", 1)], at("e1", 1))).toBeNull();
+    });
+
+    it("ignores rows the log scratched", () => {
+      expect(voiceLoggedSet(workout("xoo"), workout("ooo"), [at("e1", 1)], null)).toBeNull();
+    });
+  });
+
+  describe("restNextOf", () => {
+    it("names the owning exercise's next set", () => {
+      const next = restNextOf(workout("xoo", "o"), { exerciseId: "e1", setId: "e1-1" }, null);
+      expect(next?.exercise.id).toBe("e1");
+      expect(next?.set.id).toBe("e1-2");
+      expect(next?.ordinal).toBe(2);
+    });
+
+    it("stays on the owning exercise while another one is picked to look at", () => {
+      const picked: FocusPin = { exerciseId: "e2", hadOpenSets: true };
+      const next = restNextOf(workout("xoo", "oo"), { exerciseId: "e1", setId: "e1-1" }, picked);
+      expect(next?.exercise.id).toBe("e1");
+    });
+
+    it("follows an older set that was un-marked — it is current again", () => {
+      const next = restNextOf(workout("oxo"), { exerciseId: "e1", setId: "e1-2" }, null);
+      expect(next?.set.id).toBe("e1-1");
+    });
+
+    it("is null once the owning exercise has nothing open", () => {
+      expect(restNextOf(workout("xx", "o"), { exerciseId: "e1", setId: "e1-2" }, null)).toBeNull();
+    });
+
+    it("without an owner, is whatever is up next", () => {
+      expect(restNextOf(workout("xx", "o"), null, null)?.exercise.id).toBe("e2");
+    });
+  });
+});
+
 describe("labels", () => {
   it("names the set position", () => {
     expect(setOfLabel(2, 3)).toBe("Set 2 of 3");
     expect(setPosition(2, 3)).toBe("set 2 of 3");
+  });
+
+  it("names a logged set's check as the one tap that un-marks it", () => {
+    expect(unmarkLabel(2, false)).toBe("Set 2 logged — tap to unmark");
+    expect(unmarkLabel(0, true)).toBe("Warm-up set logged — tap to unmark");
   });
 
   it("counts sets with the right plural", () => {

@@ -4,8 +4,6 @@ import { warnHaptic } from "@/lib/haptics";
 import { restoredRest, type RestWindow } from "@/lib/sessionResume";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const DEFAULT_REST_SECONDS = 120;
-
 /** Brief buzz when the rest period ends. Native haptics on iOS, Vibration API elsewhere. */
 const buzzOnFinish = async (): Promise<void> => {
   try {
@@ -24,39 +22,32 @@ const buzzOnFinish = async (): Promise<void> => {
  * (Date.now()), never tick-counting, so throttled tabs and backgrounded apps
  * stay accurate — the interval only refreshes the display.
  *
- * `start()` while already running restarts the countdown from full.
- * `resume(rest)` picks a countdown up part-way, from its end time.
- * `onFinish` fires once when the countdown reaches zero (not on skip).
+ * `start(seconds)` begins a rest of that length; while one is already
+ * running it restarts from full. The length is the caller's (the lifter's
+ * rest timer setting), passed at the moment the rest begins, so changing
+ * the setting never reaches into a rest that is already counting.
+ * `skip()` ends a rest quietly. `onFinish` fires once when the countdown
+ * reaches zero — never on skip.
  *
  * `initial` is a rest that was running when the screen was last unmounted
  * (read once, on mount). Only one that is still running is taken up — an
  * ended one would fire `onFinish` and the buzz the moment the screen opens.
  */
-export const useRestTimer = (
-  defaultSeconds: number = DEFAULT_REST_SECONDS,
-  onFinish?: () => void,
-  initial?: RestWindow | null,
-) => {
+export const useRestTimer = (onFinish?: () => void, initial?: RestWindow | null) => {
   const [restored] = useState(() => restoredRest(initial, Date.now()));
   /** Epoch ms when the current rest ends; null = not running. */
   const [endsAt, setEndsAt] = useState<number | null>(restored?.endsAt ?? null);
-  const [totalSeconds, setTotalSeconds] = useState(restored?.totalSeconds ?? defaultSeconds);
+  const [totalSeconds, setTotalSeconds] = useState(restored?.totalSeconds ?? 0);
   const [remaining, setRemaining] = useState(() =>
-    restored ? Math.ceil((restored.endsAt - Date.now()) / 1000) : defaultSeconds,
+    restored ? Math.ceil((restored.endsAt - Date.now()) / 1000) : 0,
   );
   const onFinishRef = useRef(onFinish);
   onFinishRef.current = onFinish;
 
-  const start = useCallback(() => {
-    setTotalSeconds(defaultSeconds);
-    setRemaining(defaultSeconds);
-    setEndsAt(Date.now() + defaultSeconds * 1000);
-  }, [defaultSeconds]);
-
-  const resume = useCallback((rest: RestWindow) => {
-    setTotalSeconds(rest.totalSeconds);
-    setRemaining(Math.max(0, Math.ceil((rest.endsAt - Date.now()) / 1000)));
-    setEndsAt(rest.endsAt);
+  const start = useCallback((seconds: number) => {
+    setTotalSeconds(seconds);
+    setRemaining(seconds);
+    setEndsAt(Date.now() + seconds * 1000);
   }, []);
 
   const extend = useCallback((seconds: number) => {
@@ -106,7 +97,6 @@ export const useRestTimer = (
     /** 0..1 fraction of the rest period still left (for progress bars). */
     progress: totalSeconds > 0 ? remaining / totalSeconds : 0,
     start,
-    resume,
     extend,
     skip,
   };

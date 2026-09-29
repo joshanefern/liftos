@@ -153,6 +153,28 @@ describe("revertVoiceApply", () => {
     const after = [bench(logged("s1", "12", "135"))];
     expect(revertVoiceApply(before, after, after)[0].sets[0].reps).toBe("8");
   });
+
+  it("leaves a voice-logged set the lifter un-marked with one tap exactly as they left it", () => {
+    // "bench 185 for 6" logs set 2; a tap on its check un-marks it (numbers
+    // kept); then Undo. The row was touched since — it is the lifter's now.
+    const before = [bench(logged("s1"), open("s2"), open("s3"))];
+    const after = [bench(logged("s1"), logged("s2", "6", "185"), open("s3"))];
+    const unmarked = { ...logged("s2", "6", "185"), completed: false };
+    const now = [bench(logged("s1"), unmarked, open("s3"))];
+    expect(read(revertVoiceApply(before, after, now))).toEqual([
+      "Bench Press: [x] 8/135 | [ ] 6/185 | [ ] /",
+    ]);
+  });
+
+  it("still takes back the rest of that voice log", () => {
+    const before = [bench(logged("s1"), open("s2")), pullUp(open("s5"))];
+    const after = [bench(logged("s1"), logged("s2", "6", "185")), pullUp(logged("s5", "10", ""))];
+    const now = [bench(logged("s1"), { ...logged("s2", "6", "185"), completed: false }), after[1]];
+    expect(read(revertVoiceApply(before, after, now))).toEqual([
+      "Bench Press: [x] 8/135 | [ ] 6/185",
+      "Pull Up: [ ] /",
+    ]);
+  });
 });
 
 describe("revertVoiceNote", () => {

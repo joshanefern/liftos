@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { restoredRecentSetIds, restoredRest } from "./sessionResume";
+import { restoredRecentSetIds, restoredRest, restoredRestOwner } from "./sessionResume";
 
 const NOW = 1_800_000_000_000;
 
@@ -41,6 +41,35 @@ describe("restoredRest", () => {
   it("returns only the two fields it checked", () => {
     const restored = restoredRest({ endsAt: NOW + 1000, totalSeconds: 120, extra: true }, NOW);
     expect(restored).toEqual({ endsAt: NOW + 1000, totalSeconds: 120 });
+  });
+});
+
+describe("restoredRestOwner", () => {
+  it("brings back which set started the rest", () => {
+    const saved = { endsAt: NOW + 60_000, totalSeconds: 90, exerciseId: "e1", setId: "s2" };
+    expect(restoredRestOwner(saved)).toEqual({ exerciseId: "e1", setId: "s2" });
+    // The window itself is read as before — the owner rides alongside.
+    expect(restoredRest(saved, NOW)).toEqual({ endsAt: NOW + 60_000, totalSeconds: 90 });
+  });
+
+  it("is null for a rest saved before rests had an owner", () => {
+    expect(restoredRestOwner({ endsAt: NOW + 60_000, totalSeconds: 120 })).toBeNull();
+  });
+
+  it("drops malformed values", () => {
+    expect(restoredRestOwner(undefined)).toBeNull();
+    expect(restoredRestOwner(null)).toBeNull();
+    expect(restoredRestOwner("e1")).toBeNull();
+    expect(restoredRestOwner({ exerciseId: "e1" })).toBeNull();
+    expect(restoredRestOwner({ exerciseId: "", setId: "s1" })).toBeNull();
+    expect(restoredRestOwner({ exerciseId: "e1", setId: 2 })).toBeNull();
+  });
+
+  it("returns only the two fields it checked", () => {
+    expect(restoredRestOwner({ exerciseId: "e1", setId: "s1", endsAt: 5 })).toEqual({
+      exerciseId: "e1",
+      setId: "s1",
+    });
   });
 });
 

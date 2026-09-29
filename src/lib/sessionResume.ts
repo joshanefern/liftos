@@ -1,6 +1,8 @@
+import type { RestOwner } from "@/lib/sessionFocus";
+
 /* ── What a live workout brings back when the logger mounts again after
-     Minimize, a reload, or iOS dropping the web view. Both values come
-     out of localStorage, so both are checked before they are trusted. ── */
+     Minimize, a reload, or iOS dropping the web view. Every value comes
+     out of localStorage, so each is checked before it is trusted. ── */
 
 /** A rest countdown as an end time, so it survives being unmounted. */
 export type RestWindow = {
@@ -10,10 +12,12 @@ export type RestWindow = {
   totalSeconds: number;
 };
 
-/** The saved rest, if it is still running. One that has already ended is
-    dropped: re-arming it would buzz "Rest complete" the moment the lifter
-    comes back, however long ago it really ended. A rest with more time
-    left than its own length means the clock moved — dropped too. */
+/** The saved rest, if it is still running — exactly as it was, whatever
+    the rest timer setting says now (a new length is for the NEXT rest).
+    One that has already ended is dropped: re-arming it would buzz "Rest
+    complete" the moment the lifter comes back, however long ago it really
+    ended. A rest with more time left than its own length means the clock
+    moved — dropped too. */
 export const restoredRest = (raw: unknown, now: number): RestWindow | null => {
   if (typeof raw !== "object" || raw === null) return null;
   const { endsAt, totalSeconds } = raw as Partial<RestWindow>;
@@ -22,6 +26,16 @@ export const restoredRest = (raw: unknown, now: number): RestWindow | null => {
   if (totalSeconds <= 0 || endsAt <= now) return null;
   if (endsAt - now > totalSeconds * 1000) return null;
   return { endsAt, totalSeconds };
+};
+
+/** Which set started the saved rest — saved alongside its end time. null
+    for a rest saved before rests had an owner, or anything malformed. */
+export const restoredRestOwner = (raw: unknown): RestOwner | null => {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { exerciseId, setId } = raw as Partial<RestOwner>;
+  if (typeof exerciseId !== "string" || exerciseId === "") return null;
+  if (typeof setId !== "string" || setId === "") return null;
+  return { exerciseId, setId };
 };
 
 /** The saved order sets were logged in, most recent first — what tells a

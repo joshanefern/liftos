@@ -34,6 +34,9 @@ const SESSION = JSON.stringify({
   ],
 });
 
+/** The lifter's rest timer setting, turned on (it is off by default). */
+const REST_ON = JSON.stringify({ on: true, seconds: 120 });
+
 /** Each shot: route, optional actions, optional seeds. `full` = full page. */
 const SHOTS = [
   { name: "sign-in", path: "/sign-in", authed: false },
@@ -93,12 +96,23 @@ const SHOTS = [
       await p.getByRole("button", { name: /^45 min$/i }).click();
       await p.getByRole("button", { name: /dumbbells only/i }).click();
     } },
+  // The rest timer is off until the lifter adds it — seeded on here so the
+  // rest block under "Complete set" is in the shot.
   { name: "active-session-set-done", path: "/workouts/active", full: true,
-    seeds: { liftos_active_workout_session: SESSION, "liftos-voice-dev": "1" },
+    seeds: { liftos_active_workout_session: SESSION, "liftos-voice-dev": "1", "liftos-rest-timer": REST_ON },
     actions: async (p) => { await p.getByRole("button", { name: /^complete set$/i }).click(); } },
   { name: "active-session-menu", path: "/workouts/active",
     seeds: { liftos_active_workout_session: SESSION },
     actions: async (p) => { await p.getByRole("button", { name: /more session options/i }).click(); } },
+  // ⋯ → Rest timer: the ⋯ sheet closes first, then this one rises.
+  { name: "active-session-rest-timer", path: "/workouts/active",
+    seeds: { liftos_active_workout_session: SESSION, "liftos-rest-timer": REST_ON },
+    actions: async (p) => {
+      await p.getByRole("button", { name: /more session options/i }).click();
+      await p.waitForTimeout(600);
+      await p.getByRole("button", { name: /^rest timer/i }).click();
+      await p.getByRole("dialog", { name: "Rest timer" }).waitFor({ timeout: 5000 });
+    } },
   { name: "privacy", path: "/privacy", full: true },
   { name: "terms", path: "/terms", full: true },
 

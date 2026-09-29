@@ -5,6 +5,7 @@ import { CardioVitalsSheet } from "@/components/logging/CardioVitalsSheet";
 import { CompletedSetRow } from "@/components/logging/CompletedSetRow";
 import { ExerciseList } from "@/components/logging/ExerciseList";
 import { RestBlock } from "@/components/logging/RestBlock";
+import { RestTimerSheet } from "@/components/logging/RestTimerSheet";
 import { SessionBar } from "@/components/logging/SessionBar";
 import {
   CLEAR_OF_SESSION_BAR,
@@ -13,6 +14,7 @@ import {
 import ExerciseNameSuggestions from "@/components/ExerciseNameSuggestions";
 import { SetInputRow, formatWeightForDisplay } from "@/components/logging/SetInputRow";
 import { useEnterAdvance } from "@/components/logging/useEnterAdvance";
+import { useFoldOnLeave } from "@/components/logging/useFoldOnLeave";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,22 +67,34 @@ import { formatPlateMath, plateBreakdown } from "@/lib/plateMath";
 import { detectSessionPRs, type PREvent } from "@/lib/prs";
 import { isMetricUnits } from "@/lib/review/inputFormatters";
 import {
+  loadRestTimerPrefs,
+  restTimerSummary,
+  saveRestTimerPrefs,
+  type RestTimerPrefs,
+} from "@/lib/restTimerPrefs";
+import {
   currentSetOf,
   openSetIds,
   pinAfterLogging,
   pinFor,
   resolveFocusId,
+  restHolds,
+  restNextOf,
+  restsAfter,
   rowStates,
   setOfLabel,
   setSummary as summarizeSet,
   setsProgress,
   settlePin,
   upNextOf,
+  voiceLoggedSet,
   type FocusPin,
+  type RestOwner,
 } from "@/lib/sessionFocus";
 import {
   restoredRecentSetIds,
   restoredRest,
+  restoredRestOwner,
   type RestWindow,
 } from "@/lib/sessionResume";
 import { followsCurrentSet, revealScrollTop, type FollowState } from "@/lib/sessionScroll";
@@ -97,11 +111,12 @@ import {
   Minus,
   MoreHorizontal,
   Plus,
+  Timer,
   Trash2,
   Trophy,
   Weight,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 const ACTIVE_WORKOUT_STORAGE_KEY = "liftos_active_workout_session";
@@ -114,7 +129,6 @@ const TIMED_TOGGLE_HINT = /plank|hold|hang|carry|wall.?sit|bridge|l.?sit|iso|sta
     was a lie. Keyed to the seed's startedAt so a different session never
     inherits it. */
 const ACTIVE_WORKOUT_PROGRESS_KEY = "liftos_active_workout_progress";
-const REST_SECONDS = 120;
 /** How many recently-completed set ids voice corrections can reach back to. */
 const RECENT_SET_CAP = 20;
 /** Scroll lands first; the focus (and its keyboard) follows after this. */
@@ -219,8 +233,9 @@ type PersistedProgress = {
   /** Set ids in the order they were logged, most recent first — what a
       spoken "scratch that" means after a resume. */
   recentSetIds?: string[];
-  /** The rest that was counting down, as an end time. */
-  rest?: RestWindow | null;
+  /** The rest that was counting down, as an end time, with the set whose
+      logging started it (absent in progress saved before rests had one). */
+  rest?: (RestWindow & Partial<RestOwner>) | null;
 };
 
 /** Restore in-flight progress for THIS seeded session, if any survives. */
@@ -349,6 +364,9 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const [exercises, setExercises] = useState<LoggedExercise[]>(
     () => restored?.exercises ?? cloneExercises(session.exercises),
   );
+  // The sets as last rendered, for handlers that outlive their render (voice).
+  const exercisesRef = useRef(exercises);
+  exercisesRef.current = exercises;
   const [notes, setNotes] = useState(() => restored?.notes ?? "");
   // The lifter's manual pick from the exercise list; null = the focus
   // follows the work (lib/sessionFocus decides).
@@ -358,8 +376,15 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   // The freshest pin for handlers that outlive their render (voice).
   const focusPinRef = useRef(focusPin);
   focusPinRef.current = focusPin;
-  // The one logged set whose cells are open again for fixing.
-  const [editingSetId, setEditingSetId] = useState<string | null>(null);
+  // The one logged set whose cells are open again for fixing. The ref is
+  // the latest choice ahead of the render: one tap can open a row and
+  // leave another, and the leaving is handled before React re-renders.
+  const [editingSetId, setEditingSetIdState] = useState<string | null>(null);
+  const editingSetIdRef = useRef<string | null>(null);
+  const setEditingSetId = useCallback((id: string | null): void => {
+    editingSetIdRef.current = id;
+    setEditingSetIdState(id);
+  }, []);
   const [saving, setSaving] = useState(false);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [prCelebration, setPrCelebration] = useState<PREvent[] | null>(null);
@@ -420,6 +445,11 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     const after = result.exercises as LoggedExercise[];
     const pin = focusPinRef.current;
     const lastLogged = [...result.touched].reverse().find((t) => completed.has(t.setId));
+    // The set this log counts as logging, for the rest (lib/sessionFocus
+    // voiceLoggedSet) — judged against the session it was applied to. For
+    // a log that replaces an earlier one, handleVoiceUndo has just written
+    // that session (the earlier log taken back) into the ref.
+    const lastNew = voiceLoggedSet(exercisesRef.current, after, result.touched, restForRef.current);
     const pinAfter = lastLogged ? pinAfterLogging(after, pin, lastLogged.exerciseId) : pin;
     setExercises((current) => {
       voiceUndoRef.current = { before: current, after, note: result.note, pin, pinAfter };
@@ -429,6 +459,9 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     if (result.note) {
       setNotes((current) => (current.trim() ? `${current}\n${result.note}` : result.note!));
     }
+    // A set logged by voice ends the rest and starts the next one exactly
+    // like a set logged by hand.
+    if (lastNew) restartRestAfter(after, lastNew.exerciseId, lastNew.setId);
     // A set logged by voice re-lays the card out like one logged by hand —
     // and when it was the workout's last, "Finish workout" has just taken
     // the place of "Complete set" under a finger that may be on its way.
@@ -442,12 +475,15 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     const snapshot = voiceUndoRef.current;
     if (!snapshot) return;
     voiceUndoRef.current = null;
+    // Written to the ref as well: a voice log that REPLACES this one is
+    // applied in the same breath, before any render, and what it newly
+    // logs is judged against the session with this one taken back.
+    exercisesRef.current = revertVoiceApply(snapshot.before, snapshot.after, exercisesRef.current);
     setExercises((now) => revertVoiceApply(snapshot.before, snapshot.after, now));
     setNotes((now) => revertVoiceNote(now, snapshot.note));
     // The card goes back to where it pointed — unless the lifter has
-    // picked an exercise since, which is the newer choice. Written to the
-    // ref as well: a voice log that REPLACES this one is applied in the
-    // same breath, before any render, and must start from this pin.
+    // picked an exercise since, which is the newer choice. The ref again:
+    // the replacing log must start from this pin.
     const now = focusPinRef.current;
     const left = snapshot.pinAfter;
     const untouched =
@@ -702,40 +738,85 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     finishHoldTimeout.current = window.setTimeout(() => setFinishHeld(false), FINISH_GUARD_MS);
   };
 
+  // The lifter's rest timer setting (lib/restTimerPrefs): off until they
+  // add it, and the length every new rest runs. Remembered across
+  // workouts; the ref serves voice, whose handlers outlive their render.
+  const [restPrefs, setRestPrefs] = useState<RestTimerPrefs>(() => loadRestTimerPrefs());
+  const restPrefsRef = useRef(restPrefs);
+  restPrefsRef.current = restPrefs;
+  const [restSheetOpen, setRestSheetOpen] = useState(false);
+
   // Rest countdown with a brief raspberry pulse + haptic when it hits zero.
   // A rest that was still counting when the logger last unmounted
-  // (Minimize, reload) is taken up where it stands.
+  // (Minimize, reload) is taken up where it stands — its own length, and
+  // the set that started it, whatever the setting says now.
   const [restPulse, setRestPulse] = useState(false);
   const restPulseTimeout = useRef<number | null>(null);
+  // The set whose logging started the rest on screen (lib/sessionFocus
+  // "Rest"): the rest is the pause before that exercise's next set, and it
+  // ends with that exercise.
+  const [restFor, setRestFor] = useState<RestOwner | null>(() =>
+    restoredRest(restored?.rest, Date.now()) ? restoredRestOwner(restored?.rest) : null,
+  );
+  // For voice, whose handlers outlive their render.
+  const restForRef = useRef(restFor);
+  restForRef.current = restFor;
   // Screen readers hear the end of rest from a region that is mounted for
   // the whole session: one created together with its text, inside a block
   // that leaves 1.6s later, is easily never spoken. Cleared after a few
   // seconds so the next rest writes a change, not the same string.
   const [restAnnouncement, setRestAnnouncement] = useState("");
   const restAnnounceTimeout = useRef<number | null>(null);
-  const clearRestAnnouncement = (): void => {
+  const restTimer = useRestTimer(() => {
+    setRestPulse(true);
+    if (restPulseTimeout.current !== null) window.clearTimeout(restPulseTimeout.current);
+    restPulseTimeout.current = window.setTimeout(() => {
+      restPulseTimeout.current = null;
+      setRestPulse(false);
+      setRestFor(null);
+      noteCardMoved();
+    }, 1600);
+    setRestAnnouncement("Rest complete");
+    if (restAnnounceTimeout.current !== null) window.clearTimeout(restAnnounceTimeout.current);
+    restAnnounceTimeout.current = window.setTimeout(
+      () => setRestAnnouncement(""),
+      REST_ANNOUNCE_MS,
+    );
+  }, restored?.rest);
+  /** End the rest on screen, quietly: no buzz, no "Rest complete", no
+      pulse — whether it was counting or has just run out. What logging a
+      set, un-marking the set that started it, or turning the timer off
+      does to a rest. */
+  const { skip: skipRestTimer } = restTimer;
+  const endRest = useCallback((): void => {
+    skipRestTimer();
+    setRestFor(null);
+    if (restPulseTimeout.current !== null) window.clearTimeout(restPulseTimeout.current);
+    restPulseTimeout.current = null;
+    setRestPulse(false);
     if (restAnnounceTimeout.current !== null) window.clearTimeout(restAnnounceTimeout.current);
     restAnnounceTimeout.current = null;
     setRestAnnouncement("");
+  }, [skipRestTimer]);
+  /** A set of `exerciseId` was just logged. Any rest ends; a new one
+      starts only when the lifter has the timer on and that exercise still
+      has a working set to rest before. Called from voice as well, so it
+      reads the setting through its ref. */
+  const restartRestAfter = (after: LoggedExercise[], exerciseId: string, setId: string): void => {
+    endRest();
+    const prefs = restPrefsRef.current;
+    if (!prefs.on || !restsAfter(after, exerciseId)) return;
+    restTimer.start(prefs.seconds);
+    setRestFor({ exerciseId, setId });
   };
-  const restTimer = useRestTimer(
-    REST_SECONDS,
-    () => {
-      setRestPulse(true);
-      if (restPulseTimeout.current !== null) window.clearTimeout(restPulseTimeout.current);
-      restPulseTimeout.current = window.setTimeout(() => {
-        setRestPulse(false);
-        noteCardMoved();
-      }, 1600);
-      setRestAnnouncement("Rest complete");
-      if (restAnnounceTimeout.current !== null) window.clearTimeout(restAnnounceTimeout.current);
-      restAnnounceTimeout.current = window.setTimeout(
-        () => setRestAnnouncement(""),
-        REST_ANNOUNCE_MS,
-      );
-    },
-    restored?.rest,
-  );
+  /** The sheet's changes apply at once and are remembered. Turning the
+      timer off ends a rest that is counting; a new length is for the next
+      rest (+30 sec and Skip rest look after the one running). */
+  const updateRestPrefs = (next: RestTimerPrefs): void => {
+    const kept = saveRestTimerPrefs(next);
+    setRestPrefs(kept);
+    if (!kept.on) endRest();
+  };
   useEffect(
     () => () => {
       if (restPulseTimeout.current !== null) window.clearTimeout(restPulseTimeout.current);
@@ -767,13 +848,16 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           // Every writer of the list also sets `exercises`, so this effect
           // runs again and reads the updated ref.
           recentSetIds: recentSetIdsRef.current,
-          rest: restEndsAt !== null ? { endsAt: restEndsAt, totalSeconds: restTotalSeconds } : null,
+          rest:
+            restEndsAt !== null
+              ? { endsAt: restEndsAt, totalSeconds: restTotalSeconds, ...(restFor ?? {}) }
+              : null,
         } satisfies PersistedProgress),
       );
     } catch {
       /* storage full/unavailable — resume just falls back to the bare seed */
     }
-  }, [exercises, notes, focusPin, restEndsAt, restTotalSeconds, session.startedAt, summary]);
+  }, [exercises, notes, focusPin, restEndsAt, restTotalSeconds, restFor, session.startedAt, summary]);
   // Plate math sheet: weight sticks around while the drawer animates closed.
   const [plateWeight, setPlateWeight] = useState<number | null>(null);
   const [plateOpen, setPlateOpen] = useState(false);
@@ -786,6 +870,12 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
   const discardFromMenu = (): void => {
     setMenuOpen(false);
     window.setTimeout(() => setDiscardOpen(true), 520);
+  };
+  /** Sheet → sheet, one after the other: two vaul drawers moving at once
+      fight over the page's scroll lock. */
+  const restTimerFromMenu = (): void => {
+    setMenuOpen(false);
+    window.setTimeout(() => setRestSheetOpen(true), 520);
   };
   const navigate = useNavigate();
   const startedAt = useRef(new Date(session.startedAt));
@@ -1001,29 +1091,52 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     focus?.sets.some((set) => set.id === editingSetId && set.completed) === true
       ? editingSetId
       : null;
-
-  // Rest is a pause BEFORE a set. With nothing left to log there is nothing
-  // to rest for — a countdown left running would buzz at a finished workout.
-  const { running: resting, skip: skipRest, resume: resumeRest } = restTimer;
-  const hasNext = next !== null;
+  // A logged set open for fixing: its numbers save as they are typed, it
+  // stays logged, and it folds back to its one line once the lifter is
+  // done with it — a tap anywhere else, focus moving on, Enter on its last
+  // field, or picking something else. There is no Save.
+  const editingSetWrapRef = useRef<HTMLDivElement | null>(null);
+  useFoldOnLeave(editingSetWrapRef, editingId, (id) => {
+    // The same tap opened another logged set: that one stays open.
+    if (editingSetIdRef.current !== id) return;
+    // Folding shortens the card under a finger that may be coming back
+    // down (a second tap, "+30 sec" twice): the card sits out a beat,
+    // as after any other change to its layout.
+    noteCardMoved();
+    setEditingSetId(null);
+  });
+  // A set that stops being logged while it is open ("scratch that", voice
+  // Undo), or that leaves the card, is not being fixed any more: logged
+  // again later, it comes back folded.
   useEffect(() => {
-    if (resting && !hasNext) skipRest();
-  }, [resting, hasNext, skipRest]);
-  // The rest owed after a set that left nothing to log. It is not counted
-  // down (nothing to rest for yet, and no buzz at a finished workout); it
-  // is taken up, with whatever time it has left, the moment there is a set
-  // to rest before again — "Add set", a new exercise, a set re-opened. A
-  // workout logged as you go gets its rest this way. Before paint, so the
-  // new row and its rest arrive together.
-  const pendingRestRef = useRef<RestWindow | null>(null);
-  useLayoutEffect(() => {
-    if (!hasNext) return;
-    const owed = restoredRest(pendingRestRef.current, Date.now());
-    pendingRestRef.current = null;
-    if (owed) resumeRest(owed);
-  }, [hasNext, resumeRest]);
-  const restShown = (resting || restPulse) && hasNext;
+    if (editingSetId !== null && editingId === null) setEditingSetId(null);
+  }, [editingSetId, editingId, setEditingSetId]);
+  /** The numbers of a logged set were tapped: open its cells in place.
+      Opening does not make the card sit out: a quick second tap would
+      pass through it to the page and fold the row it just opened. */
+  const openLoggedSet = (setId: string): void => {
+    setVestEditing(null);
+    setEditingSetId(setId);
+  };
 
+  // Rest is a pause BEFORE the next set of the exercise that started it.
+  // It ends — quietly — the moment that stops being true, whatever made it
+  // so: the exercise finished (a set logged, "Complete remaining sets",
+  // a set removed, voice), or the set that started it un-marked (a tap on
+  // its check, "scratch that", voice Undo). A countdown left running would
+  // buzz at an exercise that is over. Before paint, so the card never
+  // shows a rest for a set that is no longer logged.
+  const { running: resting } = restTimer;
+  const restLive = resting || restPulse;
+  useLayoutEffect(() => {
+    if (restLive && !restHolds(exercises, restFor)) endRest();
+  }, [restLive, exercises, restFor, endRest]);
+  /** The set the rest is a pause before — its "Next:" line. */
+  const restNext = useMemo(
+    () => restNextOf(exercises, restFor, focusPin),
+    [exercises, restFor, focusPin],
+  );
+  const restShown = restLive && restNext !== null;
 
   /** One line under the exercise name: what this lift looked like last
       time, or the plan, or an honest "first time". */
@@ -1170,51 +1283,41 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     );
   };
 
-  /** A set of `exerciseId` was just logged: rest before the next one if
-      there is one; if not, the rest is owed (see pendingRestRef) and the
+  /** A set of `exerciseId` was just logged. Whatever rest was running
+      ends with it, and a new one starts only between sets of this
+      exercise (restartRestAfter). With nothing left to log anywhere the
       card stays on this exercise. */
-  const afterLogging = (after: LoggedExercise[], exerciseId: string): void => {
+  const afterLogging = (after: LoggedExercise[], exerciseId: string, setId: string): void => {
     noteCardMoved();
-    clearRestAnnouncement();
-    if (upNextOf(after, focusPin) !== null) {
-      pendingRestRef.current = null;
-      restTimer.start();
-    } else {
-      restTimer.skip();
-      pendingRestRef.current = {
-        endsAt: Date.now() + REST_SECONDS * 1000,
-        totalSeconds: REST_SECONDS,
-      };
-      // "Finish workout" is about to stand where this tap landed.
-      holdCardFinish();
-    }
+    restartRestAfter(after, exerciseId, setId);
+    // "Finish workout" is about to stand where this tap landed.
+    if (upNextOf(after, focusPin) === null) holdCardFinish();
     setFocusPin(pinAfterLogging(after, focusPin, exerciseId));
   };
 
-  /** Toggle one set. Marking done commits hint values so the log stays honest. */
-  const toggleSetDone = (exerciseId: string, setId: string) => {
+  /** Log one open set. Blank cells take their hints, so the log stays
+      honest about what the lifter saw when they tapped. */
+  const logSet = (exerciseId: string, setId: string) => {
     const exercise = exercises.find((e) => e.id === exerciseId);
     const index = exercise?.sets.findIndex((s) => s.id === setId) ?? -1;
     if (!exercise || index < 0) return;
     const set = exercise.sets[index];
-    const becomingDone = !set.completed;
+    if (set.completed) return;
     // The Enter flow keeps its keyboard: the cursor travels to the next set.
     if (!followCurrentRef.current) closeKeyboardBeforeFollow();
 
     let reps = set.reps;
     let weight = set.weight;
-    if (becomingDone) {
-      const mode = effortModeFor(exercise);
-      if (reps.trim() === "") {
-        const hint = hintFor(exercise, index, "reps");
-        if (hint !== null) reps = commitEffortHint(hint, mode);
-      }
-      if (weight.trim() === "") {
-        const hint = hintFor(exercise, index, "weight");
-        if (hint !== null) weight = formatWeightForDisplay(hint);
-      }
-      noteSetsCompleted([setId]);
+    const mode = effortModeFor(exercise);
+    if (reps.trim() === "") {
+      const hint = hintFor(exercise, index, "reps");
+      if (hint !== null) reps = commitEffortHint(hint, mode);
     }
+    if (weight.trim() === "") {
+      const hint = hintFor(exercise, index, "weight");
+      if (hint !== null) weight = formatWeightForDisplay(hint);
+    }
+    noteSetsCompleted([setId]);
 
     const apply = (list: LoggedExercise[]): LoggedExercise[] =>
       list.map((e) =>
@@ -1222,28 +1325,47 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           ? {
               ...e,
               sets: e.sets.map((s) =>
-                s.id === setId ? { ...s, completed: becomingDone, reps, weight } : s,
+                s.id === setId ? { ...s, completed: true, reps, weight } : s,
               ),
             }
           : e,
       );
     setExercises(apply);
-
-    if (!becomingDone) noteCardMoved();
-    if (becomingDone) {
-      afterLogging(apply(exercises), exerciseId);
-      if (!set.isWarmup) {
-        tapHaptic();
-        celebrateIfRecord(exercise, weight, reps);
-      }
+    afterLogging(apply(exercises), exerciseId, setId);
+    if (!set.isWarmup) {
+      tapHaptic();
+      celebrateIfRecord(exercise, weight, reps);
     }
+  };
+
+  /** One tap on a logged set's check: it is an open set again, numbers
+      kept, no question asked. The focus rules decide what is current from
+      there (an earlier set comes back as the current one; a finished
+      exercise is not finished any more). If this set's logging started
+      the rest that is running, that rest ends with it; any other rest runs
+      on. It stops being "the last logged set" for voice corrections. */
+  const unmarkSet = (exerciseId: string, setId: string): void => {
+    const exercise = exercises.find((e) => e.id === exerciseId);
+    if (!exercise?.sets.some((s) => s.id === setId && s.completed)) return;
+    noteCardMoved();
+    selectionHaptic();
+    setEditingSetId(null);
+    recentSetIdsRef.current = recentSetIdsRef.current.filter((id) => id !== setId);
+    if (restFor?.setId === setId) endRest();
+    setExercises((list) =>
+      list.map((e) =>
+        e.id === exerciseId
+          ? { ...e, sets: e.sets.map((s) => (s.id === setId ? { ...s, completed: false } : s)) }
+          : e,
+      ),
+    );
   };
 
   /** The focus card's primary action. */
   const completeCurrentSet = (): void => {
     if (!focus || !current) return;
     setEditingSetId(null);
-    toggleSetDone(focus.id, current.set.id);
+    logSet(focus.id, current.set.id);
   };
 
   /** "Complete remaining sets": tick every open set of one exercise,
@@ -1307,13 +1429,16 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
 
     // Rows flipping to done here complete in list order — the last one is
     // the most recent.
-    noteSetsCompleted(openSetIds(exercise));
+    const flipped = openSetIds(exercise);
+    if (flipped.length === 0) return;
+    noteSetsCompleted(flipped);
     const apply = (list: LoggedExercise[]): LoggedExercise[] =>
       list.map((e) => (e.id === exerciseId ? { ...e, sets: filled } : e));
     setExercises(apply);
     setEditingSetId(null);
     tapHaptic();
-    afterLogging(apply(exercises), exerciseId);
+    // The exercise is finished, so no rest follows — and one running ends.
+    afterLogging(apply(exercises), exerciseId, flipped[flipped.length - 1]);
   };
 
   /** Take an open set off an exercise — the inverse of "Add set", offered
@@ -1458,7 +1583,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
       sessionOverRef.current = true;
       clearActiveWorkoutStorage();
       if (saved) setSavedLog(saved);
-      restTimer.skip();
+      endRest();
       setSummary({
         durationSeconds,
         volume: stats.volume,
@@ -1742,22 +1867,29 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
     const lineSet =
       current?.set ?? exercise.sets.filter((set) => !set.isWarmup).at(-1) ?? exercise.sets.at(-1);
     // Rest sits UNDER the primary button, never above it: whatever the
-    // rest does, the set's cells and the button stay where they are.
+    // rest does, the set's cells and the button stay where they are. Its
+    // "Next:" is the next set of the exercise that started it — the one
+    // the card shows. While the lifter looks at another exercise the
+    // block says whose rest it is instead: that exercise's set under this
+    // card's "Complete set" would be two answers to "what next".
+    const restIsElsewhere = restFor !== null && restFor.exerciseId !== exercise.id;
     const restBlock =
-      restShown && next !== null ? (
+      restShown && restNext !== null ? (
         <div className="mt-3">
           <RestBlock
             remaining={restTimer.remaining}
             progress={restTimer.progress}
             finished={restPulse && !restTimer.running}
-            nextName={next.exercise.name}
-            nextOrdinal={next.ordinal}
-            nextTotal={next.workingTotal}
+            ownerName={restIsElsewhere ? restNext.exercise.name : null}
+            nextName={restNext.exercise.name}
+            nextOrdinal={restNext.ordinal}
+            nextTotal={restNext.workingTotal}
             onExtend={() => restTimer.extend(30)}
             onSkip={() => {
               noteCardMoved();
-              restTimer.skip();
+              endRest();
             }}
+            onOpenSettings={() => setRestSheetOpen(true)}
           />
         </div>
       ) : null;
@@ -1807,7 +1939,7 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
             return (
               <div
                 key={set.id}
-                ref={isCurrent ? currentSetWrapRef : undefined}
+                ref={isCurrent ? currentSetWrapRef : editing ? editingSetWrapRef : undefined}
                 className={cn(
                   (isCurrent || editing) && "py-1.5",
                   isCurrent && CLEAR_OF_SESSION_BAR,
@@ -1818,7 +1950,8 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     idx={ordinals[setIndex]}
                     isWarmup={set.isWarmup === true}
                     summary={summarizeSet(set, mode, unitsLabel)}
-                    onOpen={() => setEditingSetId(set.id)}
+                    onOpen={() => openLoggedSet(set.id)}
+                    onUnmark={() => unmarkSet(exercise.id, set.id)}
                   />
                 ) : (
                   <SetInputRow
@@ -1826,14 +1959,23 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     showLabels={isCurrent || editing}
                     scoreboard
                     quiet={state === "open"}
-                    hideDone={!openWarmup}
+                    // The current set logs with "Complete set" alone and a
+                    // later working set waits its turn, so only an open
+                    // warm-up (tick) and a set open for fixing (its check,
+                    // which un-marks it) show the done column.
+                    hideDone={!openWarmup && !editing}
+                    animateDone={!editing}
                     effort={mode}
                     reps={set.reps}
                     weight={set.weight}
                     done={set.completed}
                     unitsLabel={unitsLabel}
-                    repsHint={hintFor(exercise, setIndex, "reps")}
-                    weightHint={hintFor(exercise, setIndex, "weight")}
+                    // A logged set being fixed shows what it holds: a
+                    // value emptied here reads "—" (or "BW") — the set is
+                    // kept without it — never the next set's suggestion.
+                    // No hint also means no tap-to-fill putting one back.
+                    repsHint={editing ? null : hintFor(exercise, setIndex, "reps")}
+                    weightHint={editing ? null : hintFor(exercise, setIndex, "weight")}
                     isWarmup={set.isWarmup === true}
                     bodyweight={exercise.kind === "bodyweight"}
                     registerRepsRef={registerRowRepsRef(set.id)}
@@ -1841,9 +1983,14 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                     onRepsChange={(v) => updateSetField(exercise.id, set.id, "reps", v)}
                     onWeightChange={(v) => updateSetField(exercise.id, set.id, "weight", v)}
                     onRepsEnter={() => focusWeight(set.id)}
-                    onDoneTap={() => toggleSetDone(exercise.id, set.id)}
+                    onDoneTap={() =>
+                      set.completed ? unmarkSet(exercise.id, set.id) : logSet(exercise.id, set.id)
+                    }
                     onWeightEnter={() => {
                       if (editing) {
+                        // Its last field: the fix is in (edits save as
+                        // they are typed), so the row folds.
+                        noteCardMoved();
                         setEditingSetId(null);
                       } else if (isCurrent) {
                         followCurrentRef.current = true;
@@ -1851,11 +1998,13 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                       } else {
                         // Only a warm-up logs from here; a later working
                         // set waits its turn as the current one.
-                        if (openWarmup) toggleSetDone(exercise.id, set.id);
+                        if (openWarmup) logSet(exercise.id, set.id);
                         focusNextReps(set.id);
                       }
                     }}
-                    onWeightValueTap={isWeighted ? openPlateMath : undefined}
+                    // A set open for fixing is being typed into: a tap on
+                    // its weight edits it rather than opening plate math.
+                    onWeightValueTap={isWeighted && !editing ? openPlateMath : undefined}
                   />
                 )}
                 {isCurrent ? (
@@ -1869,27 +2018,6 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
                   </button>
                 ) : null}
                 {isCurrent ? restBlock : null}
-                {editing ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 pl-9">
-                    <button
-                      type="button"
-                      onClick={() => setEditingSetId(null)}
-                      className="relative inline-flex min-h-9 items-center rounded-full bg-foreground px-3.5 text-[12.5px] font-semibold text-background transition after:absolute after:-inset-1 after:content-[''] active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingSetId(null);
-                        toggleSetDone(exercise.id, set.id);
-                      }}
-                      className={quietActionClass}
-                    >
-                      Mark not done
-                    </button>
-                  </div>
-                ) : null}
               </div>
             );
           })}
@@ -2279,6 +2407,19 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           </DrawerTitle>
           <DrawerDescription className="sr-only">More options for this session.</DrawerDescription>
           <div className="mt-3 space-y-2.5">
+            <button
+              type="button"
+              onClick={restTimerFromMenu}
+              className="flex min-h-[64px] w-full items-center justify-between gap-3 rounded-[16px] border border-border bg-card px-5 text-left transition-transform duration-150 active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <span className="min-w-0">
+                <span className="block text-[15px] font-semibold text-fg">Rest timer</span>
+                <span className="mt-0.5 block text-[12px] text-fg-muted">
+                  {restTimerSummary(restPrefs)}
+                </span>
+              </span>
+              <Timer size={18} className="shrink-0 text-fg-muted" />
+            </button>
             {focus !== null && removable !== null && (
               <button
                 type="button"
@@ -2345,6 +2486,14 @@ const ActiveWorkoutLogger = ({ session }: { session: ActiveSession }) => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Rest timer: on/off and length, from ⋯ or a running countdown. */}
+      <RestTimerSheet
+        open={restSheetOpen}
+        onOpenChange={setRestSheetOpen}
+        prefs={restPrefs}
+        onChange={updateRestPrefs}
+      />
 
       <CardioVitalsSheet
         open={vitalsFor !== null}

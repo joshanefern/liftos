@@ -1,4 +1,5 @@
 import { formatCardioInput, formatHoldInput, sanitizeHold } from "@/lib/exerciseTracking";
+import { unmarkLabel } from "@/lib/sessionFocus";
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
 import { forwardRef, useRef, type KeyboardEvent, type MouseEvent } from "react";
@@ -76,11 +77,15 @@ export type SetInputRowProps = {
   onWeightValueTap?: (weight: number) => void;
   /**
    * Drop the done column — the logger's focus card completes the current
-   * set with one primary "Complete set" button, and a re-opened set with a
-   * worded "Mark not done", so a ring on the same row would be a second
-   * control for the same thing.
+   * set with one primary "Complete set" button, so a ring on the same row
+   * would be a second control for the same thing.
    */
   hideDone?: boolean;
+  /**
+   * Play the check's pop-and-draw when the row mounts done. Off for a
+   * logged set opened to fix its numbers: it was logged earlier, not now.
+   */
+  animateDone?: boolean;
   /**
    * An upcoming set: every cell stays editable, the values just step back
    * to the muted tier so the current set is the one that reads first.
@@ -115,6 +120,7 @@ export const SetInputRow = ({
   onWeightEnter,
   onWeightValueTap,
   hideDone = false,
+  animateDone = true,
   quiet = false,
 }: SetInputRowProps) => {
   const isTimed = effort !== "reps";
@@ -272,18 +278,21 @@ export const SetInputRow = ({
 
         {/* Done control — an EMPTY ring until the set is logged (a
             pre-drawn check next to "0 of 5 sets done" read as already
-            done), then a filled raspberry check. Warm-ups fill in quiet
-            ink, never raspberry. */}
+            done), then a filled raspberry check that un-marks it on one
+            tap. Warm-ups fill in quiet ink, never raspberry. */}
         {!hideDone && (
           <button
             ref={registerDoneRef}
             type="button"
             onClick={onDoneTap}
-            aria-label={done ? "Mark set incomplete" : "Mark set done"}
-            aria-pressed={done}
+            aria-label={done ? unmarkLabel(idx + 1, isWarmup) : "Mark set done"}
+            // after: is placed from inside the border, so each state pays
+            // its border back to keep the target 44px.
             className={cn(
-              "relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors after:absolute after:-inset-1 after:content-[''] focus:outline-none focus:ring-2",
-              logged && "check-pop border border-primary bg-primary text-primary-foreground focus:ring-primary/40",
+              "relative inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors after:absolute after:content-[''] focus:outline-none focus:ring-2",
+              done ? "after:-inset-[calc(0.25rem+1px)]" : "after:-inset-[calc(0.25rem+2px)]",
+              logged && "border border-primary bg-primary text-primary-foreground focus:ring-primary/40",
+              logged && animateDone && "check-pop",
               done && isWarmup && "border border-foreground/50 bg-foreground/[0.08] text-fg-soft focus:ring-primary/30",
               !done &&
                 "border-2 border-foreground/25 bg-transparent hover:border-primary/60 focus:ring-primary/30",
@@ -291,7 +300,11 @@ export const SetInputRow = ({
           >
             {/* mounts fresh on each completion so the 200ms draw replays */}
             {done && (
-              <Check size={14} strokeWidth={2.5} className={logged ? "check-draw" : undefined} />
+              <Check
+                size={14}
+                strokeWidth={2.5}
+                className={logged && animateDone ? "check-draw" : undefined}
+              />
             )}
           </button>
         )}

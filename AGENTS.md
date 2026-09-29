@@ -91,26 +91,77 @@ in a browser, `liftos-voice-dev-phase="applied"` mounts the receipt card.
 The session follows the selected theme (no forced dark). There is exactly
 ONE place to log a set:
 
-- **Focus card** — the exercise being worked: logged sets fold to one-line
-  rows (tap to re-open), the current set is the open row with a single
-  filled "Complete set", later sets are quieter but editable. Rest lives
-  INSIDE this card, directly UNDER "Complete set" (`RestBlock`: countdown,
-  "Next: …", +30 sec, Skip rest) — nothing the rest does may move that
-  button. There is no separate rest bar, and logging during rest must just
-  work. When the last open set is logged the card STAYS on that exercise
-  (Finish workout + Add set), so one more set is one tap away.
+- **Focus card** — the exercise being worked: the current set is the open
+  row with a single filled "Complete set", later sets are quieter but
+  editable (never tickable out of order). When the last open set is
+  logged the card STAYS on that exercise (Finish workout + Add set), so
+  one more set is one tap away.
+- **Logged sets** fold to one-line rows (`CompletedSetRow`) that are two
+  controls. The CHECK un-marks the set in one tap — no confirm, numbers
+  kept, it is an open set again and the focus rules decide what is
+  current (a finished exercise stops being finished). The NUMBERS open
+  the set's cells in place: edits save as typed, the set stays logged
+  with its check (which still un-marks it), and the row folds back when
+  the lifter leaves it — a tap elsewhere, focus moving on, Enter on its
+  last field, or a pick (`useFoldOnLeave`, which folds only AFTER the tap
+  landed, so nothing jumps under the finger). There is no Save and no
+  "Mark not done". A value emptied while fixing a set stays empty: the
+  set stays logged and reads whatever is left ("135 lb", or "Done"), the
+  same as a set logged without numbers — and while it is open the cell
+  shows "—" ("BW"), never a hint. Un-marking a set drops it from the voice
+  recency list, so "that was 12" / "scratch that" never reach it. A set
+  that stops being logged while open (voice scratch/Undo) is not open any
+  more: logged again, it comes back folded.
+- **Rest** is the lifter's choice: the rest timer setting
+  (`src/lib/restTimerPrefs.ts`, localStorage `liftos-rest-timer`) is OFF
+  until they add it, with 2:00 ready as the length. It is set in the rest
+  timer sheet (`RestTimerSheet`): a switch, preset lengths and a ±15 s
+  stepper (0:15–10:00). Changes apply at once and are remembered; there
+  is no Save. Reached from the ⋯ sheet's first row ("Rest timer · Off" /
+  "2:00 after each set") or by tapping a running "Rest · m:ss". Turning
+  it off ends a running rest quietly; a new length is for the NEXT rest.
+  The sheet keeps one height: with the timer off the length controls stay,
+  dimmed and inert, so the switch never moves out from under the thumb.
+- **A rest belongs to the exercise whose set started it** (`RestOwner`,
+  rules in `src/lib/sessionFocus.ts` "Rest"). Logging ANY set (button,
+  Enter, warm-up tick, "Complete remaining sets", voice — a voice
+  correction is not a new set, and a voice log that replaces an earlier
+  one is judged against the session with that one taken back:
+  `voiceLoggedSet`) first ends whatever rest is running —
+  quietly, no buzz, no pulse — and a new one starts only if the timer is
+  on AND that exercise still has an open working set. So there is never a
+  rest after an exercise's last set, and nothing is "owed" for later. A
+  running rest also ends when its exercise is finished some other way or
+  the set that started it is un-marked (tap, "scratch that", voice Undo);
+  un-marking any other set, or picking another exercise to look at,
+  leaves it running. It lives INSIDE the card, directly UNDER "Complete
+  set" (`RestBlock`: countdown, "Next: …" = the owning exercise's next
+  set, +30 sec, Skip rest) — nothing the rest does may move that button.
+  In another exercise's card (picked to look at) it is named by its owner
+  instead ("Bench Press rest · 1:58", no "Next:").
+  There is no separate rest bar, and logging during rest must just work.
+  A rest running at Minimize comes back as it was (length and owner),
+  whatever the setting says by then.
 - **All exercises · N** — a compact switcher under the card. Tapping a row
-  re-points the focus card; it never opens a second set of inputs.
-- **⋯ sheet** — the rare actions: Discard, and "Remove set N" for an open
-  set (never the only set; rules in `src/lib/sessionSets.ts`).
+  re-points the focus card (a finished one too — that is how a finished
+  exercise is gone back into); it never opens a second set of inputs. A
+  finished exercise keeps its check here as a status marker.
+- **⋯ sheet** — the rare actions: Rest timer (first), "Remove set N" for
+  an open set (never the only set; rules in `src/lib/sessionSets.ts`),
+  and Discard.
 
 Touch and scroll rules on this screen (each exists because a tap once
 landed on the wrong thing):
 
 - The card AND the exercise list ignore touches for 400ms after the card's
-  layout changes — a set logged (by hand or by voice), a rest skipped or
-  ending, a set added/removed, the card re-pointed by a pick or "Continue
-  to …" — so a double tap cannot land on whatever slid under the finger.
+  layout changes — a set logged (by hand or by voice) or un-marked, a set
+  being fixed folding back, a rest skipped or ending, a set added/removed,
+  the card re-pointed by a pick or "Continue to …" — so a double tap
+  cannot land on whatever slid under the finger (a double tap on
+  "Complete set" never reaches the new check and un-marks the set it just
+  logged). Opening a logged set to fix it is deliberately NOT guarded: a
+  second tap would pass through the sitting-out card to the page and
+  fold the row it had just opened.
 - The card's "Finish workout" sits out 1000ms after the workout's LAST open
   set is logged (`src/lib/finishGuard.ts`): it has just taken the place of
   "Complete set". It looks identical while held. The header's Finish is
