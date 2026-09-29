@@ -38,6 +38,11 @@ Simulator builds use the same `-derivedDataPath ~/.liftos-build` with
 `-destination 'platform=iOS Simulator,id=<udid>'`. Do not use `ios/App/build`
 (stale SPM artifacts from an old path).
 
+The app is **portrait-only** (owner's call): `Info.plist` lists Portrait
+alone for iPhone, Portrait + upside-down for iPad, and sets
+`UIRequiresFullScreen` (an iPad app that locks orientation must opt out of
+Split View). Do not add landscape back.
+
 Native code lives in `ios/App/App/*.swift`. Plugins (`SpeechPlugin`,
 `HealthKitPlugin`) are registered by `LiftOSBridgeViewController` — the
 storyboard's view controller must stay `LiftOSBridgeViewController`, or the
@@ -145,10 +150,11 @@ workout?" — Keep editing / Discard): tap outside, X, Escape, swipe-down,
 browser Back, tab close. With nothing entered it closes instantly. "Unsaved
 work" is `hasUnsavedWork` in `src/lib/builderDraft.ts`. A refused swipe is
 re-seated by `src/components/workouts/reseatSheet.ts`, which reaches into
-vaul 0.9.9's inline styles — re-test it after any vaul upgrade. Rotating
-(crossing 768px) swaps drawer ⇄ dialog and withdraws an open question; the
-next way out asks again. At the saved-workout cap (`MAX_TEMPLATES`) "New
-workout" is refused up front with the limit notice
+vaul 0.9.9's inline styles — re-test it after any vaul upgrade. A window
+resized across 768px (web only — the iOS app is portrait-only) swaps
+drawer ⇄ dialog and withdraws an open question; the next way out asks
+again. At the saved-workout cap (`MAX_TEMPLATES`) "New workout" is refused
+up front with the limit notice
 (`src/lib/templateLimit.ts`) — never after the lifter has built something.
 
 ## Copy rules
