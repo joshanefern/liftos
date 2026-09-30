@@ -160,6 +160,14 @@ export const upNextOf = <E extends FocusExercise>(
   return null;
 };
 
+/** Every working set in the workout is logged — and at least one was:
+    the screen offers "Finish workout" in a card of its own under the
+    focus card, never inside it. Warm-ups neither hold it back nor count
+    toward it. A set un-marked or added takes it away again. */
+export const everySetLogged = (exercises: FocusExercise[]): boolean =>
+  !exercises.some(hasOpenSet) &&
+  exercises.some((exercise) => exercise.sets.some((set) => !set.isWarmup && set.completed));
+
 // ── Rest ────────────────────────────────────────────────────────────────────
 //
 // A rest belongs to the exercise whose set started it: it is the pause

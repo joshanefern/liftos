@@ -94,8 +94,17 @@ ONE place to log a set:
 - **Focus card** — the exercise being worked: the current set is the open
   row with a single filled "Complete set", later sets are quieter but
   editable (never tickable out of order). When the last open set is
-  logged the card STAYS on that exercise (Finish workout + Add set), so
-  one more set is one tap away.
+  logged the card STAYS on that exercise (its logged sets, "Add set",
+  "All sets complete"), so one more set is one tap away. "Continue to
+  <Exercise>" (a finished exercise picked while others have open sets)
+  is the only way-on button the card holds.
+- **Finish card** — the exercise card NEVER contains "Finish workout".
+  With every working set logged (`everySetLogged` in
+  `src/lib/sessionFocus.ts`) a separate card sits directly under it,
+  above the list: "Every set is logged", one line, one filled "Finish
+  workout". Un-mark a set or add one and it goes away (the card offers
+  "Complete set" again). The header's Finish stays as the secondary way
+  out at any time.
 - **Logged sets** fold to one-line rows (`CompletedSetRow`) that are two
   controls. The CHECK un-marks the set in one tap — no confirm, numbers
   kept, it is an open set again and the focus rules decide what is
@@ -115,13 +124,25 @@ ONE place to log a set:
 - **Rest** is the lifter's choice: the rest timer setting
   (`src/lib/restTimerPrefs.ts`, localStorage `liftos-rest-timer`) is OFF
   until they add it, with 2:00 ready as the length. It is set in the rest
-  timer sheet (`RestTimerSheet`): a switch, preset lengths and a ±15 s
-  stepper (0:15–10:00). Changes apply at once and are remembered; there
-  is no Save. Reached from the ⋯ sheet's first row ("Rest timer · Off" /
-  "2:00 after each set") or by tapping a running "Rest · m:ss". Turning
-  it off ends a running rest quietly; a new length is for the NEXT rest.
-  The sheet keeps one height: with the timer off the length controls stay,
-  dimmed and inert, so the switch never moves out from under the thumb.
+  timer sheet (`RestTimerSheet`): one settings-style list — Off, 0:30,
+  1:00, 1:30, 2:00, 3:00, 5:00, Custom — the chosen row checked. Custom
+  shows a −15 s / value / +15 s stepper (0:15–10:00) under the list, and
+  is what a saved length that is not a preset opens on. The choice is
+  STAGED (`restDraftFrom` → `chooseRest` / `nudgeRestDraft` →
+  `restPrefsFrom`) and kept only by the filled "Save", which closes the
+  sheet; the X, a tap outside and a swipe down close it changing nothing,
+  and every opening starts from what is saved (so the ⋯ row always
+  reads the saved setting). Reached from the ⋯ sheet's first row ("Rest
+  timer · Off" / "2:00 after each set") or by tapping a running "Rest ·
+  m:ss". Saving Off ends a running rest quietly; a new length is for the
+  NEXT rest. The sheet keeps one height: the stepper's place is kept
+  (invisible) while another row is chosen, so choosing Custom slides
+  nothing out from under the thumb. It fits a 375×667 screen with Save
+  in view (603px of 627 available) — measure again if you add a row.
+  Where it does not (a 320×568 SE, larger text) the list and stepper
+  scroll between the title and a pinned Save (`data-vaul-no-drag`):
+  opening scrolls the checked row into view (Custom with its stepper),
+  and choosing Custom scrolls its stepper in.
 - **A rest belongs to the exercise whose set started it** (`RestOwner`,
   rules in `src/lib/sessionFocus.ts` "Rest"). Logging ANY set (button,
   Enter, warm-up tick, "Complete remaining sets", voice — a voice
@@ -149,12 +170,32 @@ ONE place to log a set:
 - **⋯ sheet** — the rare actions: Rest timer (first), "Remove set N" for
   an open set (never the only set; rules in `src/lib/sessionSets.ts`),
   and Discard.
+- **Adding an exercise** has ONE way in: the floating bar's "+ Exercise"
+  opens the add-exercise sheet (`AddExerciseSheet`): a name field, the
+  lifter's own names as suggestions (`ExerciseNameSuggestions singleRow`),
+  one filled "Add exercise" (disabled while empty; Enter adds too).
+  Adding closes the sheet and points the focus card at the new exercise
+  (kind inferred, cardio timed), revealed clear of the bar once the
+  keyboard is down. There is no add field on the page. An empty Quick
+  start shows "No exercises yet" pointing at + Exercise and the mic
+  (the mic line only where voice exists).
+  Keyboard: the field takes the cursor 520ms after the tap
+  (`ADD_SHEET_FOCUS_MS`) — the sheet is up by then, and the timer is
+  started in the tap itself, because WKWebView only raises the keyboard
+  for a focus that follows a user tap within about a second. The sheet
+  keeps vaul's default `repositionInputs`, whose iOS path stops the
+  WKWebView pan and lifts the sheet above the keyboard (the builder
+  turns it off for its full-height sheet, which is why IT must not
+  autofocus on phones). vaul pins the sheet's height while the keyboard
+  is up, so the sheet's height must never change while open — the
+  suggestions get one sideways-scrolling line whether or not there are
+  any. Verify on the iPhone after touching any of this.
 
 Touch and scroll rules on this screen (each exists because a tap once
 landed on the wrong thing):
 
-- The card AND the exercise list ignore touches for 400ms after the card's
-  layout changes — a set logged (by hand or by voice) or un-marked, a set
+- The card, the finish card AND the exercise list ignore touches for
+  400ms after the card's layout changes — a set logged (by hand or by voice) or un-marked, a set
   being fixed folding back, a rest skipped or ending, a set added/removed,
   the card re-pointed by a pick or "Continue to …" — so a double tap
   cannot land on whatever slid under the finger (a double tap on
@@ -162,16 +203,25 @@ landed on the wrong thing):
   logged). Opening a logged set to fix it is deliberately NOT guarded: a
   second tap would pass through the sitting-out card to the page and
   fold the row it had just opened.
-- The card's "Finish workout" sits out 1000ms after the workout's LAST open
-  set is logged (`src/lib/finishGuard.ts`): it has just taken the place of
-  "Complete set". It looks identical while held. The header's Finish is
-  elsewhere and unaffected.
+- The finish card's "Finish workout" sits out 1000ms after the workout's
+  LAST open set is logged, by any path including voice
+  (`src/lib/finishGuard.ts`): it comes up, and the page follows it, close
+  to where "Complete set" was just tapped. It looks identical while held.
+  The header's Finish is elsewhere and unaffected.
 - The page follows the current set only after something the lifter did. A
   rest ending on its own never moves the scroll (`followsCurrentSet` in
   `src/lib/sessionScroll.ts`). When the card moves on to another exercise,
   or is re-pointed, it is revealed with its name on screen — unless that
   would leave the current set under the session bar, in which case the set
-  wins (`revealScrollTop`).
+  wins (`revealScrollTop`). With every set logged the finish card plays
+  the current set's part: the page brings it clear of the bar once, when
+  it appears (`followsFinish` — the last set logged, by any path, or
+  removed; the Enter flow closes the keyboard for it), and a reveal keeps
+  it clear of the bar. While the voice receipt is up (it rides above the
+  bar, and a last set logged by voice brings it) the finish card is kept
+  clear of the receipt too — a Finish under it is a tap on its Edit
+  (`finishClearance`; the receipt's box carries `VOICE_RECEIPT_ATTR`).
+  Its top keeps the status bar's margin, like the focus card's.
 
 Cardio is ALWAYS timed: `trackingFor` returns "time" for `kind: "cardio"`
 whatever the name or tracking field says. Voice Undo is a three-way merge
@@ -183,7 +233,8 @@ the log it follows and never reaches past it to a hand-logged set.
 
 Which exercise/set is current, what is "next", and their labels are pure
 decisions in `src/lib/sessionFocus.ts` (tests are the spec). Voice, Edit
-and "add exercise" re-point the focus instead of scrolling to a card.
+and "add exercise" re-point the focus instead of scrolling to a card. Edit
+on a receipt that only took a note puts the cursor in the session notes.
 
 The tab bar is hidden while a session is live. The controls (Minimize ·
 voice pill · Exercise) sit on a FLOATING pill, `SessionBar`, portalled to

@@ -4,6 +4,7 @@ import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
 import {
   featuredLift,
   getLiftTrends,
+  improvementBreakdown,
   lastSessionDeltas,
   liftSessionSeries,
   lockedTrendCandidates,
@@ -389,5 +390,222 @@ describe("review-hardening regressions", () => {
     ]);
     const [point] = liftSessionSeries([l], "Plank");
     expect(point.duration).toBe(90);
+  });
+});
+
+describe("improvementBreakdown", () => {
+  /** One exercise with any number of completed working sets. */
+  const lift = (
+    name: string,
+    sets: { weight?: number; reps?: number; duration_seconds?: number }[],
+  ): WorkoutExercise => ({
+    id: name,
+    name,
+    category: "c",
+    target: "t",
+    sets: sets.map((s, i) => ({ id: `${name}-${i}`, completed: true, ...s })),
+  });
+  const named = (l: WorkoutLog, name: string): WorkoutLog => ({ ...l, name });
+
+  /** The tile's number is the rounded mean of the breakdown's per-lift
+      changes, and sessionImprovement reports exactly that. */
+  const expectTileMatches = (logs: WorkoutLog[]) => {
+    const breakdown = improvementBreakdown(logs)!;
+    const changes = breakdown.lifts.map((l) => l.change);
+    const mean = changes.reduce((sum, c) => sum + c, 0) / changes.length;
+    expect(breakdown.pct).toBe(Math.round(mean) || 0);
+    expect(sessionImprovement(logs)).toEqual({ pct: breakdown.pct, lifts: breakdown.lifts.length });
+    return breakdown;
+  };
+
+  it("the tile's number is the average of the per-lift changes", () => {
+    const logs = [
+      named(
+        log(daysAgo(1), [
+          lift("Bench Press", [{ weight: 190, reps: 8 }]),
+          lift("Overhead Press", [{ weight: 95, reps: 8 }]),
+          lift("Triceps Pushdown", [{ weight: 48, reps: 12 }]),
+        ]),
+        "Push Day",
+      ),
+      named(
+        log(daysAgo(8), [
+          lift("Bench Press", [{ weight: 185, reps: 8 }]),
+          lift("Overhead Press", [{ weight: 95, reps: 8 }]),
+          lift("Triceps Pushdown", [{ weight: 50, reps: 12 }]),
+        ]),
+        "Push Day",
+      ),
+    ];
+    const breakdown = expectTileMatches(logs);
+    expect(breakdown.lifts.map((l) => [l.name, l.pct])).toEqual([
+      ["Bench Press", 3], // 190×8 vs 185×8 → +2.7
+      ["Overhead Press", 0],
+      ["Triceps Pushdown", -4], // 48×12 vs 50×12 → -4
+    ]);
+    // (2.70 + 0 - 4) / 3 = -0.43 → rounds to -0 → reads 0, never "-0%".
+    expect(Object.is(breakdown.pct, 0)).toBe(true);
+    expect(breakdown.latest.name).toBe("Push Day");
+    expect(breakdown.previous?.name).toBe("Push Day");
+    expect(breakdown.previous?.finishedAt).toBe(logs[1].finished_at);
+    expect(breakdown.skipped).toEqual([]);
+  });
+
+  it("a top single next to back-off sets: the row shows the set that scored", () => {
+    const logs = [
+      log(daysAgo(1), [
+        lift("Bench Press", [
+          { weight: 105, reps: 1 }, // heaviest, but the lower Epley
+          { weight: 100, reps: 9 },
+        ]),
+      ]),
+      log(daysAgo(8), [lift("Bench Press", [{ weight: 100, reps: 8 }])]),
+    ];
+    const breakdown = expectTileMatches(logs);
+    const [bench] = breakdown.lifts;
+    expect(bench.measure).toBe("e1rm");
+    expect(bench.last).toEqual({ weight: 100, reps: 9, seconds: 0 });
+    expect(bench.prev).toEqual({ weight: 100, reps: 8, seconds: 0 });
+    expect(bench.pct).toBe(3); // not -14: 105×1 never stands in for the session
+    expect(breakdown.pct).toBe(3);
+  });
+
+  it("holds are scored on the longest hold", () => {
+    const logs = [
+      log(daysAgo(1), [lift("Plank", [{ duration_seconds: 60 }, { duration_seconds: 75 }])]),
+      log(daysAgo(8), [lift("Plank", [{ duration_seconds: 60 }])]),
+    ];
+    const breakdown = expectTileMatches(logs);
+    expect(breakdown.lifts[0]).toMatchObject({
+      measure: "hold",
+      prev: { seconds: 60 },
+      last: { seconds: 75 },
+      pct: 25,
+    });
+  });
+
+  it("bodyweight lifts are scored on reps", () => {
+    const logs = [
+      log(daysAgo(1), [lift("Push Up", [{ weight: 0, reps: 25 }, { reps: 20 }])]),
+      log(daysAgo(8), [lift("Push Up", [{ weight: 0, reps: 20 }])]),
+    ];
+    const breakdown = expectTileMatches(logs);
+    expect(breakdown.lifts[0]).toMatchObject({
+      measure: "reps",
+      prev: { reps: 20 },
+      last: { reps: 25 },
+      pct: 25,
+    });
+  });
+
+  it("lists what did not count and why; cardio and placeholder names are not listed", () => {
+    const logs = [
+      log(daysAgo(1), [
+        lift("Bench Press", [{ weight: 88, reps: 5 }]),
+        lift("Push Up", [{ weight: 0, reps: 20 }]), // bodyweight now, weighted before
+        lift("Plank", [{ duration_seconds: 60 }]), // a hold now, reps before
+        lift("Face Pull", [{ weight: 30, reps: 15 }]), // never done before
+        lift("Exercise 1", [{ weight: 200, reps: 5 }]),
+        run(),
+      ]),
+      log(daysAgo(8), [
+        lift("Bench Press", [{ weight: 80, reps: 5 }]),
+        lift("Push Up", [{ weight: 50, reps: 5 }]),
+        lift("Plank", [{ weight: 0, reps: 10 }]),
+        lift("Exercise 1", [{ weight: 100, reps: 5 }]),
+        run(),
+      ]),
+    ];
+    const breakdown = expectTileMatches(logs);
+    expect(breakdown.lifts.map((l) => l.name)).toEqual(["Bench Press"]);
+    expect(breakdown.skipped).toEqual([
+      { name: "Push Up", reason: "measured-differently" },
+      { name: "Plank", reason: "measured-differently" },
+      { name: "Face Pull", reason: "first-time" },
+    ]);
+    expect(breakdown.pct).toBe(10);
+  });
+
+  it("a lift slightly down rounds to Even, never -0", () => {
+    const logs = [
+      log(daysAgo(1), [lift("Squat", [{ weight: 300, reps: 5 }])]),
+      log(daysAgo(8), [lift("Squat", [{ weight: 301, reps: 5 }])]),
+    ];
+    const breakdown = expectTileMatches(logs);
+    expect(breakdown.lifts[0].change).toBeLessThan(0);
+    expect(Object.is(breakdown.lifts[0].pct, 0)).toBe(true);
+    expect(Object.is(breakdown.pct, 0)).toBe(true);
+  });
+
+  it("a single comparable lift is the whole number", () => {
+    const logs = [
+      log(daysAgo(1), [lift("Deadlift", [{ weight: 330, reps: 5 }]), lift("Shrug", [{ weight: 135, reps: 12 }])]),
+      log(daysAgo(8), [lift("Deadlift", [{ weight: 300, reps: 5 }])]),
+    ];
+    const breakdown = expectTileMatches(logs);
+    expect(breakdown.lifts).toHaveLength(1);
+    expect(breakdown.pct).toBe(breakdown.lifts[0].pct);
+    expect(breakdown.pct).toBe(10);
+    expect(breakdown.skipped).toEqual([{ name: "Shrug", reason: "first-time" }]);
+  });
+
+  it("previous is null when the lifts were last done in different workouts", () => {
+    const logs = [
+      log(daysAgo(1), [lift("Bench Press", [{ weight: 88, reps: 5 }]), lift("Squat", [{ weight: 110, reps: 5 }])]),
+      log(daysAgo(3), [lift("Squat", [{ weight: 100, reps: 5 }])]),
+      log(daysAgo(8), [lift("Bench Press", [{ weight: 80, reps: 5 }])]),
+    ];
+    const breakdown = expectTileMatches(logs);
+    expect(breakdown.previous).toBeNull();
+    expect(breakdown.lifts.map((l) => l.prevAt)).toEqual([logs[2].finished_at, logs[1].finished_at]);
+  });
+
+  it("a latest workout with nothing to compare has no number but still names what was skipped", () => {
+    const logs = [
+      log(daysAgo(1), [lift("Overhead Press", [{ weight: 95, reps: 5 }])]),
+      log(daysAgo(8), [lift("Bench Press", [{ weight: 80, reps: 5 }])]),
+    ];
+    const breakdown = improvementBreakdown(logs)!;
+    expect(breakdown.pct).toBeNull();
+    expect(breakdown.lifts).toEqual([]);
+    expect(breakdown.skipped).toEqual([{ name: "Overhead Press", reason: "first-time" }]);
+    expect(sessionImprovement(logs)).toBeNull();
+  });
+
+  it("null when no lifting workout exists", () => {
+    expect(improvementBreakdown([])).toBeNull();
+    expect(improvementBreakdown([log(daysAgo(0), [run()])])).toBeNull();
+  });
+
+  it("firstLiftingWorkout only when nothing lifted came before the latest workout", () => {
+    const first = improvementBreakdown([
+      log(daysAgo(1), [lift("Bench Press", [{ weight: 80, reps: 5 }])]),
+      log(daysAgo(3), [run()]), // a run is not a lifting workout
+      log(daysAgo(5), [lift("Exercise 1", [{ weight: 100, reps: 5 }])]), // nor an unnamed import
+    ])!;
+    expect(first.pct).toBeNull();
+    expect(first.firstLiftingWorkout).toBe(true);
+
+    // A returning lifter whose latest workout is all new lifts.
+    const allNew = improvementBreakdown([
+      log(daysAgo(1), [lift("Hammer Curl", [{ weight: 35, reps: 10 }])]),
+      log(daysAgo(3), [lift("Bench Press", [{ weight: 80, reps: 5 }])]),
+    ])!;
+    expect(allNew.pct).toBeNull();
+    expect(allNew.firstLiftingWorkout).toBe(false);
+
+    // A repeated lift logged another way is not a first run either.
+    const different = improvementBreakdown([
+      log(daysAgo(1), [lift("Triceps Pushdown", [{ reps: 15 }])]),
+      log(daysAgo(3), [lift("Triceps Pushdown", [{ weight: 50, reps: 12 }])]),
+    ])!;
+    expect(different.skipped).toEqual([{ name: "Triceps Pushdown", reason: "measured-differently" }]);
+    expect(different.firstLiftingWorkout).toBe(false);
+
+    const compared = improvementBreakdown([
+      log(daysAgo(1), [lift("Bench Press", [{ weight: 85, reps: 5 }])]),
+      log(daysAgo(3), [lift("Bench Press", [{ weight: 80, reps: 5 }])]),
+    ])!;
+    expect(compared.firstLiftingWorkout).toBe(false);
   });
 });

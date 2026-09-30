@@ -14,6 +14,11 @@ export const SESSION_BAR_HEIGHT = "h-[3.75rem]";
     top edge plus a 0.625rem gap. */
 export const ABOVE_SESSION_BAR = "bottom-[calc(var(--safe-bottom)+5.125rem)]";
 
+/** Marks the voice receipt's fixed box (present only while it is up), so
+    the page can keep the finish card clear of it as well as of the bar:
+    a Finish under the receipt is a tap on its Edit. */
+export const VOICE_RECEIPT_ATTR = "data-voice-receipt";
+
 /** Scroll margin for anything that must stay tappable mid-page (the
     current set and its "Complete set"): scrolled into view, it stops
     1.5rem above the bar's top edge instead of underneath the bar. */

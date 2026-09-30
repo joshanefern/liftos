@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   currentSetOf,
+  everySetLogged,
   formatRestClock,
   hasOpenSet,
   openSetIds,
@@ -265,6 +266,40 @@ describe("pinAfterLogging", () => {
       exerciseId: "e1",
       hadOpenSets: false,
     });
+  });
+});
+
+describe("everySetLogged", () => {
+  it("is true once the workout's last open working set is logged", () => {
+    expect(everySetLogged([exercise("bench", "xxx"), exercise("row", "xx")])).toBe(true);
+    expect(everySetLogged([exercise("bench", "xxx"), exercise("row", "xo")])).toBe(false);
+  });
+
+  it("ignores warm-ups either way", () => {
+    // An unticked ramp never holds "Finish workout" back…
+    expect(everySetLogged([exercise("squat", "wwxxx")])).toBe(true);
+    // …and ticked warm-ups alone are not a workout to finish.
+    expect(everySetLogged([exercise("squat", "WWooo")])).toBe(false);
+    expect(everySetLogged([exercise("squat", "WW")])).toBe(false);
+  });
+
+  it("goes away when a set is un-marked or added", () => {
+    const done = [exercise("bench", "xxx")];
+    expect(everySetLogged(done)).toBe(true);
+    expect(everySetLogged([exercise("bench", "xox")])).toBe(false);
+    expect(everySetLogged([exercise("bench", "xxxo")])).toBe(false);
+  });
+
+  it("is false for a workout with nothing logged, or nothing in it", () => {
+    expect(everySetLogged([])).toBe(false);
+    expect(everySetLogged([exercise("bench", "ooo")])).toBe(false);
+    expect(everySetLogged([exercise("bench", "")])).toBe(false);
+  });
+
+  it("agrees with upNextOf: nothing up next means every set is logged", () => {
+    const workout = [exercise("bench", "xxx"), exercise("row", "xx")];
+    expect(upNextOf(workout, null)).toBeNull();
+    expect(everySetLogged(workout)).toBe(true);
   });
 });
 

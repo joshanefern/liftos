@@ -2,13 +2,18 @@ import { describe, expect, it } from "vitest";
 import type { WorkoutExercise } from "@/data/liftosMock";
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
 import {
+  beatenRecords,
   countPRsThisMonth,
   getConsistency,
   getTopLifts,
   getWeekObservation,
   getWeeklyVolumeTarget,
   getWeekStats,
+  logsThisWeek,
   plannedSessionsPerWeek,
+  recordLiftsIn,
+  weekStartFor,
+  weekdayIndex,
 } from "./workoutStats";
 
 const log = (exercises: WorkoutExercise[]): WorkoutLog => ({
@@ -328,3 +333,102 @@ describe("getWeekStats durations", () => {
     expect(stats.totalVolume).toBe(1500);
   });
 });
+
+describe("the week Home's card reads", () => {
+  // Wednesday 30 Sep 2026, noon local.
+  const NOW = new Date(2026, 8, 30, 12, 0, 0);
+  const at = (id: string, when: Date): WorkoutLog => ({
+    ...log([]),
+    id,
+    finished_at: when.toISOString(),
+    created_at: when.toISOString(),
+  });
+
+  it("starts Monday 00:00 local, whatever day and hour it is", () => {
+    const monday = new Date(2026, 8, 28).getTime();
+    expect(weekStartFor(NOW).getTime()).toBe(monday);
+    expect(weekStartFor(new Date(2026, 8, 28, 0, 0, 0)).getTime()).toBe(monday);
+    expect(weekStartFor(new Date(2026, 9, 4, 23, 59, 59)).getTime()).toBe(monday);
+    expect(weekStartFor(new Date(2026, 9, 5, 0, 0, 0)).getTime()).toBe(new Date(2026, 9, 5).getTime());
+  });
+
+  it("numbers days Monday first", () => {
+    expect(weekdayIndex(new Date(2026, 8, 28))).toBe(0);
+    expect(weekdayIndex(new Date(2026, 9, 4))).toBe(6);
+  });
+
+  it("holds this week's logs through today and nothing dated on a later day", () => {
+    const logs = [
+      at("last-sunday", new Date(2026, 8, 27, 23, 59, 59)),
+      at("monday", new Date(2026, 8, 28, 0, 0, 0)),
+      at("earlier-today", new Date(2026, 8, 30, 11, 59)),
+      // A clock a few minutes ahead: still today, still counted.
+      at("later-today", new Date(2026, 8, 30, 12, 4)),
+      at("tomorrow", new Date(2026, 9, 1, 0, 0, 0)),
+      at("friday", new Date(2026, 9, 2, 18)),
+      at("next-week", new Date(2026, 9, 6, 18)),
+      { ...at("broken", NOW), finished_at: "not a date" },
+    ];
+    expect(logsThisWeek(logs, NOW).map((l) => l.id)).toEqual([
+      "monday",
+      "earlier-today",
+      "later-today",
+    ]);
+    const stats = getWeekStats(logs, NOW);
+    expect(stats.sessions).toBe(3);
+    expect(stats.workedDayIndices.sort()).toEqual([0, 2]);
+  });
+});
+
+describe("beatenRecords", () => {
+  it("judges a session only against what was logged before it", () => {
+    const logs = [
+      liftLog("c", "2026-09-10T10:00:00", "Bench Press", 110),
+      liftLog("a", "2026-09-01T10:00:00", "Bench Press", 100),
+      liftLog("b", "2026-09-05T10:00:00", "Bench Press", 105),
+    ];
+    const b = logs.find((l) => l.id === "b") as WorkoutLog;
+    expect(beatenRecords(logs, b).map((e) => [e.exerciseName, e.kind, e.value])).toContainEqual([
+      "Bench Press",
+      "weight",
+      105,
+    ]);
+  });
+
+  it("is empty for a first-ever lift and for an unreadable date", () => {
+    const first = liftLog("a", "2026-09-01T10:00:00", "Back Squat", 200);
+    expect(beatenRecords([first], first)).toEqual([]);
+    const broken = { ...liftLog("x", "2026-09-02T10:00:00", "Back Squat", 300), finished_at: "nope" };
+    expect(beatenRecords([first, broken], broken)).toEqual([]);
+  });
+});
+
+describe("recordLiftsIn", () => {
+  it("is one entry per lift, however many kinds of best one set beat", () => {
+    const logs = [
+      liftLog("a", "2026-09-01T10:00:00", "Bench Press", 100),
+      liftLog("b", "2026-09-05T10:00:00", "Bench Press", 110),
+    ];
+    const b = logs.find((l) => l.id === "b") as WorkoutLog;
+    // weight AND e1rm — two events, one lift.
+    expect(beatenRecords(logs, b).length).toBeGreaterThan(1);
+    const lifts = recordLiftsIn(logs, b);
+    expect(lifts).toHaveLength(1);
+    expect(lifts[0].every((e) => e.exerciseName === "Bench Press")).toBe(true);
+  });
+
+  it("is what the month's record count adds up", () => {
+    const now = new Date(2026, 8, 20, 12);
+    const logs = [
+      liftLog("a", "2026-08-25T10:00:00", "Bench Press", 100),
+      liftLog("b", "2026-09-05T10:00:00", "Bench Press", 105),
+      liftLog("c", "2026-09-10T10:00:00", "Bench Press", 110),
+    ];
+    const perWorkout = logs
+      .filter((l) => l.finished_at.startsWith("2026-09"))
+      .reduce((n, l) => n + recordLiftsIn(logs, l).length, 0);
+    expect(perWorkout).toBe(2);
+    expect(countPRsThisMonth(logs, now)).toBe(perWorkout);
+  });
+});
+

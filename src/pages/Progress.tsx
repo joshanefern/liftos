@@ -1,4 +1,5 @@
 import { CTAButton } from "@/components/GoldButton";
+import { ImprovementSheet } from "@/components/progress/ImprovementSheet";
 import { LiftDetailSheet, type LiftRef } from "@/components/progress/LiftDetailSheet";
 import { RenameExercisesSheet } from "@/components/progress/RenameExercisesSheet";
 import { useUser } from "@/context/UserContext";
@@ -16,6 +17,12 @@ import {
   volumeComparison,
   weeksTrained,
 } from "@/lib/consistency";
+import {
+  formatImprovementPct,
+  heroContrast,
+  improvementCaption,
+  improvementPending,
+} from "@/lib/improvementCopy";
 import { buildProgressHero } from "@/lib/progressHero";
 import {
   cacheInsight,
@@ -25,9 +32,9 @@ import {
   recentChatExcerpts,
   type ProgressInsightData,
 } from "@/lib/progressInsight";
-import { sessionImprovement } from "@/lib/strengthTrend";
+import { improvementBreakdown, sessionImprovement } from "@/lib/strengthTrend";
 import { getTopLifts } from "@/lib/workoutStats";
-import { ArrowRight, Dumbbell, PenLine } from "lucide-react";
+import { ArrowRight, ChevronRight, Dumbbell, PenLine } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -72,6 +79,7 @@ const Progress = () => {
   const [showAllRecords, setShowAllRecords] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [detailLift, setDetailLift] = useState<LiftRef | null>(null);
+  const [improvementOpen, setImprovementOpen] = useState(false);
 
   // ── Data (placeholder "Exercise N" imports are excluded everywhere and
   //    surface only through the fix-it row) ──
@@ -96,8 +104,14 @@ const Progress = () => {
   );
   // The Improvement card is ONE number: the latest lifting workout vs the
   // previous time the same lifts were trained, averaged into a single
-  // signed %. A newer cardio-only log doesn't blank it.
+  // signed %. A newer cardio-only log doesn't blank it. Its sheet reads the
+  // breakdown that number is computed from — lift by lift, same math.
   const improvement = useMemo(() => sessionImprovement(logs), [logs]);
+  const breakdown = useMemo(() => improvementBreakdown(logs), [logs]);
+  const improvementLabel = breakdown ? improvementCaption(breakdown.latest.name) : null;
+  // No number: a first lifting workout says what unlocks it; a returning
+  // lifter's latest workout of new (or differently logged) lifts says so.
+  const improvementWaiting = useMemo(() => improvementPending(breakdown), [breakdown]);
   // Consistency sits beside it: weeks with at least one workout, out of
   // the last eight — the number that stays honest through a plateau. An
   // account younger than eight weeks is measured against its own weeks
@@ -292,7 +306,10 @@ const Progress = () => {
             </p>
             <div className="mt-6 max-w-sm divide-y divide-border rounded-[14px] border border-dashed border-border">
               {[
-                { label: "vs last workout", value: "Available after two comparable workouts." },
+                {
+                  label: "Improvement",
+                  value: "Your latest workout vs the time before, once you repeat a lift.",
+                },
                 { label: "Records", value: "Starts with your first logged lift." },
                 { label: "Consistency", value: CONSISTENCY_EMPTY_COPY },
               ].map((row, i) => (
@@ -316,40 +333,60 @@ const Progress = () => {
 
       {/* ── Card 1 · IMPROVEMENT + CONSISTENCY — two tiles, one number
           each. Improvement is the latest lifting workout vs the previous
-          time the same lifts were trained, signed and honest; until two
-          comparable workouts exist it says so instead of vanishing.
-          Consistency is weeks trained out of the last eight, or out of the
-          account's own weeks while it is younger than that. ── */}
+          time the same lifts were trained, signed and honest; its caption
+          names the workout, and a tap opens what it means lift by lift
+          (the owner asked what it shows; his tester kept tapping cards).
+          Until a lift has been repeated it says so instead of vanishing,
+          and the tap says what will appear; a returning lifter whose latest
+          workout had nothing to compare is told which and why. Consistency is weeks trained
+          out of the last eight, or out of the account's own weeks while it
+          is younger than that. ── */}
       {logs.length > 0 && (
         <section
           className="mt-10 grid grid-cols-2 gap-3 animate-reveal-up"
           style={{ animationDelay: "120ms" }}
         >
-          <div className={CARD_CLASS}>
-            <p className="eyebrow">Improvement</p>
-            {improvement ? (
+          {/* flex-col: a button centres its content, and the tile must read
+              from the top like the Consistency tile beside it. */}
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={() => setImprovementOpen(true)}
+            className={`${CARD_CLASS} flex w-full flex-col text-left transition active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40`}
+          >
+            {/* The chevron must stay inside the card on the narrowest phones
+                (320px, Display Zoom): the row borrows the card's right
+                padding there so "Improvement" still fits whole, and the
+                eyebrow gives way (ellipsis) before the chevron is pushed
+                out, whatever the text size. */}
+            <span className="flex items-center justify-between gap-1 max-[359px]:-mr-3">
+              <span className="eyebrow min-w-0 truncate">Improvement</span>
+              <ChevronRight aria-hidden size={14} strokeWidth={2.4} className="shrink-0 text-fg-muted" />
+            </span>
+            {improvement && improvementLabel ? (
               <>
                 {/* Matching the last workout is holding a level, not a
                     zero — it reads as a word, never as "0%". */}
-                <p
-                  className={`mt-2 stat-scoreboard text-[34px] leading-10 tabular-nums ${
+                <span
+                  className={`mt-2 block stat-scoreboard text-[34px] leading-10 tabular-nums ${
                     improvement.pct > 0 ? "text-primary" : "text-fg"
                   }`}
                 >
-                  {improvement.pct === 0
-                    ? "Even"
-                    : `${improvement.pct > 0 ? "+" : ""}${improvement.pct}%`}
-                </p>
-                <p className="caption mt-0.5">
-                  {improvement.pct === 0 ? "with last workout" : "vs last workout"}
-                </p>
+                  {formatImprovementPct(improvement.pct)}
+                </span>
+                {/* Which workout, against what: the name on its own line so
+                    a long one truncates and "vs the time before" never does. */}
+                <span className="caption mt-0.5 block">
+                  <span className="block truncate">{improvementLabel.workout}</span>
+                  <span className="block">{improvementLabel.against}</span>
+                </span>
               </>
             ) : (
-              <p className="mt-2 text-[13px] leading-5 text-fg-muted">
-                Available after two comparable workouts.
-              </p>
+              <span className="mt-2 block text-[13px] leading-5 text-fg-muted">
+                {improvementWaiting.title}.
+              </span>
             )}
-          </div>
+          </button>
           <div className={CARD_CLASS}>
             <p className="eyebrow">Consistency</p>
             {consistency.value !== null ? (
@@ -541,6 +578,13 @@ const Progress = () => {
       )}
 
       {/* ── Sheets ── */}
+      <ImprovementSheet
+        open={improvementOpen}
+        onOpenChange={setImprovementOpen}
+        breakdown={breakdown}
+        units={units}
+        heroNote={heroContrast(heroStat)}
+      />
       <LiftDetailSheet
         lift={detailLift}
         onClose={() => setDetailLift(null)}

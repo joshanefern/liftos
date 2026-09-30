@@ -37,6 +37,13 @@ const SESSION = JSON.stringify({
 /** The lifter's rest timer setting, turned on (it is off by default). */
 const REST_ON = JSON.stringify({ on: true, seconds: 120 });
 
+const EMPTY_SESSION = JSON.stringify({
+  name: "Quick start",
+  templateId: null,
+  startedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+  exercises: [],
+});
+
 /** Each shot: route, optional actions, optional seeds. `full` = full page. */
 const SHOTS = [
   { name: "sign-in", path: "/sign-in", authed: false },
@@ -113,6 +120,25 @@ const SHOTS = [
       await p.getByRole("button", { name: /^rest timer/i }).click();
       await p.getByRole("dialog", { name: "Rest timer" }).waitFor({ timeout: 5000 });
     } },
+  // Every set logged: Finish lives in its own card, never in the exercise's.
+  { name: "active-session-finish-card", path: "/workouts/active",
+    seeds: { liftos_active_workout_session: SESSION, "liftos-voice-dev": "1" },
+    actions: async (p) => {
+      const complete = p.getByRole("button", { name: /^complete set$/i });
+      for (let i = 0; i < 10 && (await complete.count()); i += 1) {
+        await complete.first().click();
+        await p.waitForTimeout(600);
+      }
+      await p.waitForTimeout(1200);
+    } },
+  { name: "active-session-quick-start-empty", path: "/workouts/active",
+    seeds: { liftos_active_workout_session: EMPTY_SESSION, "liftos-voice-dev": "1" } },
+  { name: "active-session-add-exercise", path: "/workouts/active",
+    seeds: { liftos_active_workout_session: EMPTY_SESSION, "liftos-voice-dev": "1" },
+    actions: async (p) => {
+      await p.getByRole("toolbar", { name: "Workout controls" }).getByRole("button", { name: "Add exercise" }).click();
+      await p.waitForTimeout(900);
+    } },
   { name: "privacy", path: "/privacy", full: true },
   { name: "terms", path: "/terms", full: true },
 
@@ -130,7 +156,17 @@ const SHOTS = [
       await p.getByRole("button", { name: /^done$/i }).click();
       await p.waitForTimeout(1800);
     } },
+  { name: "returning-home-week-overview", path: "/dashboard", returning: true, actions: async (p) => {
+      await p.getByRole("button", { name: /^This week:/ }).click();
+      await p.getByRole("dialog", { name: "This week" }).waitFor({ timeout: 5000 });
+      await p.waitForTimeout(600);
+    } },
   { name: "returning-progress", path: "/progress", full: true, returning: true },
+  { name: "returning-progress-improvement", path: "/progress", returning: true, actions: async (p) => {
+      await p.getByRole("button", { name: /^improvement/i }).click();
+      await p.getByRole("dialog", { name: "Improvement" }).waitFor({ timeout: 5000 });
+      await p.waitForTimeout(800);
+    } },
   { name: "returning-calendar", path: "/calendar", full: true, returning: true },
   { name: "returning-calendar-day", path: "/calendar", returning: true, actions: async (p) => {
       await p

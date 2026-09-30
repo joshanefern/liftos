@@ -43,6 +43,7 @@ import {
   persistActiveSession,
   type ActiveSessionSeed,
 } from "@/lib/startSession";
+import { compactVolume } from "@/lib/consistency";
 import { suggestNextWorkout, type Suggestion } from "@/lib/suggestion";
 import {
   applyReminderPrefs,
@@ -57,10 +58,11 @@ import {
   getPrevWeekSessions,
   getWeekObservation,
   getWeeklyStreak,
-  getWeekStats,
   plannedSessionsPerWeek,
-  todayDayIndex,
 } from "@/lib/workoutStats";
+import { buildWeekOverview, headlineText } from "@/lib/weekOverview";
+import { OpenPill } from "@/components/home/OpenPill";
+import { WeekHeadlineLine, WeekOverviewSheet } from "@/components/home/WeekOverviewSheet";
 import { useDayKey } from "@/hooks/useDayKey";
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { Switch } from "@/components/ui/switch";
@@ -122,15 +124,6 @@ const HERO_BODY = "mt-2 max-w-md text-[13px] leading-5 text-background/65";
 
 const RowLabel = ({ children }: { children: ReactNode }) => (
   <span className="text-sm font-semibold text-fg">{children}</span>
-);
-
-/* The tappable affordance on every card — a small filled pill with a verb,
-   not a lone arrow glyph. Purely visual (the whole card is the link). */
-const OpenPill = ({ label = "Open" }: { label?: string }) => (
-  <span className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-primary px-3 text-[12px] font-semibold text-primary-foreground">
-    {label}
-    <ChevronsRight size={13} />
-  </span>
 );
 
 const RowEnd = ({
@@ -265,11 +258,22 @@ const Dashboard = () => {
   const firstName = profile?.first_name ?? "";
   const units = profile?.units ?? "lb";
 
+  // "2 of 4 planned workouts" — the plan is the onboarding frequency answer
+  // ("4 days" → 4; an older account's "3–4 days" → 3). Unknown → the card
+  // shows a plain count instead.
+  const plannedPerWeek = plannedSessionsPerWeek(profile?.frequency);
+
   // dayKey in the deps below: these all read the clock internally, and a
   // long-lived iOS mount crosses midnight without logs ever changing —
   // without it the week card shows LAST week's dots on the new dates.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const weekStats = useMemo(() => getWeekStats(logs), [logs, dayKey]);
+  // The week card and the overview it opens both read `week`, so the dots,
+  // the count and the sheet's days are one week, never two.
+  const week = useMemo(
+    () => buildWeekOverview({ logs, planned: plannedPerWeek, units, now: new Date() }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [logs, plannedPerWeek, units, dayKey],
+  );
+  const [weekOpen, setWeekOpen] = useState(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const weeklyStreak = useMemo(() => getWeeklyStreak(logs), [logs, dayKey]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -278,27 +282,21 @@ const Dashboard = () => {
   const prevWeekSessions = useMemo(() => getPrevWeekSessions(logs), [logs, dayKey]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const prsThisMonth = useMemo(() => countPRsThisMonth(logs), [logs, dayKey]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const todayIdx = useMemo(() => todayDayIndex(), [dayKey]);
   // The scoreboard strip: bench / squat / deadlift, backfilled with the
   // heaviest other lifts. Raw best weights, never an index.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const records = useMemo(() => prStrip(logs), [logs, dayKey]);
 
-  // "2 of 4 planned workouts" — the plan is the onboarding frequency answer
-  // ("4 days" → 4; an older account's "3–4 days" → 3). Unknown → the card
-  // shows a plain count instead.
-  const plannedPerWeek = plannedSessionsPerWeek(profile?.frequency);
   const weekObservation = useMemo(
     () =>
       getWeekObservation({
-        sessions: weekStats.sessions,
+        sessions: week.headline.count,
         planned: plannedPerWeek,
         weeklyStreak,
         prsThisMonth,
         prevWeekSessions,
       }),
-    [weekStats.sessions, plannedPerWeek, weeklyStreak, prsThisMonth, prevWeekSessions],
+    [week.headline.count, plannedPerWeek, weeklyStreak, prsThisMonth, prevWeekSessions],
   );
 
   // A live session dwarfs everything else on a reopen — the banner above the
@@ -1068,66 +1066,60 @@ const Dashboard = () => {
         ) : (
           <>
             {/* This week — sessions against the plan you set in onboarding,
-                the days you trained, and one line history can back up. */}
-            <div className={`${CARD_CLASS} px-4 pb-3.5 pt-3.5`}>
-              <div className="flex items-center justify-between gap-3">
+                the days you trained, and one line history can back up. The
+                whole card opens the week's overview. */}
+            {!dataReady ? (
+              <div className={`${CARD_CLASS} px-4 pb-3.5 pt-3.5`}>
                 <p className={CARD_LABEL}>This week</p>
-                {dataReady && (
-                  <div
-                    role="img"
-                    aria-label={`Trained ${weekStats.workedDayIndices.length} of 7 days this week, Monday first`}
-                    className="flex items-center gap-1"
-                  >
-                    {Array.from({ length: 7 }, (_, i) => {
-                      const worked = weekStats.workedDayIndices.includes(i);
-                      const isToday = i === todayIdx;
-                      return (
-                        <span
-                          key={i}
-                          aria-hidden
-                          className={`h-2 w-2 rounded-full ${
-                            worked
-                              ? "bg-primary"
-                              : isToday
-                                ? "border border-primary/70"
-                                : "bg-foreground/[0.14]"
-                          }`}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              {!dataReady ? (
                 <div aria-hidden className="mt-2">
                   <span className="skeleton block h-7 w-24" />
                   <span className="skeleton mt-2 block h-3 w-32" />
                 </div>
-              ) : (
-                <>
-                  <p className="mt-1.5 flex items-baseline gap-1.5">
-                    <span className="stat-scoreboard text-[28px] leading-8 tabular-nums text-fg">
-                      {weekStats.sessions}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setWeekOpen(true)}
+                aria-haspopup="dialog"
+                aria-label={`This week: ${headlineText(week.headline)}. Open week overview`}
+                aria-describedby={weekObservation ? "home-week-observation" : undefined}
+                className={`${CARD_CLASS} block w-full px-4 pb-3.5 pt-3.5 text-left transition-[transform,box-shadow] duration-150 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40`}
+              >
+                <span className="flex items-center justify-between gap-3">
+                  <span className={CARD_LABEL}>This week</span>
+                  <span className="flex items-center gap-2">
+                    <span aria-hidden className="flex items-center gap-1">
+                      {Array.from({ length: 7 }, (_, i) => {
+                        const worked = week.workedDayIndices.includes(i);
+                        const isToday = i === week.todayIndex;
+                        return (
+                          <span
+                            key={i}
+                            className={`h-2 w-2 rounded-full ${
+                              worked
+                                ? "bg-primary"
+                                : isToday
+                                  ? "border border-primary/70"
+                                  : "bg-foreground/[0.14]"
+                            }`}
+                          />
+                        );
+                      })}
                     </span>
-                    {plannedPerWeek !== null && (
-                      <span className="text-[15px] font-medium tabular-nums text-fg-muted">
-                        of {plannedPerWeek}
-                      </span>
-                    )}
-                    <span className="text-[12px] font-medium text-fg-soft">
-                      {plannedPerWeek !== null
-                        ? "planned workouts"
-                        : weekStats.sessions === 1
-                          ? "workout"
-                          : "workouts"}
-                    </span>
-                  </p>
-                  {weekObservation && (
-                    <p className="mt-1 text-[12px] leading-4 text-fg-muted">{weekObservation}</p>
-                  )}
-                </>
-              )}
-            </div>
+                    <ChevronsRight size={14} aria-hidden className="-mr-0.5 text-fg-muted" />
+                  </span>
+                </span>
+                <WeekHeadlineLine headline={week.headline} className="mt-1.5" />
+                {weekObservation && (
+                  <span
+                    id="home-week-observation"
+                    className="mt-1 block text-[12px] leading-4 text-fg-muted"
+                  >
+                    {weekObservation}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* This month — sessions, weight moved — plus the one obvious
                 way into the calendar. */}
@@ -1151,9 +1143,7 @@ const Dashboard = () => {
                     </div>
                     <div className="rounded-[10px] bg-foreground/[0.04] px-3 py-2.5">
                       <p className="stat-scoreboard whitespace-nowrap text-[26px] leading-8 tabular-nums text-fg">
-                        {monthStats.volume >= 1000
-                          ? `${(monthStats.volume / 1000).toFixed(monthStats.volume >= 10_000 ? 0 : 1)}k`
-                          : monthStats.volume}
+                        {compactVolume(monthStats.volume)}
                       </p>
                       <p className="mt-0.5 text-[11px] font-medium leading-4 text-fg-soft">
                         {units} lifted
@@ -1231,6 +1221,8 @@ const Dashboard = () => {
         maxDays={planRoom}
         onBuild={handleIntakeBuild}
       />
+
+      <WeekOverviewSheet open={weekOpen} onOpenChange={setWeekOpen} week={week} />
 
       <WorkoutRunningDialog
         open={startBlocked}

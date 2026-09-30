@@ -155,3 +155,37 @@ describe("buildProgressHero — Fat Loss weight trend", () => {
     expect(hero!.label).toBe("workouts this month");
   });
 });
+
+describe("buildProgressHero — scope (told apart from the one-workout Improvement number)", () => {
+  it("a strength % names its stretch: the last 12 weeks once the account covers them", () => {
+    const logs = [makeLog(100, "Bench", 100), makeLog(70, "Bench", 100), makeLog(7, "Bench", 120)];
+    const hero = buildProgressHero(logs, "Strength", "lb", NOW);
+    expect(hero!.label).toBe("stronger overall");
+    expect(hero!.scope).toBe("how far your lifts have come over the last 12 weeks");
+  });
+
+  it("a younger account's strength % is since it started, never a 12-week claim", () => {
+    const logs = [makeLog(40, "Bench", 100), makeLog(7, "Bench", 120)];
+    const hero = buildProgressHero(logs, "Strength", "lb", NOW);
+    expect(hero!.label).toBe("stronger overall");
+    expect(hero!.scope).toBe("how far your lifts have come since you started");
+  });
+
+  it("a volume % names its two 4-week blocks", () => {
+    const logs = [
+      makeLog(70, "Row", 100, { volume: 4000 }),
+      makeLog(40, "Row", 100, { volume: 4000 }),
+      makeLog(35, "Row", 100, { volume: 4000 }),
+      makeLog(10, "Row", 100, { volume: 5000 }),
+      makeLog(5, "Row", 100, { volume: 5000 }),
+    ];
+    const hero = buildProgressHero(logs, "Hypertrophy", "lb", NOW);
+    expect(hero!.label).toBe("more volume");
+    expect(hero!.scope).toBe("the weight you moved in the last 4 weeks against the 4 before");
+  });
+
+  it("counts carry no scope", () => {
+    const logs = [makeLog(100, "Bench", 100), makeLog(95, "Bench", 110)];
+    expect(buildProgressHero(logs, null, "lb", NOW)!.scope).toBeUndefined();
+  });
+});

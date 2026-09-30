@@ -20,6 +20,12 @@ export type ProgressHeroStat = {
   eyebrow: string;
   /** Supporting sentence — always positive, always literally true. */
   detail: string;
+  /** What a percentage hero measures and over what stretch, as a phrase
+      ("how far your lifts have come over the last 12 weeks"). The page's
+      one-workout Improvement number sits under it; this is how the two are
+      told apart. Absent on count and body-weight heroes, which no one
+      reads as the same kind of number. */
+  scope?: string;
 };
 
 const DAY_MS = 86_400_000;
@@ -57,6 +63,10 @@ const strongerOverall = (
   return {
     value: `+${pct}%`,
     label: "stronger overall",
+    // An account younger than the window is measured from its first workout.
+    scope: historyCovers(logs, TREND_WINDOW_DAYS, now)
+      ? "how far your lifts have come over the last 12 weeks"
+      : "how far your lifts have come since you started",
     detail:
       best.delta > 0
         ? `Across ${lifts} these 12 weeks — ${best.name} leads, up ${best.delta} ${units}.`
@@ -83,6 +93,7 @@ const volumeUp = (
   return {
     value: `+${pct}%`,
     label: "more volume",
+    scope: "the weight you moved in the last 4 weeks against the 4 before",
     detail: `${Math.round(recentVol).toLocaleString()} ${units} moved this month, up from ${Math.round(priorVol).toLocaleString()} the month before.`,
   };
 };

@@ -90,6 +90,56 @@ export const saveRestTimerPrefs = (
   return clean;
 };
 
+/* ── The rest timer sheet: one list, a choice staged until Save.
+
+     Off · 0:30 · 1:00 · 1:30 · 2:00 · 3:00 · 5:00 · Custom, one checked.
+     Custom is any length the ±15 s stepper reaches. Nothing is kept until
+     the lifter saves — closing the sheet any other way leaves the setting
+     as it was — so the sheet works on a draft, made from the saved
+     setting each time it opens. ── */
+
+/** A row of the list: "off", a preset length in seconds, or "custom". */
+export type RestChoice = "off" | "custom" | number;
+
+/** What the sheet has chosen and not saved yet. */
+export type RestDraft = {
+  choice: RestChoice;
+  /** The length Custom shows and the stepper moves. It starts as the
+      saved length and follows every preset chosen, so Custom picks up
+      from the last length the lifter looked at — and Off keeps it for
+      next time. */
+  seconds: number;
+};
+
+const isPreset = (seconds: number): boolean => REST_PRESETS.includes(seconds);
+
+/** The sheet as it opens: the saved setting checked — Custom when the
+    saved length is not one of the presets. */
+export const restDraftFrom = (prefs: RestTimerPrefs): RestDraft => {
+  const { on, seconds } = parseRestTimerPrefs(prefs);
+  return { choice: !on ? "off" : isPreset(seconds) ? seconds : "custom", seconds };
+};
+
+/** A row tapped. A length that is not a preset is Custom at that length. */
+export const chooseRest = (draft: RestDraft, choice: RestChoice): RestDraft => {
+  if (typeof choice !== "number") return { ...draft, choice };
+  const seconds = clampRestSeconds(choice);
+  return { choice: isPreset(seconds) ? seconds : "custom", seconds };
+};
+
+/** One press of Custom's stepper (`direction` is +1 or −1). */
+export const nudgeRestDraft = (draft: RestDraft, direction: 1 | -1): RestDraft => ({
+  choice: "custom",
+  seconds: nudgeRestSeconds(draft.seconds, direction),
+});
+
+/** What Save keeps. */
+export const restPrefsFrom = (draft: RestDraft): RestTimerPrefs => {
+  if (draft.choice === "off") return { on: false, seconds: clampRestSeconds(draft.seconds) };
+  const seconds = draft.choice === "custom" ? draft.seconds : draft.choice;
+  return { on: true, seconds: clampRestSeconds(seconds) };
+};
+
 /** The setting in plain words: "Off", or "2:00 after each set". */
 export const restTimerSummary = (prefs: RestTimerPrefs): string =>
   prefs.on ? `${formatRestClock(prefs.seconds)} after each set` : "Off";

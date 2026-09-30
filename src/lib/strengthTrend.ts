@@ -207,10 +207,19 @@ export type LastDelta = {
 const bestOfLog = (
   log: WorkoutLog,
   key: string,
-): { weight: number; reps: number; duration: number; e1rm: number } | null => {
+): {
+  weight: number;
+  reps: number;
+  duration: number;
+  e1rm: number;
+  /** The set behind `e1rm` — not always the heaviest (a 100×9 back-off
+      out-scores a 105×1 top single), so it is what a breakdown shows. */
+  e1rmSet: { weight: number; reps: number } | null;
+} | null => {
   let best: { weight: number; reps: number } | null = null;
   let longestHold = 0;
   let bestE = 0;
+  let bestESet: { weight: number; reps: number } | null = null;
   let any = false;
   for (const exercise of log.exercises) {
     if (exercise.kind === "cardio") continue;
@@ -228,7 +237,13 @@ const bestOfLog = (
       if (duration > longestHold) longestHold = duration;
       if (weight <= 0 && duration <= 0 && reps < 1) continue;
       any = true;
-      if (weight > 0) bestE = Math.max(bestE, epley1RM(weight, reps));
+      if (weight > 0) {
+        const e = epley1RM(weight, reps);
+        if (e > bestE || (e === bestE && bestESet !== null && weight > bestESet.weight)) {
+          bestE = e;
+          bestESet = { weight, reps };
+        }
+      }
       if (!best || weight > best.weight || (weight === best.weight && reps > best.reps)) {
         best = { weight, reps };
       }
@@ -240,6 +255,7 @@ const bestOfLog = (
     reps: best?.reps ?? 0,
     duration: longestHold,
     e1rm: bestE,
+    e1rmSet: bestESet,
   };
 };
 
@@ -347,56 +363,172 @@ export type SessionImprovement = {
   lifts: number;
 };
 
-export const sessionImprovement = (logs: WorkoutLog[]): SessionImprovement | null => {
-  if (logs.length < 2) return null;
+/** How a lift was scored: estimated single (weight × reps), longest hold,
+    or reps (bodyweight). */
+export type ImprovementMeasure = "e1rm" | "hold" | "reps";
+
+/** The set that was scored on one side. `e1rm` reads weight × reps, `hold`
+    reads seconds, `reps` reads reps; the other fields are 0. */
+export type ImprovementSet = { weight: number; reps: number; seconds: number };
+
+export type ImprovementLift = {
+  /** The name as typed in the latest workout. */
+  name: string;
+  measure: ImprovementMeasure;
+  /** The scored best set the previous time, and this time. */
+  prev: ImprovementSet;
+  last: ImprovementSet;
+  /** Unrounded % change — the tile's number is the rounded mean of these. */
+  change: number;
+  /** `change` rounded to a whole number (never -0). The sheet shows the
+      rows through `shownLiftPcts` (lib/improvementCopy), which keeps them
+      averaging to the tile. */
+  pct: number;
+  /** When the lift was last done before (that workout's finished_at). */
+  prevAt: string;
+};
+
+/** A lift in the latest workout that did not count: done for the first
+    time, or logged in a different shape than last time (weighted then
+    bodyweight, reps then a hold) — no honest % between the two. */
+export type ImprovementSkip = {
+  name: string;
+  reason: "first-time" | "measured-differently";
+};
+
+export type ImprovementBreakdown = {
+  latest: { id: string; name: string; finishedAt: string };
+  /** The one earlier workout every compared lift was last done in; null
+      when they came from different workouts, or nothing compared. */
+  previous: { id: string; name: string; finishedAt: string } | null;
+  /** Compared lifts, in the order the latest workout lists them. */
+  lifts: ImprovementLift[];
+  skipped: ImprovementSkip[];
+  /** The Improvement number: rounded mean of `lifts[].change`; null when
+      no lift could be compared. */
+  pct: number | null;
+  /** No lifting workout was logged before the latest one — nothing could
+      have been compared yet, so a missing number is a first run, not a
+      workout of new or differently logged lifts. */
+  firstLiftingWorkout: boolean;
+};
+
+/* `Math.round(-0.4)` is -0 — never let a wash print as "-0%". */
+const roundPct = (value: number): number => Math.round(value) || 0;
+
+/** The Improvement number and everything behind it, lift by lift — the
+    tile and its explainer read this one computation. Null only when no
+    lifting workout exists. */
+export const improvementBreakdown = (logs: WorkoutLog[]): ImprovementBreakdown | null => {
   const split = latestLiftingSplit(logs);
   if (!split) return null;
   const { latest, earlier } = split;
-  const changes: number[] = [];
+  const lifts: ImprovementLift[] = [];
+  const skipped: ImprovementSkip[] = [];
+  const prevLogs = new Set<WorkoutLog>();
   const seen = new Set<string>();
 
   for (const exercise of latest.exercises) {
+    // Cardio isn't a lift and placeholder imports surface only through the
+    // rename row — neither is listed as "not counted".
     if (exercise.kind === "cardio" || isPlaceholderName(exercise.name)) continue;
     const key = normalizeExerciseName(exercise.name);
     if (seen.has(key)) continue;
     seen.add(key);
     const last = bestOfLog(latest, key);
+    // On the plan but not a single working set done — not part of the workout.
     if (!last) continue;
     let prev: ReturnType<typeof bestOfLog> = null;
+    let prevLog: WorkoutLog | null = null;
     for (const log of earlier) {
       prev = bestOfLog(log, key);
-      if (prev) break;
+      if (prev) {
+        prevLog = log;
+        break;
+      }
     }
-    if (!prev) continue;
+    if (!prev || !prevLog) {
+      skipped.push({ name: exercise.name, reason: "first-time" });
+      continue;
+    }
 
+    let measure: ImprovementMeasure;
     let lastScore = 0;
     let prevScore = 0;
+    let lastSet: ImprovementSet;
+    let prevSet: ImprovementSet;
     if (last.duration > 0 || prev.duration > 0) {
-      if (last.duration <= 0 || prev.duration <= 0) continue;
+      if (last.duration <= 0 || prev.duration <= 0) {
+        skipped.push({ name: exercise.name, reason: "measured-differently" });
+        continue;
+      }
+      measure = "hold";
       lastScore = last.duration;
       prevScore = prev.duration;
-    } else if (last.e1rm > 0 && prev.e1rm > 0) {
+      lastSet = { weight: 0, reps: 0, seconds: last.duration };
+      prevSet = { weight: 0, reps: 0, seconds: prev.duration };
+    } else if (last.e1rm > 0 && prev.e1rm > 0 && last.e1rmSet && prev.e1rmSet) {
       // Each session's best Epley across ALL its weighted sets — the top
       // single must not hide a better back-off set. Uncapped rep counts are
       // fine here: this is a relative comparison between the lifter's own
       // sessions, not a displayed "est. single", so the ≤10-rep display
-      // rule doesn't apply.
+      // rule doesn't apply. The set shown is the one that scored, so a
+      // row never reads "105 × 1 → 100 × 9" beside a gain it can't explain.
+      measure = "e1rm";
       lastScore = last.e1rm;
       prevScore = prev.e1rm;
+      lastSet = { ...last.e1rmSet, seconds: 0 };
+      prevSet = { ...prev.e1rmSet, seconds: 0 };
     } else if (last.weight <= 0 && prev.weight <= 0 && last.reps > 0 && prev.reps > 0) {
+      measure = "reps";
       lastScore = last.reps;
       prevScore = prev.reps;
+      lastSet = { weight: 0, reps: last.reps, seconds: 0 };
+      prevSet = { weight: 0, reps: prev.reps, seconds: 0 };
     } else {
+      skipped.push({ name: exercise.name, reason: "measured-differently" });
       continue;
     }
-    if (prevScore <= 0) continue;
-    changes.push(((lastScore - prevScore) / prevScore) * 100);
+    if (prevScore <= 0) {
+      skipped.push({ name: exercise.name, reason: "measured-differently" });
+      continue;
+    }
+    const change = ((lastScore - prevScore) / prevScore) * 100;
+    prevLogs.add(prevLog);
+    lifts.push({
+      name: exercise.name,
+      measure,
+      prev: prevSet,
+      last: lastSet,
+      change,
+      pct: roundPct(change),
+      prevAt: prevLog.finished_at,
+    });
   }
 
-  if (changes.length === 0) return null;
-  const pct = Math.round(changes.reduce((sum, c) => sum + c, 0) / changes.length);
-  // `Math.round(-0.4)` is -0 — never let a wash print as "-0%".
-  return { pct: pct || 0, lifts: changes.length };
+  const previousLog = prevLogs.size === 1 ? [...prevLogs][0] : null;
+  return {
+    latest: { id: latest.id, name: latest.name, finishedAt: latest.finished_at },
+    previous: previousLog
+      ? { id: previousLog.id, name: previousLog.name, finishedAt: previousLog.finished_at }
+      : null,
+    lifts,
+    skipped,
+    pct:
+      lifts.length === 0
+        ? null
+        : roundPct(lifts.reduce((sum, l) => sum + l.change, 0) / lifts.length),
+    // Any compared lift proves an earlier lifting workout; only a workout
+    // with nothing compared needs the look back.
+    firstLiftingWorkout: lifts.length === 0 && !earlier.some(isLiftingLog),
+  };
+};
+
+export const sessionImprovement = (logs: WorkoutLog[]): SessionImprovement | null => {
+  if (logs.length < 2) return null;
+  const breakdown = improvementBreakdown(logs);
+  if (!breakdown || breakdown.pct === null) return null;
+  return { pct: breakdown.pct, lifts: breakdown.lifts.length };
 };
 
 export const lastSessionDeltas = (logs: WorkoutLog[], limit = 3): LastDelta[] => {

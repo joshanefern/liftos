@@ -18,7 +18,7 @@ import { tapHaptic, successHaptic } from "@/lib/haptics";
 import type { VoiceApplyResult, VoiceIntent, VoiceLoggedExercise } from "@/lib/voiceApply";
 import { resolveVoiceFire, type AppliedVoiceLog } from "@/lib/voiceSupersede";
 import { cn } from "@/lib/utils";
-import { ABOVE_SESSION_BAR } from "@/components/logging/sessionBarLayout";
+import { ABOVE_SESSION_BAR, VOICE_RECEIPT_ATTR } from "@/components/logging/sessionBarLayout";
 
 /* ── Tap-to-speak voice logging.
    Tap the pill → live transcript streams into the receipt card. A pause
@@ -505,6 +505,7 @@ export const VoiceLogControl = ({
         // Never full-bleed.
         phase.at !== "idle" ? (
           <div
+            {...{ [VOICE_RECEIPT_ATTR]: "" }}
             className={cn(
               "pointer-events-none fixed inset-x-5 z-40 flex justify-center",
               ABOVE_SESSION_BAR,

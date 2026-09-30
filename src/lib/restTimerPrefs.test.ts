@@ -5,10 +5,14 @@ import {
   MIN_REST_SECONDS,
   REST_PRESETS,
   REST_TIMER_KEY,
+  chooseRest,
   clampRestSeconds,
   loadRestTimerPrefs,
+  nudgeRestDraft,
   nudgeRestSeconds,
   parseRestTimerPrefs,
+  restDraftFrom,
+  restPrefsFrom,
   restTimerSummary,
   saveRestTimerPrefs,
 } from "./restTimerPrefs";
@@ -133,5 +137,87 @@ describe("restTimerSummary", () => {
     expect(restTimerSummary({ on: true, seconds: 120 })).toBe("2:00 after each set");
     expect(restTimerSummary({ on: true, seconds: 105 })).toBe("1:45 after each set");
     expect(restTimerSummary({ on: true, seconds: 600 })).toBe("10:00 after each set");
+  });
+});
+
+describe("the rest timer sheet's draft", () => {
+  it("opens on the saved setting", () => {
+    expect(restDraftFrom({ on: false, seconds: 120 })).toEqual({ choice: "off", seconds: 120 });
+    expect(restDraftFrom({ on: true, seconds: 90 })).toEqual({ choice: 90, seconds: 90 });
+    expect(restDraftFrom({ on: true, seconds: 300 })).toEqual({ choice: 300, seconds: 300 });
+  });
+
+  it("opens on Custom, showing it, when the saved length is not a preset", () => {
+    expect(restDraftFrom({ on: true, seconds: 105 })).toEqual({ choice: "custom", seconds: 105 });
+    expect(restDraftFrom({ on: true, seconds: 600 })).toEqual({ choice: "custom", seconds: 600 });
+  });
+
+  it("opens on Off when the timer is off, whatever length it remembers", () => {
+    expect(restDraftFrom({ on: false, seconds: 105 }).choice).toBe("off");
+  });
+
+  it("reads a damaged setting the way a load would", () => {
+    expect(restDraftFrom({ on: true, seconds: 7 })).toEqual({ choice: "custom", seconds: 15 });
+  });
+
+  it("checks the row that was tapped", () => {
+    const opened = restDraftFrom({ on: false, seconds: 120 });
+    expect(chooseRest(opened, 60)).toEqual({ choice: 60, seconds: 60 });
+    expect(chooseRest(chooseRest(opened, 60), "off")).toEqual({ choice: "off", seconds: 60 });
+  });
+
+  it("starts Custom from the last length chosen", () => {
+    const after90 = chooseRest(restDraftFrom({ on: true, seconds: 120 }), 90);
+    expect(chooseRest(after90, "custom")).toEqual({ choice: "custom", seconds: 90 });
+    // From Off: the length the setting remembers.
+    expect(chooseRest(restDraftFrom({ on: false, seconds: 105 }), "custom")).toEqual({
+      choice: "custom",
+      seconds: 105,
+    });
+  });
+
+  it("treats a length that is not a preset as Custom", () => {
+    expect(chooseRest(restDraftFrom(DEFAULT_REST_TIMER), 95)).toEqual({ choice: "custom", seconds: 95 });
+  });
+
+  it("steps Custom by 15 seconds inside 0:15 … 10:00", () => {
+    const custom = { choice: "custom" as const, seconds: 90 };
+    expect(nudgeRestDraft(custom, 1)).toEqual({ choice: "custom", seconds: 105 });
+    expect(nudgeRestDraft(custom, -1)).toEqual({ choice: "custom", seconds: 75 });
+    expect(nudgeRestDraft({ choice: "custom", seconds: MIN_REST_SECONDS }, -1).seconds).toBe(
+      MIN_REST_SECONDS,
+    );
+    expect(nudgeRestDraft({ choice: "custom", seconds: MAX_REST_SECONDS }, 1).seconds).toBe(
+      MAX_REST_SECONDS,
+    );
+  });
+
+  it("stays on Custom when the stepper lands on a preset length", () => {
+    expect(nudgeRestDraft({ choice: "custom", seconds: 105 }, 1)).toEqual({
+      choice: "custom",
+      seconds: 120,
+    });
+  });
+
+  it("saves what is checked", () => {
+    expect(restPrefsFrom({ choice: "off", seconds: 90 })).toEqual({ on: false, seconds: 90 });
+    expect(restPrefsFrom({ choice: 180, seconds: 180 })).toEqual({ on: true, seconds: 180 });
+    expect(restPrefsFrom({ choice: "custom", seconds: 135 })).toEqual({ on: true, seconds: 135 });
+  });
+
+  it("round-trips: a saved setting opens checked the same way", () => {
+    for (const prefs of [
+      { on: false, seconds: 120 },
+      { on: true, seconds: 30 },
+      { on: true, seconds: 300 },
+      { on: true, seconds: 135 },
+      { on: true, seconds: 600 },
+    ]) {
+      expect(restPrefsFrom(restDraftFrom(prefs))).toEqual(prefs);
+    }
+  });
+
+  it("offers exactly the lengths the list shows", () => {
+    expect(REST_PRESETS).toEqual([30, 60, 90, 120, 180, 300]);
   });
 });

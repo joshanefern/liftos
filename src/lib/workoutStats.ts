@@ -1,13 +1,14 @@
 import type { WorkoutLog } from "@/hooks/useWorkoutLogs";
 import { firstWorkoutTime } from "@/lib/consistency";
-import { detectSessionPRs } from "@/lib/prs";
+import { detectSessionPRs, normalizeExerciseName, type PREvent } from "@/lib/prs";
 import { trainingDaysPerWeek } from "@/lib/trainingDays";
 
 // Mon=0, Sun=6
 const dayIndex = (date: Date) => (date.getDay() + 6) % 7;
 
-/** Today's Mon=0 … Sun=6 index — the ring on the week-card day dots. */
-export const todayDayIndex = (now: Date = new Date()): number => dayIndex(now);
+/** A date's Mon=0 … Sun=6 index in its local week — the slot of its dot on
+    Home's week card (today's is the ringed one). */
+export const weekdayIndex = (date: Date): number => dayIndex(date);
 
 const localMidnight = (date: Date) => {
   const d = new Date(date);
@@ -15,11 +16,32 @@ const localMidnight = (date: Date) => {
   return d;
 };
 
-const startOfCurrentWeek = () => {
-  const now = new Date();
+/** Monday 00:00 LOCAL of the week `now` falls in. Stepped with setDate, not
+    by subtracting 24h blocks, so a week that crosses a clock change still
+    starts at midnight. */
+export const weekStartFor = (now: Date = new Date()): Date => {
   const d = localMidnight(now);
   d.setDate(d.getDate() - dayIndex(now));
   return d;
+};
+
+const startOfCurrentWeek = () => weekStartFor(new Date());
+
+/** The workouts of the week `now` falls in: finished from Monday 00:00 local
+    to the end of today. The ONE week Home's week card and its overview
+    sheet read, so the two can never disagree. A log dated on a later day (a
+    clock set wrong, a bad import) belongs to no week yet — it would light a
+    day that has not happened. Later TODAY still counts: another device's
+    clock running a few minutes ahead must not hide a workout just logged. */
+export const logsThisWeek = (logs: WorkoutLog[], now: Date = new Date()): WorkoutLog[] => {
+  const from = weekStartFor(now).getTime();
+  const tomorrow = localMidnight(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const to = tomorrow.getTime();
+  return logs.filter((l) => {
+    const t = Date.parse(l.finished_at);
+    return Number.isFinite(t) && t >= from && t < to;
+  });
 };
 
 export type WeekStats = {
@@ -30,9 +52,8 @@ export type WeekStats = {
   totalMinutes: number;
 };
 
-export const getWeekStats = (logs: WorkoutLog[]): WeekStats => {
-  const weekStart = startOfCurrentWeek();
-  const weekLogs = logs.filter((l) => new Date(l.finished_at) >= weekStart);
+export const getWeekStats = (logs: WorkoutLog[], now: Date = new Date()): WeekStats => {
+  const weekLogs = logsThisWeek(logs, now);
   const indices = [...new Set(weekLogs.map((l) => dayIndex(new Date(l.finished_at))))];
   return {
     sessions: weekLogs.length,
@@ -49,10 +70,36 @@ export const getWeekStats = (logs: WorkoutLog[]): WeekStats => {
 export const plannedSessionsPerWeek = (frequency: string | null | undefined): number | null =>
   trainingDaysPerWeek(frequency);
 
+/** The records a logged workout set: bests it beat from history logged
+    BEFORE it. Only earlier history counts — a later session's bigger number
+    must not erase an earlier record. First-ever performances are excluded
+    on purpose — every lift is a "record" the first time you do it, and a
+    week-one user reading "12 PRs this month" learns the number means
+    nothing. Home's records (this month's count, the week overview's list)
+    all come from here. */
+export const beatenRecords = (logs: WorkoutLog[], log: WorkoutLog): PREvent[] => {
+  const finished = Date.parse(log.finished_at);
+  if (!Number.isFinite(finished)) return [];
+  const before = logs.filter((l) => l.id !== log.id && Date.parse(l.finished_at) < finished);
+  return detectSessionPRs(before, log).filter((e) => !e.isFirst);
+};
+
+/** A workout's records grouped by lift: ONE entry per lift per workout
+    (a lift can beat its weight, e1rm and reps bests in the same set). That
+    is the unit Home counts records in — this month's count and the week
+    overview's list both read it, so the list under the card's count adds
+    up to it. A lift that beats its best in two workouts is two records. */
+export const recordLiftsIn = (logs: WorkoutLog[], log: WorkoutLog): PREvent[][] => {
+  const lifts = new Map<string, PREvent[]>();
+  for (const event of beatenRecords(logs, log)) {
+    const key = normalizeExerciseName(event.exerciseName);
+    lifts.set(key, [...(lifts.get(key) ?? []), event]);
+  }
+  return [...lifts.values()];
+};
+
 /** Lifts that beat a PREVIOUS best in a session this calendar month, one
-    per lift per session. First-ever performances are excluded on purpose —
-    every lift is a "record" the first time you do it, and a week-one user
-    reading "12 PRs this month" learns the number means nothing. */
+    per lift per session (see recordLiftsIn). */
 export const countPRsThisMonth = (logs: WorkoutLog[], now: Date = new Date()): number => {
   let count = 0;
   for (const log of logs) {
@@ -61,17 +108,7 @@ export const countPRsThisMonth = (logs: WorkoutLog[], now: Date = new Date()): n
     if (finished.getMonth() !== now.getMonth() || finished.getFullYear() !== now.getFullYear()) {
       continue;
     }
-    // Only history BEFORE this session can be beaten by it — a later
-    // session's bigger number must not erase an earlier record.
-    const before = logs.filter(
-      (l) => l.id !== log.id && new Date(l.finished_at).getTime() < finished.getTime(),
-    );
-    const lifts = new Set(
-      detectSessionPRs(before, log)
-        .filter((e) => !e.isFirst)
-        .map((e) => e.exerciseName),
-    );
-    count += lifts.size;
+    count += recordLiftsIn(logs, log).length;
   }
   return count;
 };
